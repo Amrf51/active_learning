@@ -1,0 +1,29 @@
+# Core dependencies
+torch>=2.0.0
+torchvision>=0.15.0
+timm>=0.9.0
+
+# Data processing
+numpy>=1.23.0
+pandas>=1.5.0
+pillow>=9.0.0
+
+# Configuration
+PyYAML>=6.0
+
+# Metrics and evaluation
+scikit-learn>=1.2.0
+matplotlib>=3.6.0
+seaborn>=0.12.0
+
+# Optional: for advanced features
+tqdm>=4.64.0
+tensorboard>=2.11.0
+
+# GUI and Visualization
+streamlit>=1.20.0
+
+# Development (optional)
+jupyter>=1.0.0
+ipykernel>=6.20.0
+notebook>=6.5.0

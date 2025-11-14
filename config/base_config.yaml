@@ -1,0 +1,36 @@
+# Base Configuration for Active Learning Vehicle Classification
+# All parameters are defined here with reasonable defaults
+
+model:
+  name: "resnet18"              # Model architecture from TIMM
+  pretrained: true              # Use ImageNet pretrained weights
+  num_classes: 4                # bus, car, motorcycle, truck
+
+training:
+  epochs: 50                    # Maximum number of epochs
+  batch_size: 32                # Training batch size
+  learning_rate: 0.001          # Initial learning rate
+  optimizer: "adam"             # adam, sgd, adamw
+  weight_decay: 0.0001          # L2 regularization
+  early_stopping_patience: 10   # Stop if val_acc doesn't improve for N epochs
+  seed: 42                       # Random seed for reproducibility
+
+data:
+  data_dir: "./data/raw/kaggle-vehicle/"  # Path to data directory
+  train_split: 0.8              # 80% for training
+  val_split: 0.1                # 10% for validation
+  augmentation: true            # Apply data augmentation
+  num_workers: 4                # DataLoader workers
+
+active_learning:
+  enabled: false                # Set to true to enable AL
+  num_cycles: 5                 # Number of AL cycles
+  sampling_strategy: "uncertainty"  # uncertainty, margin, entropy, random, kmeans
+  initial_pool_size: 50         # Number of labeled samples to start with
+  batch_size_al: 20             # Samples to query per cycle
+  uncertainty_method: "least_confidence"  # least_confidence or entropy
+
+checkpoint:
+  save_every_n_epochs: 5        # Save checkpoint every N epochs
+  save_best_model: true         # Save best model during training
+  log_every_n_batches: 100      # Log training progress every N batches
