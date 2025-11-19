@@ -45,11 +45,12 @@ def get_transforms(augmentation: bool = True, phase: str = "train"):
         ])
 
 
-def get_dataloaders(config, seed: int = 42):
+def get_dataloaders(config, batch_size: int = 32, seed: int = 42):
     """Load data and return train, val, test dataloaders.
     
     Args:
         config: DataConfig object
+        batch_size: Batch size for dataloaders (default 32)
         seed: Random seed for reproducibility
         
     Returns:
@@ -97,7 +98,7 @@ def get_dataloaders(config, seed: int = 42):
     # Create dataloaders
     train_loader = DataLoader(
         train_dataset,
-        batch_size=config.batch_size,
+        batch_size=batch_size,
         shuffle=True,
         num_workers=config.num_workers,
         pin_memory=True
@@ -105,7 +106,7 @@ def get_dataloaders(config, seed: int = 42):
     
     val_loader = DataLoader(
         val_dataset,
-        batch_size=config.batch_size,
+        batch_size=batch_size,
         shuffle=False,
         num_workers=config.num_workers,
         pin_memory=True
@@ -113,7 +114,7 @@ def get_dataloaders(config, seed: int = 42):
     
     test_loader = DataLoader(
         test_dataset,
-        batch_size=config.batch_size,
+        batch_size=batch_size,
         shuffle=False,
         num_workers=config.num_workers,
         pin_memory=True

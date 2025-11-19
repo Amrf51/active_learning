@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 def main(args):
     """Main training function.
-    
+
     Args:
         args: Command line arguments
     """
@@ -64,7 +64,10 @@ def main(args):
         
         # Load dataloaders
         logger.info("Creating dataloaders...")
-        train_loader, val_loader, test_loader = get_dataloaders(config.data)
+        train_loader, val_loader, test_loader = get_dataloaders(
+            config.data, 
+            batch_size=config.training.batch_size
+        )
         
         # Load model
         logger.info(f"Loading model: {config.model.name}")
