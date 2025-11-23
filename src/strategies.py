@@ -115,19 +115,20 @@ class MarginSampling:
 
 class DiversitySampling:
     """Diversity-based sampling (feature-space distance)."""
-    
+
     @staticmethod
-    def kmeans_sampling(model, unlabeled_pool, n_samples: int, 
-                       device: str = "cuda", layer: str = "penultimate") -> np.ndarray:
+    def kmeans_sampling(model, unlabeled_pool, n_samples: int,
+                       device: str = "cuda", layer: str = "penultimate", feature_fn=None) -> np.ndarray:
         """Query instances that are diverse in feature space using k-means.
-        
+
         Args:
             model: PyTorch model
             unlabeled_pool: DataLoader of unlabeled data
             n_samples: Number of samples to query
             device: Device to run on
-            layer: Which layer to extract features from
-            
+            layer: Which layer to extract features from (kept for compatibility)
+            feature_fn: Optional callable to extract features from the model
+
         Returns:
             Indices of diverse samples
         """
@@ -136,29 +137,35 @@ class DiversitySampling:
         except ImportError:
             logger.error("scikit-learn required for KMeans sampling")
             raise
-        
+
         model.eval()
         features = []
-        
-        # Extract features from penultimate layer
+
+        # Extract features from penultimate layer or provided hook
         with torch.no_grad():
             for images, _ in unlabeled_pool:
                 images = images.to(device)
-                # Get features from second-to-last layer
-                feature_vec = model.forward_features(images) if hasattr(model, 'forward_features') else \
-                             torch.flatten(model(images, features=True), 1)
+                if feature_fn is not None:
+                    feature_vec = feature_fn(model, images)
+                elif hasattr(model, 'forward_features'):
+                    feature_vec = model.forward_features(images)
+                    if isinstance(feature_vec, (list, tuple)):
+                        feature_vec = feature_vec[-1]
+                else:
+                    feature_vec = torch.flatten(model(images), 1)
+
                 features.extend(feature_vec.cpu().numpy())
-        
+
         features = np.array(features)
-        
+
         # K-means clustering
         kmeans = KMeans(n_clusters=min(n_samples, len(features)), random_state=42)
         kmeans.fit(features)
-        
+
         # Query samples closest to cluster centers
         distances = kmeans.transform(features)
         query_indices = np.argmin(distances, axis=0)
-        
+
         return query_indices
 
 

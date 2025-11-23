@@ -3,7 +3,6 @@
 import timm
 import torch
 import torch.nn as nn
-from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -106,6 +105,32 @@ def count_parameters(model: nn.Module) -> tuple:
     total = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     return total, trainable
+
+
+def extract_features(model: nn.Module, images: torch.Tensor) -> torch.Tensor:
+    """Extract feature embeddings from a model.
+
+    Falls back to flattening model outputs when an explicit feature hook is
+    unavailable. This helper is intended for sampling strategies that need a
+    latent representation (e.g., diversity sampling with clustering).
+
+    Args:
+        model: PyTorch model
+        images: Input batch tensor
+
+    Returns:
+        Feature tensor for downstream processing
+    """
+    if hasattr(model, "forward_features"):
+        features = model.forward_features(images)
+        if isinstance(features, (list, tuple)):
+            features = features[-1]
+    elif hasattr(model, "get_features") and callable(getattr(model, "get_features")):
+        features = model.get_features(images)
+    else:
+        features = torch.flatten(model(images), 1)
+
+    return features
 
 
 # Common TIMM model names for reference

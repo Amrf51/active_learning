@@ -1,7 +1,7 @@
 """Data loading and preprocessing utilities."""
 
 import torch
-from torch.utils.data import DataLoader, random_split, Subset
+from torch.utils.data import DataLoader, random_split
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 from pathlib import Path
@@ -45,48 +45,46 @@ def get_transforms(augmentation: bool = True, phase: str = "train"):
         ])
 
 
-def get_dataloaders(config, batch_size: int = 32, seed: int = 42):
-    """Load data and return train, val, test dataloaders.
-    
+def get_dataset_splits(config, seed: int = 42):
+    """Load data and return train, val, test dataset splits.
+
     Args:
         config: DataConfig object
-        batch_size: Batch size for dataloaders (default 32)
         seed: Random seed for reproducibility
-        
+
     Returns:
-        Tuple of (train_loader, val_loader, test_loader)
+        Tuple of (train_dataset, val_dataset, test_dataset)
     """
     torch.manual_seed(seed)
-    
+
     # Load full dataset
     data_path = Path(config.data_dir)
     if not data_path.exists():
         raise FileNotFoundError(f"Data directory not found: {data_path}")
-    
-    # Load dataset with training transforms (will split afterwards)
+
     dataset = ImageFolder(
         root=str(data_path),
-        transform=get_transforms(augmentation=False, phase="train")  # Will reapply later
+        transform=get_transforms(augmentation=False, phase="train")
     )
-    
+
     logger.info(f"Loaded dataset: {len(dataset)} images, {len(dataset.classes)} classes")
     logger.info(f"Classes: {dataset.classes}")
-    
+
     # Calculate split sizes
     total_size = len(dataset)
     train_size = int(total_size * config.train_split)
     val_size = int(total_size * config.val_split)
     test_size = total_size - train_size - val_size
-    
+
     # Split dataset
     train_dataset, val_dataset, test_dataset = random_split(
         dataset,
         [train_size, val_size, test_size],
         generator=torch.Generator().manual_seed(seed)
     )
-    
+
     logger.info(f"Split: train={train_size}, val={val_size}, test={test_size}")
-    
+
     # Re-apply appropriate transforms to each split
     train_dataset.dataset.transform = get_transforms(
         augmentation=config.augmentation,
@@ -94,7 +92,23 @@ def get_dataloaders(config, batch_size: int = 32, seed: int = 42):
     )
     val_dataset.dataset.transform = get_transforms(augmentation=False, phase="val")
     test_dataset.dataset.transform = get_transforms(augmentation=False, phase="test")
-    
+
+    return train_dataset, val_dataset, test_dataset
+
+
+def get_dataloaders(config, batch_size: int = 32, seed: int = 42):
+    """Load data and return train, val, test dataloaders.
+
+    Args:
+        config: DataConfig object
+        batch_size: Batch size for dataloaders (default 32)
+        seed: Random seed for reproducibility
+
+    Returns:
+        Tuple of (train_loader, val_loader, test_loader)
+    """
+    train_dataset, val_dataset, test_dataset = get_dataset_splits(config, seed=seed)
+
     # Create dataloaders
     train_loader = DataLoader(
         train_dataset,
@@ -103,7 +117,7 @@ def get_dataloaders(config, batch_size: int = 32, seed: int = 42):
         num_workers=config.num_workers,
         pin_memory=True
     )
-    
+
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
@@ -111,7 +125,7 @@ def get_dataloaders(config, batch_size: int = 32, seed: int = 42):
         num_workers=config.num_workers,
         pin_memory=True
     )
-    
+
     test_loader = DataLoader(
         test_dataset,
         batch_size=batch_size,
@@ -119,7 +133,7 @@ def get_dataloaders(config, batch_size: int = 32, seed: int = 42):
         num_workers=config.num_workers,
         pin_memory=True
     )
-    
+
     return train_loader, val_loader, test_loader
 
 

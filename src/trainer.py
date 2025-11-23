@@ -42,7 +42,14 @@ class Trainer:
         self.optimizer = self._get_optimizer()
         self.scheduler = None
         
-        # Training history
+        # Training history and trackers
+        self.reset_history()
+        self.saved_checkpoints = []
+
+        logger.info(f"Trainer initialized. Device: {device}, Exp dir: {exp_dir}")
+
+    def reset_history(self):
+        """Reset training history and best metrics (useful across AL cycles)."""
         self.history = {
             "train_loss": [],
             "train_accuracy": [],
@@ -50,13 +57,9 @@ class Trainer:
             "val_accuracy": [],
             "epoch": []
         }
-        
-        # Best model tracking
         self.best_val_accuracy = 0
         self.best_epoch = 0
         self.patience_counter = 0
-        
-        logger.info(f"Trainer initialized. Device: {device}, Exp dir: {exp_dir}")
     
     def _get_optimizer(self):
         """Get optimizer based on config."""
@@ -72,6 +75,31 @@ class Trainer:
             return optim.AdamW(self.model.parameters(), lr=lr, weight_decay=wd)
         else:
             raise ValueError(f"Unknown optimizer: {optimizer_name}")
+
+    def load_checkpoint(self, checkpoint_path: Path, load_optimizer: bool = True,
+                        load_history: bool = True) -> int:
+        """Load model/optimizer state for resume or fine-tune.
+
+        Args:
+            checkpoint_path: Path to checkpoint file
+            load_optimizer: Whether to restore optimizer state
+            load_history: Whether to restore training history/best metrics
+
+        Returns:
+            Epoch stored in checkpoint
+        """
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+        if load_optimizer and "optimizer_state_dict" in checkpoint:
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+        if load_history and "history" in checkpoint:
+            self.history = checkpoint.get("history", self.history)
+            self.best_val_accuracy = max(self.history.get("val_accuracy", [0]), default=0)
+            if self.history.get("epoch"):
+                self.best_epoch = max(self.history["epoch"])
+        logger.info(f"Loaded checkpoint from {checkpoint_path}")
+        return int(checkpoint.get("epoch", 0))
     
     def train_epoch(self, train_loader: DataLoader) -> Tuple[float, float]:
         """Train for one epoch.
@@ -147,16 +175,33 @@ class Trainer:
         
         return avg_loss, accuracy
     
-    def train(self, train_loader: DataLoader, val_loader: DataLoader):
+    def train(self, train_loader: DataLoader, val_loader: DataLoader,
+              resume_from: Optional[Path] = None, reset_history: bool = False) -> Dict:
         """Train model for specified epochs.
-        
+
         Args:
             train_loader: Training dataloader
             val_loader: Validation dataloader
+            resume_from: Optional checkpoint path to resume from
+            reset_history: Whether to reset metrics while keeping weights
+
+        Returns:
+            Dictionary of training artifacts (history, best metrics, checkpoints)
         """
-        logger.info(f"Starting training for {self.config.training.epochs} epochs...")
-        
-        for epoch in range(self.config.training.epochs):
+        start_epoch = 0
+        if resume_from is not None:
+            checkpoint_epoch = self.load_checkpoint(resume_from, load_optimizer=True,
+                                                    load_history=not reset_history)
+            if reset_history:
+                self.reset_history()
+            else:
+                start_epoch = checkpoint_epoch
+
+        logger.info(
+            f"Starting training for {self.config.training.epochs} epochs (start_epoch={start_epoch})..."
+        )
+
+        for epoch in range(start_epoch, self.config.training.epochs):
             # Train
             train_loss, train_acc = self.train_epoch(train_loader)
             
@@ -191,8 +236,14 @@ class Trainer:
             if self.patience_counter >= self.config.training.early_stopping_patience:
                 logger.info(f"Early stopping at epoch {epoch + 1}")
                 break
-        
+
         logger.info(f"Training completed. Best val accuracy: {self.best_val_accuracy:.4f} at epoch {self.best_epoch}")
+        return {
+            "history": self.history,
+            "best_val_accuracy": self.best_val_accuracy,
+            "best_epoch": self.best_epoch,
+            "checkpoints": [str(path) for path in self.saved_checkpoints],
+        }
     
     def evaluate(self, test_loader: DataLoader, class_names: list = None) -> Dict:
         """Evaluate model on test set.
@@ -270,8 +321,9 @@ class Trainer:
             path = self.checkpoint_dir / "best_model.pth"
         else:
             path = self.checkpoint_dir / f"checkpoint_epoch_{epoch}.pth"
-        
+
         torch.save(checkpoint, path)
+        self.saved_checkpoints.append(path)
         logger.info(f"Checkpoint saved: {path}")
     
     def save_training_log(self):
