@@ -1,225 +1,220 @@
-"""Active Learning sampling strategies."""
+"""
+Active Learning sampling strategies.
+
+All strategies follow the same interface:
+    strategy_fn(model, unlabeled_loader, n_samples, device) -> np.ndarray
+
+Returns indices INTO the unlabeled loader (0 to len-1), not absolute dataset indices.
+The ALDataManager handles conversion to absolute indices.
+"""
 
 import numpy as np
 import torch
 import torch.nn.functional as F
-from typing import Tuple
+from torch.utils.data import DataLoader
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-class UncertaintySampling:
-    """Uncertainty-based sampling strategies."""
+def uncertainty_least_confidence(
+    model: torch.nn.Module,
+    unlabeled_loader: DataLoader,
+    n_samples: int,
+    device: str = "cuda"
+) -> np.ndarray:
+    """
+    Query instances with lowest prediction confidence.
     
-    @staticmethod
-    def least_confidence(model, unlabeled_pool, n_samples: int, device: str = "cuda") -> np.ndarray:
-        """Query instances with least confidence (max softmax < threshold).
-        
-        Args:
-            model: PyTorch model
-            unlabeled_pool: DataLoader of unlabeled data
-            n_samples: Number of samples to query
-            device: Device to run on
-            
-        Returns:
-            Indices of most uncertain samples
-        """
-        model.eval()
-        uncertainties = []
-        
-        with torch.no_grad():
-            for images, _ in unlabeled_pool:
-                images = images.to(device)
-                outputs = model(images)
-                probabilities = F.softmax(outputs, dim=1)
-                max_probs, _ = probabilities.max(dim=1)
-                # Uncertainty is 1 - max probability
-                uncertainty = 1 - max_probs
-                uncertainties.extend(uncertainty.cpu().numpy())
-        
-        uncertainties = np.array(uncertainties)
-        # Get indices of top n_samples most uncertain instances
-        query_indices = np.argsort(-uncertainties)[:n_samples]
-        
-        return query_indices
+    Uncertainty = 1 - max(softmax)
+    High uncertainty = model is unsure about its top prediction.
     
-    @staticmethod
-    def entropy(model, unlabeled_pool, n_samples: int, device: str = "cuda") -> np.ndarray:
-        """Query instances with highest entropy.
+    Args:
+        model: PyTorch model
+        unlabeled_loader: DataLoader for unlabeled pool
+        n_samples: Number of samples to query
+        device: Device to run inference on
         
-        Args:
-            model: PyTorch model
-            unlabeled_pool: DataLoader of unlabeled data
-            n_samples: Number of samples to query
-            device: Device to run on
-            
-        Returns:
-            Indices of most uncertain samples (highest entropy)
-        """
-        model.eval()
-        entropies = []
-        
-        with torch.no_grad():
-            for images, _ in unlabeled_pool:
-                images = images.to(device)
-                outputs = model(images)
-                probabilities = F.softmax(outputs, dim=1)
-                # Entropy = -sum(p * log(p))
-                entropy = -(probabilities * torch.log(probabilities + 1e-10)).sum(dim=1)
-                entropies.extend(entropy.cpu().numpy())
-        
-        entropies = np.array(entropies)
-        # Get indices of top n_samples highest entropy instances
-        query_indices = np.argsort(-entropies)[:n_samples]
-        
-        return query_indices
-
-
-class MarginSampling:
-    """Margin-based sampling (difference between top-2 predictions)."""
+    Returns:
+        Indices of most uncertain samples (into unlabeled_loader)
+    """
+    model.eval()
+    confidences = []
     
-    @staticmethod
-    def margin(model, unlabeled_pool, n_samples: int, device: str = "cuda") -> np.ndarray:
-        """Query instances with smallest margin (least confident about top-2 classes).
-        
-        Args:
-            model: PyTorch model
-            unlabeled_pool: DataLoader of unlabeled data
-            n_samples: Number of samples to query
-            device: Device to run on
-            
-        Returns:
-            Indices of samples with smallest margins
-        """
-        model.eval()
-        margins = []
-        
-        with torch.no_grad():
-            for images, _ in unlabeled_pool:
-                images = images.to(device)
-                outputs = model(images)
-                probabilities = F.softmax(outputs, dim=1)
-                # Get top 2 probabilities
-                top_probs, _ = torch.topk(probabilities, 2, dim=1)
-                # Margin = difference between top 2
-                margin = top_probs[:, 0] - top_probs[:, 1]
-                margins.extend(margin.cpu().numpy())
-        
-        margins = np.array(margins)
-        # Get indices of smallest margins (most uncertain)
-        query_indices = np.argsort(margins)[:n_samples]
-        
-        return query_indices
-
-
-class DiversitySampling:
-    """Diversity-based sampling (feature-space distance)."""
+    with torch.no_grad():
+        for images, _ in unlabeled_loader:
+            images = images.to(device)
+            outputs = model(images)
+            probs = F.softmax(outputs, dim=1)
+            max_probs, _ = probs.max(dim=1)
+            confidences.extend(max_probs.cpu().numpy())
     
-    @staticmethod
-    def kmeans_sampling(model, unlabeled_pool, n_samples: int, 
-                       device: str = "cuda", layer: str = "penultimate") -> np.ndarray:
-        """Query instances that are diverse in feature space using k-means.
-        
-        Args:
-            model: PyTorch model
-            unlabeled_pool: DataLoader of unlabeled data
-            n_samples: Number of samples to query
-            device: Device to run on
-            layer: Which layer to extract features from
-            
-        Returns:
-            Indices of diverse samples
-        """
-        try:
-            from sklearn.cluster import KMeans
-        except ImportError:
-            logger.error("scikit-learn required for KMeans sampling")
-            raise
-        
-        model.eval()
-        features = []
-        
-        # Extract features from penultimate layer
-        with torch.no_grad():
-            for images, _ in unlabeled_pool:
-                images = images.to(device)
-                # Get features from second-to-last layer
-                feature_vec = model.forward_features(images) if hasattr(model, 'forward_features') else \
-                             torch.flatten(model(images, features=True), 1)
-                features.extend(feature_vec.cpu().numpy())
-        
-        features = np.array(features)
-        
-        # K-means clustering
-        kmeans = KMeans(n_clusters=min(n_samples, len(features)), random_state=42)
-        kmeans.fit(features)
-        
-        # Query samples closest to cluster centers
-        distances = kmeans.transform(features)
-        query_indices = np.argmin(distances, axis=0)
-        
-        return query_indices
-
-
-class RandomSampling:
-    """Random baseline sampling."""
+    confidences = np.array(confidences)
     
-    @staticmethod
-    def random(n_total: int, n_samples: int) -> np.ndarray:
-        """Query random instances.
+    # Lower confidence = higher uncertainty = query first
+    query_indices = np.argsort(confidences)[:n_samples]
+    
+    logger.info(f"Least confidence sampling: selected {len(query_indices)} samples")
+    
+    return query_indices
+
+
+def uncertainty_entropy(
+    model: torch.nn.Module,
+    unlabeled_loader: DataLoader,
+    n_samples: int,
+    device: str = "cuda"
+) -> np.ndarray:
+    """
+    Query instances with highest prediction entropy.
+    
+    Entropy = -sum(p * log(p))
+    High entropy = uncertainty spread across multiple classes.
+    
+    Args:
+        model: PyTorch model
+        unlabeled_loader: DataLoader for unlabeled pool
+        n_samples: Number of samples to query
+        device: Device to run inference on
         
-        Args:
-            n_total: Total number of instances
-            n_samples: Number of samples to query
+    Returns:
+        Indices of highest entropy samples (into unlabeled_loader)
+    """
+    model.eval()
+    entropies = []
+    
+    with torch.no_grad():
+        for images, _ in unlabeled_loader:
+            images = images.to(device)
+            outputs = model(images)
+            probs = F.softmax(outputs, dim=1)
+            # Add small epsilon to avoid log(0)
+            entropy = -(probs * torch.log(probs + 1e-10)).sum(dim=1)
+            entropies.extend(entropy.cpu().numpy())
+    
+    entropies = np.array(entropies)
+    
+    # Higher entropy = more uncertain = query first
+    query_indices = np.argsort(-entropies)[:n_samples]
+    
+    logger.info(f"Entropy sampling: selected {len(query_indices)} samples")
+    
+    return query_indices
+
+
+def margin_sampling(
+    model: torch.nn.Module,
+    unlabeled_loader: DataLoader,
+    n_samples: int,
+    device: str = "cuda"
+) -> np.ndarray:
+    """
+    Query instances with smallest margin between top-2 predictions.
+    
+    Margin = P(top1) - P(top2)
+    Small margin = model can't decide between two classes.
+    
+    Args:
+        model: PyTorch model
+        unlabeled_loader: DataLoader for unlabeled pool
+        n_samples: Number of samples to query
+        device: Device to run inference on
+        
+    Returns:
+        Indices of smallest margin samples (into unlabeled_loader)
+    """
+    model.eval()
+    margins = []
+    
+    with torch.no_grad():
+        for images, _ in unlabeled_loader:
+            images = images.to(device)
+            outputs = model(images)
+            probs = F.softmax(outputs, dim=1)
             
-        Returns:
-            Indices of random samples
-        """
-        query_indices = np.random.choice(n_total, size=min(n_samples, n_total), replace=False)
-        return query_indices
+            # Get top 2 probabilities
+            top2_probs, _ = torch.topk(probs, k=min(2, probs.shape[1]), dim=1)
+            
+            if top2_probs.shape[1] >= 2:
+                margin = top2_probs[:, 0] - top2_probs[:, 1]
+            else:
+                margin = top2_probs[:, 0]
+            
+            margins.extend(margin.cpu().numpy())
+    
+    margins = np.array(margins)
+    
+    # Smaller margin = more uncertain = query first
+    query_indices = np.argsort(margins)[:n_samples]
+    
+    logger.info(f"Margin sampling: selected {len(query_indices)} samples")
+    
+    return query_indices
+
+
+def random_sampling(
+    model: torch.nn.Module,
+    unlabeled_loader: DataLoader,
+    n_samples: int,
+    device: str = "cuda"
+) -> np.ndarray:
+    """
+    Query random instances (baseline strategy).
+    
+    Args:
+        model: PyTorch model (unused, for interface consistency)
+        unlabeled_loader: DataLoader for unlabeled pool
+        n_samples: Number of samples to query
+        device: Device (unused, for interface consistency)
+        
+    Returns:
+        Random indices (into unlabeled_loader)
+    """
+    n_total = len(unlabeled_loader.dataset)
+    n_query = min(n_samples, n_total)
+    
+    query_indices = np.random.choice(n_total, size=n_query, replace=False)
+    
+    logger.info(f"Random sampling: selected {len(query_indices)} samples")
+    
+    return query_indices
+
+
+# Strategy registry
+STRATEGIES = {
+    "uncertainty": uncertainty_least_confidence,
+    "least_confidence": uncertainty_least_confidence,
+    "entropy": uncertainty_entropy,
+    "margin": margin_sampling,
+    "random": random_sampling,
+}
 
 
 def get_strategy(strategy_name: str, uncertainty_method: str = "least_confidence"):
-    """Get sampling strategy function.
+    """
+    Get sampling strategy function by name.
     
     Args:
-        strategy_name: Name of strategy (uncertainty, margin, entropy, random, kmeans)
-        uncertainty_method: For uncertainty strategy, which method to use
+        strategy_name: Name of strategy (uncertainty, margin, entropy, random)
+        uncertainty_method: For "uncertainty", which variant (least_confidence or entropy)
         
     Returns:
-        Strategy function
+        Strategy function with signature (model, loader, n_samples, device) -> indices
     """
     strategy_name = strategy_name.lower()
     
     if strategy_name == "uncertainty":
-        if uncertainty_method == "least_confidence":
-            return UncertaintySampling.least_confidence
-        elif uncertainty_method == "entropy":
-            return UncertaintySampling.entropy
-        else:
-            raise ValueError(f"Unknown uncertainty method: {uncertainty_method}")
+        if uncertainty_method == "entropy":
+            return uncertainty_entropy
+        return uncertainty_least_confidence
     
-    elif strategy_name == "margin":
-        return MarginSampling.margin
+    if strategy_name not in STRATEGIES:
+        available = list(STRATEGIES.keys())
+        raise ValueError(f"Unknown strategy: {strategy_name}. Available: {available}")
     
-    elif strategy_name == "entropy":
-        return UncertaintySampling.entropy
-    
-    elif strategy_name == "random":
-        return RandomSampling.random
-    
-    elif strategy_name == "kmeans":
-        return DiversitySampling.kmeans_sampling
-    
-    else:
-        raise ValueError(f"Unknown strategy: {strategy_name}")
+    return STRATEGIES[strategy_name]
 
 
 def list_available_strategies() -> list:
-    """List all available sampling strategies.
-    
-    Returns:
-        List of strategy names
-    """
-    return ["uncertainty", "margin", "entropy", "random", "kmeans"]
+    """List all available sampling strategies."""
+    return list(STRATEGIES.keys())

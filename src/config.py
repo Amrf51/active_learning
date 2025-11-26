@@ -1,7 +1,7 @@
 """Configuration management using dataclasses and YAML."""
 
 from dataclasses import dataclass, asdict, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from pathlib import Path
 import yaml
 
@@ -30,8 +30,8 @@ class TrainingConfig:
 class DataConfig:
     """Data loading configuration."""
     data_dir: str = "./data/raw/kaggle-vehicle/"
-    train_split: float = 0.8
-    val_split: float = 0.1
+    val_split: float = 0.15
+    test_split: float = 0.15
     augmentation: bool = True
     num_workers: int = 4
 
@@ -41,10 +41,11 @@ class ActiveLearningConfig:
     """Active Learning parameters."""
     enabled: bool = False
     num_cycles: int = 5
-    sampling_strategy: str = "uncertainty"  # uncertainty, margin, entropy, random
+    sampling_strategy: str = "uncertainty"
     initial_pool_size: int = 50
     batch_size_al: int = 20
-    uncertainty_method: str = "least_confidence"  # least_confidence, margin, entropy
+    uncertainty_method: str = "least_confidence"
+    reset_weights_each_cycle: bool = True
 
 
 @dataclass
@@ -52,7 +53,8 @@ class CheckpointConfig:
     """Checkpoint and logging configuration."""
     save_every_n_epochs: int = 5
     save_best_model: bool = True
-    log_every_n_batches: int = 100
+    save_best_per_cycle: bool = True
+    log_every_n_batches: int = 50
 
 
 @dataclass
@@ -66,21 +68,13 @@ class Config:
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
-        """Load configuration from YAML file.
-        
-        Args:
-            path: Path to YAML config file
-            
-        Returns:
-            Config object
-        """
+        """Load configuration from YAML file."""
         with open(path, "r") as f:
             data = yaml.safe_load(f)
         
         if data is None:
             data = {}
         
-        # Convert nested dicts to dataclass objects
         model_config = ModelConfig(**data.get("model", {}))
         training_config = TrainingConfig(**data.get("training", {}))
         data_config = DataConfig(**data.get("data", {}))
@@ -96,11 +90,7 @@ class Config:
         )
 
     def save_to(self, path: str) -> None:
-        """Save configuration to YAML file.
-        
-        Args:
-            path: Path where to save the YAML config
-        """
+        """Save configuration to YAML file."""
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         
         config_dict = {
