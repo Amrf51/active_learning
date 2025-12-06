@@ -1,4 +1,4 @@
-# Base Configuration - Standard Training (No Active Learning)
+# Active Learning Configuration - Uncertainty Sampling
 
 model:
   name: "resnet18"
@@ -6,12 +6,12 @@ model:
   num_classes: 4
 
 training:
-  epochs: 30
+  epochs: 20
   batch_size: 32
   learning_rate: 0.001
   optimizer: "adam"
   weight_decay: 0.0001
-  early_stopping_patience: 7
+  early_stopping_patience: 5
   seed: 42
 
 data:
@@ -22,11 +22,11 @@ data:
   num_workers: 4
 
 active_learning:
-  enabled: false
+  enabled: true
   num_cycles: 5
   sampling_strategy: "uncertainty"
   initial_pool_size: 50
-  batch_size_al: 20
+  batch_size_al: 30
   uncertainty_method: "least_confidence"
   reset_mode: "pretrained"  # Options: none, head_only, pretrained
 

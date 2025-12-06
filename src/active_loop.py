@@ -74,7 +74,7 @@ class ActiveLearningLoop:
         logger.info(f"  Cycles: {al_config.num_cycles}")
         logger.info(f"  Samples per query: {al_config.batch_size_al}")
         logger.info(f"  Strategy: {al_config.sampling_strategy}")
-        logger.info(f"  Reset weights each cycle: {al_config.reset_weights_each_cycle}")
+        logger.info(f"  Reset mode: {al_config.reset_mode}")
     
     def run_cycle(self, cycle_num: int) -> Dict:
         """
@@ -92,9 +92,9 @@ class ActiveLearningLoop:
         logger.info(f"CYCLE {cycle_num}/{al_config.num_cycles}")
         logger.info(f"{'='*60}")
         
-        # Step 1: Reset model weights (from-scratch training)
-        if al_config.reset_weights_each_cycle:
-            self.trainer.reset_model_weights()
+        # Step 1: Reset model based on configured mode
+        reset_mode = al_config.reset_mode
+        self.trainer.reset_model_weights(mode=reset_mode)
         
         # Step 2: Get current pool info
         pool_info = self.data_manager.get_pool_info()

@@ -45,7 +45,7 @@ class ActiveLearningConfig:
     initial_pool_size: int = 50
     batch_size_al: int = 20
     uncertainty_method: str = "least_confidence"
-    reset_weights_each_cycle: bool = True
+    reset_mode: str = "pretrained"  # Options: "none", "head_only", "pretrained"
 
 
 @dataclass

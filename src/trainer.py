@@ -6,6 +6,7 @@ This is a "dumb" trainer that only knows how to:
 - Validate on a given DataLoader
 - Evaluate on a test set
 - Save/load checkpoints
+- Reset model to pretrained state (for AL)
 
 It does NOT know about Active Learning, pools, or sampling strategies.
 The ActiveLearningLoop orchestrator commands the Trainer when needed.
@@ -21,6 +22,7 @@ from typing import Dict, Tuple, Optional, List
 import logging
 
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from .models import get_model
 
 logger = logging.getLogger(__name__)
 
@@ -85,21 +87,63 @@ class Trainer:
         else:
             raise ValueError(f"Unknown optimizer: {name}")
     
-    def reset_model_weights(self):
+    def reset_model_weights(self, mode: str = "pretrained"):
         """
-        Reset model to initial state (random weights for non-pretrained layers).
+        Reset model weights based on specified mode.
         
-        Called by ActiveLearningLoop at the start of each cycle for
-        from-scratch training comparison.
+        This is critical for Active Learning benchmarking.
+        
+        Args:
+            mode: Reset strategy
+                - "pretrained": Reload fresh ImageNet weights (GOLD STANDARD)
+                - "head_only": Keep backbone, reset classification head only
+                - "none": No reset, continue from current state
         """
-        logger.info("Resetting model weights...")
+        if mode == "none":
+            logger.info("Reset mode: none - keeping current weights")
+            # Just reset optimizer and tracking
+            self.optimizer = self._create_optimizer()
+            self._reset_tracking()
+            return
         
-        for module in self.model.modules():
-            if hasattr(module, 'reset_parameters'):
-                module.reset_parameters()
+        if mode == "head_only":
+            logger.info("Reset mode: head_only - resetting classification head")
+            # Reset only the final classification layer
+            if hasattr(self.model, 'fc'):
+                self.model.fc.reset_parameters()
+            elif hasattr(self.model, 'classifier'):
+                if isinstance(self.model.classifier, nn.Sequential):
+                    for layer in self.model.classifier:
+                        if hasattr(layer, 'reset_parameters'):
+                            layer.reset_parameters()
+                else:
+                    self.model.classifier.reset_parameters()
+            elif hasattr(self.model, 'head'):
+                if isinstance(self.model.head, nn.Sequential):
+                    for layer in self.model.head:
+                        if hasattr(layer, 'reset_parameters'):
+                            layer.reset_parameters()
+                else:
+                    self.model.head.reset_parameters()
+            
+            self.optimizer = self._create_optimizer()
+            self._reset_tracking()
+            return
         
-        self.optimizer = self._create_optimizer()
+        if mode == "pretrained":
+            logger.info("Reset mode: pretrained - reloading ImageNet weights")
+            # Reload entire model with fresh pretrained weights
+            # TIMM caches weights locally, so this is fast (no download)
+            self.model = get_model(self.config.model, device=self.device)
+            self.optimizer = self._create_optimizer()
+            self._reset_tracking()
+            logger.info("Model reset to pretrained state complete")
+            return
         
+        raise ValueError(f"Unknown reset mode: {mode}. Use 'none', 'head_only', or 'pretrained'")
+    
+    def _reset_tracking(self):
+        """Reset training history and tracking variables."""
         self.history = {
             "train_loss": [],
             "train_accuracy": [],
@@ -110,8 +154,6 @@ class Trainer:
         self.best_val_accuracy = 0.0
         self.best_epoch = 0
         self.patience_counter = 0
-        
-        logger.info("Model weights reset complete")
     
     def train_epoch(self, train_loader: DataLoader) -> Tuple[float, float]:
         """
