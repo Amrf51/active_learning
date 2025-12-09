@@ -1,28 +1,27 @@
 """
 Trainer - Handles model training and evaluation.
 
-This is a "dumb" trainer that only knows how to:
-- Train on a given DataLoader
-- Validate on a given DataLoader
-- Evaluate on a test set
-- Save/load checkpoints
-- Reset model to pretrained state (for AL)
+This trainer supports two modes:
+1. Batch mode: train() runs all epochs (for CLI/batch execution)
+2. Step mode: train_single_epoch() for interactive dashboard
 
-It does NOT know about Active Learning, pools, or sampling strategies.
 The ActiveLearningLoop orchestrator commands the Trainer when needed.
 """
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from pathlib import Path
 import json
-from typing import Dict, Tuple, Optional, List
+import numpy as np
+from typing import Dict, Tuple, Optional, List, Callable
 import logging
 
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from .models import get_model
+from .state import EpochMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -91,24 +90,20 @@ class Trainer:
         """
         Reset model weights based on specified mode.
         
-        This is critical for Active Learning benchmarking.
-        
         Args:
             mode: Reset strategy
-                - "pretrained": Reload fresh ImageNet weights (GOLD STANDARD)
+                - "pretrained": Reload fresh ImageNet weights
                 - "head_only": Keep backbone, reset classification head only
                 - "none": No reset, continue from current state
         """
         if mode == "none":
             logger.info("Reset mode: none - keeping current weights")
-            # Just reset optimizer and tracking
             self.optimizer = self._create_optimizer()
             self._reset_tracking()
             return
         
         if mode == "head_only":
             logger.info("Reset mode: head_only - resetting classification head")
-            # Reset only the final classification layer
             if hasattr(self.model, 'fc'):
                 self.model.fc.reset_parameters()
             elif hasattr(self.model, 'classifier'):
@@ -132,15 +127,13 @@ class Trainer:
         
         if mode == "pretrained":
             logger.info("Reset mode: pretrained - reloading ImageNet weights")
-            # Reload entire model with fresh pretrained weights
-            # TIMM caches weights locally, so this is fast (no download)
             self.model = get_model(self.config.model, device=self.device)
             self.optimizer = self._create_optimizer()
             self._reset_tracking()
             logger.info("Model reset to pretrained state complete")
             return
         
-        raise ValueError(f"Unknown reset mode: {mode}. Use 'none', 'head_only', or 'pretrained'")
+        raise ValueError(f"Unknown reset mode: {mode}")
     
     def _reset_tracking(self):
         """Reset training history and tracking variables."""
@@ -185,9 +178,6 @@ class Trainer:
             _, preds = outputs.max(1)
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
-            
-            if (batch_idx + 1) % self.config.checkpoint.log_every_n_batches == 0:
-                logger.debug(f"Batch {batch_idx + 1}/{len(train_loader)} | Loss: {loss.item():.4f}")
         
         avg_loss = total_loss / len(train_loader)
         accuracy = accuracy_score(all_labels, all_preds)
@@ -227,17 +217,80 @@ class Trainer:
         
         return avg_loss, accuracy
     
+    def train_single_epoch(
+        self,
+        train_loader: DataLoader,
+        val_loader: Optional[DataLoader],
+        epoch_num: int
+    ) -> EpochMetrics:
+        """
+        Train exactly one epoch and return metrics.
+        
+        This method is used by the interactive dashboard for step-by-step
+        training with state updates between epochs.
+        
+        Args:
+            train_loader: Training DataLoader
+            val_loader: Validation DataLoader (optional)
+            epoch_num: Current epoch number (1-indexed)
+            
+        Returns:
+            EpochMetrics with training results
+        """
+        train_loss, train_acc = self.train_epoch(train_loader)
+        
+        val_loss, val_acc = None, None
+        if val_loader is not None:
+            val_loss, val_acc = self.validate(val_loader)
+        
+        self.history["epoch"].append(epoch_num)
+        self.history["train_loss"].append(train_loss)
+        self.history["train_accuracy"].append(train_acc)
+        self.history["val_loss"].append(val_loss)
+        self.history["val_accuracy"].append(val_acc)
+        
+        if val_acc is not None:
+            if val_acc > self.best_val_accuracy:
+                self.best_val_accuracy = val_acc
+                self.best_epoch = epoch_num
+                self.patience_counter = 0
+                
+                if self.config.checkpoint.save_best_model:
+                    self._save_checkpoint(epoch_num, is_best=True)
+            else:
+                self.patience_counter += 1
+        
+        current_lr = self.optimizer.param_groups[0]['lr']
+        
+        return EpochMetrics(
+            epoch=epoch_num,
+            train_loss=train_loss,
+            train_accuracy=train_acc,
+            val_loss=val_loss,
+            val_accuracy=val_acc,
+            learning_rate=current_lr
+        )
+    
+    def should_stop_early(self) -> bool:
+        """
+        Check if early stopping criteria is met.
+        
+        Returns:
+            True if training should stop
+        """
+        return self.patience_counter >= self.config.training.early_stopping_patience
+    
     def train(
         self,
         train_loader: DataLoader,
         val_loader: Optional[DataLoader] = None
     ) -> Dict:
         """
-        Train model for configured number of epochs.
+        Train model for configured number of epochs (batch mode).
         
         Args:
             train_loader: Training DataLoader
-            val_loader: Validation DataLoader (optional, enables early stopping)
+            val_loader: Validation DataLoader (optional)
             
         Returns:
             Dict with training summary
@@ -245,50 +298,27 @@ class Trainer:
         epochs = self.config.training.epochs
         logger.info(f"Starting training for {epochs} epochs...")
         
-        for epoch in range(epochs):
-            train_loss, train_acc = self.train_epoch(train_loader)
-            
-            self.history["epoch"].append(epoch + 1)
-            self.history["train_loss"].append(train_loss)
-            self.history["train_accuracy"].append(train_acc)
+        for epoch in range(1, epochs + 1):
+            metrics = self.train_single_epoch(train_loader, val_loader, epoch)
             
             if val_loader is not None:
-                val_loss, val_acc = self.validate(val_loader)
-                self.history["val_loss"].append(val_loss)
-                self.history["val_accuracy"].append(val_acc)
-                
                 logger.info(
-                    f"Epoch {epoch + 1}/{epochs} | "
-                    f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | "
-                    f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}"
+                    f"Epoch {epoch}/{epochs} | "
+                    f"Train Loss: {metrics.train_loss:.4f}, Train Acc: {metrics.train_accuracy:.4f} | "
+                    f"Val Loss: {metrics.val_loss:.4f}, Val Acc: {metrics.val_accuracy:.4f}"
                 )
                 
-                # Early stopping check
-                if val_acc > self.best_val_accuracy:
-                    self.best_val_accuracy = val_acc
-                    self.best_epoch = epoch + 1
-                    self.patience_counter = 0
-                    
-                    if self.config.checkpoint.save_best_model:
-                        self._save_checkpoint(epoch + 1, is_best=True)
-                else:
-                    self.patience_counter += 1
-                
-                if self.patience_counter >= self.config.training.early_stopping_patience:
-                    logger.info(f"Early stopping at epoch {epoch + 1}")
+                if self.should_stop_early():
+                    logger.info(f"Early stopping at epoch {epoch}")
                     break
             else:
-                self.history["val_loss"].append(None)
-                self.history["val_accuracy"].append(None)
-                
                 logger.info(
-                    f"Epoch {epoch + 1}/{epochs} | "
-                    f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}"
+                    f"Epoch {epoch}/{epochs} | "
+                    f"Train Loss: {metrics.train_loss:.4f}, Train Acc: {metrics.train_accuracy:.4f}"
                 )
             
-            # Periodic checkpoint
-            if (epoch + 1) % self.config.checkpoint.save_every_n_epochs == 0:
-                self._save_checkpoint(epoch + 1, is_best=False)
+            if epoch % self.config.checkpoint.save_every_n_epochs == 0:
+                self._save_checkpoint(epoch, is_best=False)
         
         logger.info(
             f"Training complete | Best Val Acc: {self.best_val_accuracy:.4f} at epoch {self.best_epoch}"
@@ -311,7 +341,7 @@ class Trainer:
         
         Args:
             test_loader: Test DataLoader
-            class_names: Optional list of class names for per-class metrics
+            class_names: Optional list of class names
             
         Returns:
             Dict with evaluation metrics
@@ -361,6 +391,144 @@ class Trainer:
         
         return metrics
     
+    def get_predictions_for_indices(
+        self,
+        indices: List[int],
+        dataset: Dataset,
+        class_names: Optional[List[str]] = None
+    ) -> List[Dict]:
+        """
+        Get model predictions for specific dataset indices.
+        
+        Used for probe tracking and query visualization.
+        
+        Args:
+            indices: List of dataset indices to predict
+            dataset: Dataset to get images from
+            class_names: Optional class names for readable output
+            
+        Returns:
+            List of prediction dicts with probabilities
+        """
+        self.model.eval()
+        results = []
+        
+        with torch.no_grad():
+            for idx in indices:
+                image, label = dataset[idx]
+                
+                if image.dim() == 3:
+                    image = image.unsqueeze(0)
+                
+                image = image.to(self.device)
+                output = self.model(image)
+                probs = F.softmax(output, dim=1)[0]
+                
+                prob_list = probs.cpu().numpy().tolist()
+                predicted_idx = int(probs.argmax())
+                confidence = float(probs.max())
+                
+                result = {
+                    "index": idx,
+                    "true_label": int(label),
+                    "predicted_label": predicted_idx,
+                    "confidence": confidence,
+                    "probabilities": prob_list,
+                }
+                
+                if class_names is not None:
+                    result["true_class"] = class_names[label]
+                    result["predicted_class"] = class_names[predicted_idx]
+                    result["probabilities_dict"] = {
+                        class_names[i]: prob_list[i]
+                        for i in range(len(class_names))
+                    }
+                
+                results.append(result)
+        
+        return results
+    
+    def get_predictions_for_loader(
+        self,
+        data_loader: DataLoader,
+        class_names: Optional[List[str]] = None
+    ) -> Tuple[List[Dict], np.ndarray]:
+        """
+        Get predictions for all samples in a DataLoader.
+        
+        Used for uncertainty computation in AL strategies.
+        
+        Args:
+            data_loader: DataLoader to predict on
+            class_names: Optional class names
+            
+        Returns:
+            Tuple of (list of prediction dicts, probability matrix)
+        """
+        self.model.eval()
+        all_probs = []
+        all_labels = []
+        
+        with torch.no_grad():
+            for images, labels in data_loader:
+                images = images.to(self.device)
+                outputs = self.model(images)
+                probs = F.softmax(outputs, dim=1)
+                
+                all_probs.append(probs.cpu().numpy())
+                all_labels.extend(labels.numpy())
+        
+        prob_matrix = np.vstack(all_probs)
+        
+        results = []
+        for i in range(len(all_labels)):
+            probs = prob_matrix[i]
+            predicted_idx = int(np.argmax(probs))
+            
+            result = {
+                "index": i,
+                "true_label": int(all_labels[i]),
+                "predicted_label": predicted_idx,
+                "confidence": float(probs.max()),
+                "probabilities": probs.tolist(),
+            }
+            
+            if class_names is not None:
+                result["true_class"] = class_names[all_labels[i]]
+                result["predicted_class"] = class_names[predicted_idx]
+            
+            results.append(result)
+        
+        return results, prob_matrix
+    
+    def compute_uncertainty_scores(
+        self,
+        prob_matrix: np.ndarray,
+        method: str = "least_confidence"
+    ) -> np.ndarray:
+        """
+        Compute uncertainty scores from probability matrix.
+        
+        Args:
+            prob_matrix: (N, C) array of probabilities
+            method: Uncertainty method (least_confidence, entropy, margin)
+            
+        Returns:
+            (N,) array of uncertainty scores (higher = more uncertain)
+        """
+        if method == "least_confidence":
+            return 1.0 - prob_matrix.max(axis=1)
+        
+        elif method == "entropy":
+            return -np.sum(prob_matrix * np.log(prob_matrix + 1e-10), axis=1)
+        
+        elif method == "margin":
+            sorted_probs = np.sort(prob_matrix, axis=1)[:, ::-1]
+            return sorted_probs[:, 0] - sorted_probs[:, 1]
+        
+        else:
+            raise ValueError(f"Unknown uncertainty method: {method}")
+    
     def _save_checkpoint(self, epoch: int, is_best: bool = False):
         """Save model checkpoint."""
         checkpoint = {
@@ -377,13 +545,10 @@ class Trainer:
             path = self.checkpoint_dir / f"checkpoint_epoch_{epoch}.pth"
         
         torch.save(checkpoint, path)
-        logger.debug(f"Checkpoint saved: {path}")
     
     def save_cycle_checkpoint(self, cycle_num: int):
         """
         Save best model for a specific AL cycle.
-        
-        Called by ActiveLearningLoop after each cycle completes.
         
         Args:
             cycle_num: Current cycle number
@@ -399,7 +564,7 @@ class Trainer:
         }
         
         torch.save(checkpoint, path)
-        logger.info(f"Cycle {cycle_num} best model saved: {path}")
+        logger.info(f"Cycle {cycle_num} checkpoint saved")
     
     def load_checkpoint(self, path: Path):
         """Load model from checkpoint."""
@@ -416,12 +581,10 @@ class Trainer:
     
     def save_training_log(self):
         """Save training history to files."""
-        # JSON format
         history_path = self.exp_dir / "training_history.json"
         with open(history_path, "w") as f:
             json.dump(self.history, f, indent=2)
         
-        # Text format
         log_path = self.exp_dir / "training_log.txt"
         with open(log_path, "w") as f:
             f.write("Epoch | Train Loss | Train Acc | Val Loss | Val Acc\n")
@@ -439,9 +602,17 @@ class Trainer:
                     f"{self.history['train_accuracy'][i]:9.4f} | "
                     f"{val_loss_str:>8} | {val_acc_str:>7}\n"
                 )
-        
-        logger.info(f"Training logs saved to {self.exp_dir}")
     
     def get_history(self) -> Dict:
         """Get training history."""
         return self.history.copy()
+    
+    def get_training_summary(self) -> Dict:
+        """Get summary of current training state."""
+        return {
+            "best_val_accuracy": self.best_val_accuracy,
+            "best_epoch": self.best_epoch,
+            "epochs_trained": len(self.history["epoch"]),
+            "patience_counter": self.patience_counter,
+            "current_lr": self.optimizer.param_groups[0]['lr'],
+        }

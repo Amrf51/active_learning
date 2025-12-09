@@ -1,21 +1,34 @@
 """
 ActiveLearningLoop - Orchestrates Active Learning training cycles.
 
-This is the "boss" that manages the AL workflow:
-1. Commands Trainer to train on labeled data
-2. Commands Trainer to evaluate on test set
-3. Applies sampling strategy to query new samples
-4. Updates ALDataManager pools
-5. Tracks metrics across cycles
+This module supports two execution modes:
 
-The Trainer is "dumb" - it only trains what it's given.
-All AL logic lives here in the orchestrator.
+1. Batch Mode (CLI): run_all_cycles() executes everything automatically
+2. Interactive Mode (Dashboard): Individual methods for step-by-step control
+   - prepare_cycle()
+   - train_single_epoch()
+   - run_validation()
+   - run_evaluation()
+   - query_samples()
+   - receive_annotations()
+
+The interactive mode allows the worker process to update state after each
+step, enabling real-time visualization in the Streamlit dashboard.
 """
 
 import json
+import shutil
+import numpy as np
 from pathlib import Path
-from typing import Dict, List, Callable, Optional
+from typing import Dict, List, Callable, Optional, Tuple
+from torch.utils.data import DataLoader
 import logging
+
+from .state import (
+    EpochMetrics,
+    CycleMetrics,
+    QueriedImage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,16 +37,8 @@ class ActiveLearningLoop:
     """
     Orchestrates the Active Learning training loop.
     
-    Cycle process:
-    1. Reset model weights (from-scratch training)
-    2. Get labeled DataLoader from manager
-    3. Train model on labeled data (with validation for early stopping)
-    4. Evaluate on test set
-    5. Query uncertain samples from unlabeled pool
-    6. Update manager (move queried samples to labeled)
-    7. Save cycle checkpoint and metrics
-    
-    Repeat for N cycles.
+    Supports both batch execution (run_all_cycles) and step-by-step
+    execution for interactive dashboard use.
     """
     
     def __init__(
@@ -41,23 +46,24 @@ class ActiveLearningLoop:
         trainer,
         data_manager,
         strategy: Callable,
-        val_loader,
-        test_loader,
+        val_loader: DataLoader,
+        test_loader: DataLoader,
         exp_dir: Path,
-        config
+        config,
+        class_names: Optional[List[str]] = None
     ):
         """
         Initialize ActiveLearningLoop.
         
         Args:
-            trainer: Trainer instance (has train(), evaluate(), reset_model_weights())
-            data_manager: ALDataManager instance (manages labeled/unlabeled pools)
-            strategy: Strategy function with signature:
-                      (model, unlabeled_loader, n_samples, device) -> query_indices
-            val_loader: Fixed validation DataLoader (for early stopping during training)
-            test_loader: Fixed test DataLoader (for evaluation after each cycle)
-            exp_dir: Experiment directory for saving results
-            config: Config object with active_learning settings
+            trainer: Trainer instance
+            data_manager: ALDataManager instance
+            strategy: Strategy function (model, loader, n_samples, device) -> indices
+            val_loader: Fixed validation DataLoader
+            test_loader: Fixed test DataLoader
+            exp_dir: Experiment directory
+            config: Config object
+            class_names: List of class names for display
         """
         self.trainer = trainer
         self.data_manager = data_manager
@@ -66,8 +72,13 @@ class ActiveLearningLoop:
         self.test_loader = test_loader
         self.exp_dir = Path(exp_dir)
         self.config = config
+        self.class_names = class_names or []
         
-        self.cycle_results = []
+        self.cycle_results: List[CycleMetrics] = []
+        self.current_cycle = 0
+        self.current_train_loader: Optional[DataLoader] = None
+        
+        (self.exp_dir / "queries").mkdir(parents=True, exist_ok=True)
         
         al_config = config.active_learning
         logger.info("ActiveLearningLoop initialized:")
@@ -76,15 +87,336 @@ class ActiveLearningLoop:
         logger.info(f"  Strategy: {al_config.sampling_strategy}")
         logger.info(f"  Reset mode: {al_config.reset_mode}")
     
-    def run_cycle(self, cycle_num: int) -> Dict:
+    def prepare_cycle(self, cycle_num: int) -> Dict:
         """
-        Execute one Active Learning cycle.
+        Prepare for a new AL cycle.
+        
+        Resets model weights and prepares data loaders.
         
         Args:
-            cycle_num: Current cycle number (1-indexed)
+            cycle_num: Cycle number (1-indexed)
             
         Returns:
-            Dict with cycle metrics
+            Dict with cycle preparation info
+        """
+        self.current_cycle = cycle_num
+        
+        reset_mode = self.config.active_learning.reset_mode
+        self.trainer.reset_model_weights(mode=reset_mode)
+        
+        pool_info = self.data_manager.get_pool_info()
+        
+        self.current_train_loader = self.data_manager.get_labeled_loader(
+            batch_size=self.config.training.batch_size,
+            shuffle=True,
+            num_workers=self.config.data.num_workers
+        )
+        
+        logger.info(f"Cycle {cycle_num} prepared:")
+        logger.info(f"  Labeled: {pool_info['labeled']}")
+        logger.info(f"  Unlabeled: {pool_info['unlabeled']}")
+        logger.info(f"  Reset mode: {reset_mode}")
+        
+        return {
+            "cycle": cycle_num,
+            "labeled_count": pool_info["labeled"],
+            "unlabeled_count": pool_info["unlabeled"],
+            "reset_mode": reset_mode,
+            "train_batches": len(self.current_train_loader),
+        }
+    
+    def train_single_epoch(self, epoch_num: int) -> EpochMetrics:
+        """
+        Train one epoch within current cycle.
+        
+        Args:
+            epoch_num: Epoch number (1-indexed within cycle)
+            
+        Returns:
+            EpochMetrics for this epoch
+        """
+        if self.current_train_loader is None:
+            raise RuntimeError("Call prepare_cycle() before training")
+        
+        metrics = self.trainer.train_single_epoch(
+            self.current_train_loader,
+            self.val_loader,
+            epoch_num
+        )
+        
+        return metrics
+    
+    def should_stop_early(self) -> bool:
+        """Check if early stopping criteria is met."""
+        return self.trainer.should_stop_early()
+    
+    def run_validation(self) -> Tuple[float, float]:
+        """
+        Run validation pass.
+        
+        Returns:
+            Tuple of (val_loss, val_accuracy)
+        """
+        return self.trainer.validate(self.val_loader)
+    
+    def run_evaluation(self) -> Dict:
+        """
+        Run test set evaluation.
+        
+        Returns:
+            Dict with test metrics
+        """
+        test_metrics = self.trainer.evaluate(
+            self.test_loader,
+            class_names=self.class_names
+        )
+        
+        if self.config.checkpoint.save_best_per_cycle:
+            self.trainer.save_cycle_checkpoint(self.current_cycle)
+        
+        return test_metrics
+    
+    def query_samples(self) -> List[QueriedImage]:
+        """
+        Apply AL strategy to select samples for annotation.
+        
+        Returns:
+            List of QueriedImage objects with full info for UI
+        """
+        al_config = self.config.active_learning
+        
+        pool_info = self.data_manager.get_pool_info()
+        if pool_info["unlabeled"] == 0:
+            logger.warning("No unlabeled samples remaining")
+            return []
+        
+        n_query = min(al_config.batch_size_al, pool_info["unlabeled"])
+        
+        unlabeled_loader = self.data_manager.get_unlabeled_loader(
+            batch_size=self.config.training.batch_size,
+            shuffle=False,
+            num_workers=self.config.data.num_workers
+        )
+        
+        query_indices = self.strategy(
+            self.trainer.model,
+            unlabeled_loader,
+            n_query,
+            self.trainer.device
+        )
+        
+        queried_images = self._build_queried_images(query_indices)
+        
+        self._cache_queried_images(queried_images)
+        
+        logger.info(f"Queried {len(queried_images)} samples for annotation")
+        
+        return queried_images
+    
+    def _build_queried_images(self, query_indices: np.ndarray) -> List[QueriedImage]:
+        """
+        Build QueriedImage objects with full information.
+        
+        Args:
+            query_indices: Indices into unlabeled pool
+            
+        Returns:
+            List of QueriedImage objects
+        """
+        queried_images = []
+        unlabeled_indices = self.data_manager.get_unlabeled_indices()
+        
+        absolute_indices = [unlabeled_indices[i] for i in query_indices]
+        
+        predictions = self.trainer.get_predictions_for_indices(
+            absolute_indices,
+            self.data_manager.dataset,
+            self.class_names
+        )
+        
+        strategy_name = self.config.active_learning.sampling_strategy
+        uncertainty_method = self.config.active_learning.uncertainty_method
+        
+        for i, (rel_idx, abs_idx) in enumerate(zip(query_indices, absolute_indices)):
+            pred = predictions[i]
+            
+            img_info = self.data_manager.get_image_info(abs_idx)
+            
+            probs = pred["probabilities"]
+            uncertainty = self._compute_uncertainty(probs, strategy_name, uncertainty_method)
+            selection_reason = self._format_selection_reason(
+                probs, uncertainty, strategy_name, uncertainty_method
+            )
+            
+            prob_dict = {}
+            for j, class_name in enumerate(self.class_names):
+                prob_dict[class_name] = probs[j]
+            
+            queried_image = QueriedImage(
+                image_id=abs_idx,
+                image_path=img_info["path"],
+                display_path="",
+                ground_truth=img_info["label"],
+                ground_truth_name=self.class_names[img_info["label"]] if self.class_names else str(img_info["label"]),
+                model_probabilities=prob_dict,
+                predicted_class=pred.get("predicted_class", str(pred["predicted_label"])),
+                predicted_confidence=pred["confidence"],
+                uncertainty_score=uncertainty,
+                selection_reason=selection_reason
+            )
+            
+            queried_images.append(queried_image)
+        
+        return queried_images
+    
+    def _compute_uncertainty(
+        self,
+        probs: List[float],
+        strategy: str,
+        method: str
+    ) -> float:
+        """Compute uncertainty score for a single sample."""
+        probs = np.array(probs)
+        
+        if strategy in ["uncertainty", "least_confidence"]:
+            if method == "entropy":
+                return float(-np.sum(probs * np.log(probs + 1e-10)))
+            else:
+                return float(1.0 - probs.max())
+        
+        elif strategy == "entropy":
+            return float(-np.sum(probs * np.log(probs + 1e-10)))
+        
+        elif strategy == "margin":
+            sorted_probs = np.sort(probs)[::-1]
+            return float(sorted_probs[0] - sorted_probs[1]) if len(sorted_probs) > 1 else 0.0
+        
+        else:
+            return float(1.0 - probs.max())
+    
+    def _format_selection_reason(
+        self,
+        probs: List[float],
+        uncertainty: float,
+        strategy: str,
+        method: str
+    ) -> str:
+        """Format human-readable selection reason."""
+        probs = np.array(probs)
+        max_prob = probs.max()
+        
+        if strategy in ["uncertainty", "least_confidence"]:
+            return f"Low confidence: {max_prob:.0%}"
+        
+        elif strategy == "entropy":
+            return f"High entropy: {uncertainty:.2f}"
+        
+        elif strategy == "margin":
+            sorted_probs = np.sort(probs)[::-1]
+            margin = sorted_probs[0] - sorted_probs[1] if len(sorted_probs) > 1 else 0
+            return f"Small margin: {margin:.0%}"
+        
+        elif strategy == "random":
+            return "Random selection"
+        
+        else:
+            return f"Uncertainty: {uncertainty:.2f}"
+    
+    def _cache_queried_images(self, queried_images: List[QueriedImage]) -> None:
+        """
+        Copy queried images to experiment folder for display.
+        
+        Args:
+            queried_images: List of QueriedImage objects (modified in place)
+        """
+        cache_dir = self.exp_dir / "queries" / f"cycle_{self.current_cycle}"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        for img in queried_images:
+            src_path = Path(img.image_path)
+            if src_path.exists():
+                dst_filename = f"{img.image_id}_{src_path.name}"
+                dst_path = cache_dir / dst_filename
+                
+                try:
+                    shutil.copy(src_path, dst_path)
+                    img.display_path = str(dst_path)
+                except Exception as e:
+                    logger.warning(f"Failed to cache image {src_path}: {e}")
+                    img.display_path = img.image_path
+            else:
+                logger.warning(f"Source image not found: {src_path}")
+                img.display_path = img.image_path
+    
+    def receive_annotations(
+        self,
+        annotations: List[Dict]
+    ) -> Dict:
+        """
+        Process user annotations and update pools.
+        
+        Args:
+            annotations: List of dicts with image_id and user_label
+            
+        Returns:
+            Dict with annotation processing summary
+        """
+        result = self.data_manager.update_labeled_pool_with_annotations(annotations)
+        
+        query_file = self.exp_dir / f"cycle_{self.current_cycle}_annotations.json"
+        with open(query_file, "w") as f:
+            json.dump({
+                "cycle": self.current_cycle,
+                "annotations": annotations,
+                "summary": result
+            }, f, indent=2)
+        
+        logger.info(
+            f"Annotations processed: {result['moved_count']} samples added to labeled pool"
+        )
+        
+        return result
+    
+    def finalize_cycle(self, test_metrics: Dict) -> CycleMetrics:
+        """
+        Create and store cycle metrics after completion.
+        
+        Args:
+            test_metrics: Test evaluation metrics
+            
+        Returns:
+            CycleMetrics for this cycle
+        """
+        pool_info = self.data_manager.get_pool_info()
+        training_summary = self.trainer.get_training_summary()
+        
+        cycle_metrics = CycleMetrics(
+            cycle=self.current_cycle,
+            labeled_pool_size=pool_info["labeled"],
+            unlabeled_pool_size=pool_info["unlabeled"],
+            epochs_trained=training_summary["epochs_trained"],
+            best_val_accuracy=training_summary["best_val_accuracy"],
+            best_epoch=training_summary["best_epoch"],
+            test_accuracy=test_metrics["test_accuracy"],
+            test_f1=test_metrics["test_f1"],
+            test_precision=test_metrics["test_precision"],
+            test_recall=test_metrics["test_recall"],
+            per_class_metrics=test_metrics.get("per_class"),
+        )
+        
+        self.cycle_results.append(cycle_metrics)
+        
+        return cycle_metrics
+    
+    def run_cycle(self, cycle_num: int) -> Dict:
+        """
+        Execute one complete AL cycle (batch mode).
+        
+        Args:
+            cycle_num: Cycle number (1-indexed)
+            
+        Returns:
+            Dict with cycle results
         """
         al_config = self.config.active_learning
         
@@ -92,100 +424,56 @@ class ActiveLearningLoop:
         logger.info(f"CYCLE {cycle_num}/{al_config.num_cycles}")
         logger.info(f"{'='*60}")
         
-        # Step 1: Reset model based on configured mode
-        reset_mode = al_config.reset_mode
-        self.trainer.reset_model_weights(mode=reset_mode)
+        self.prepare_cycle(cycle_num)
         
-        # Step 2: Get current pool info
-        pool_info = self.data_manager.get_pool_info()
-        logger.info(
-            f"Pool status: Labeled={pool_info['labeled']}, "
-            f"Unlabeled={pool_info['unlabeled']}"
-        )
-        
-        # Step 3: Get labeled loader and train
-        train_loader = self.data_manager.get_labeled_loader(
-            batch_size=self.config.training.batch_size,
-            shuffle=True,
-            num_workers=self.config.data.num_workers
-        )
-        
-        logger.info(f"Training on {pool_info['labeled']} labeled samples...")
-        train_summary = self.trainer.train(train_loader, val_loader=self.val_loader)
-        
-        # Step 4: Evaluate on test set
-        logger.info("Evaluating on test set...")
-        test_metrics = self.trainer.evaluate(self.test_loader)
-        
-        # Step 5: Save cycle checkpoint
-        if self.config.checkpoint.save_best_per_cycle:
-            self.trainer.save_cycle_checkpoint(cycle_num)
-        
-        # Step 6: Query new samples (if not final cycle and unlabeled pool not empty)
-        queried_indices = []
-        if cycle_num < al_config.num_cycles and pool_info['unlabeled'] > 0:
-            logger.info(f"Querying {al_config.batch_size_al} samples...")
+        epochs = self.config.training.epochs
+        for epoch in range(1, epochs + 1):
+            metrics = self.train_single_epoch(epoch)
             
-            unlabeled_loader = self.data_manager.get_unlabeled_loader(
-                batch_size=self.config.training.batch_size,
-                shuffle=False,
-                num_workers=self.config.data.num_workers
+            logger.info(
+                f"Epoch {epoch}/{epochs} | "
+                f"Train Loss: {metrics.train_loss:.4f}, Train Acc: {metrics.train_accuracy:.4f}"
+                + (f" | Val Acc: {metrics.val_accuracy:.4f}" if metrics.val_accuracy else "")
             )
             
-            # Apply strategy
-            query_indices = self.strategy(
-                self.trainer.model,
-                unlabeled_loader,
-                al_config.batch_size_al,
-                self.trainer.device
-            )
-            
-            # Step 7: Update pools (simulated annotation)
-            absolute_indices = self.data_manager.update_labeled_pool(query_indices)
-            queried_indices = absolute_indices
-            
-            # Save queried indices for analysis
-            query_file = self.exp_dir / f"cycle_{cycle_num}_queried_indices.json"
-            with open(query_file, "w") as f:
-                json.dump(queried_indices, f)
+            if self.should_stop_early():
+                logger.info(f"Early stopping at epoch {epoch}")
+                break
         
-        elif pool_info['unlabeled'] == 0:
-            logger.info("No unlabeled samples remaining")
-        else:
-            logger.info("Final cycle - no querying")
+        test_metrics = self.run_evaluation()
         
-        # Build cycle result
-        cycle_result = {
-            "cycle": cycle_num,
-            "labeled_pool_size": pool_info['labeled'],
-            "unlabeled_pool_size": pool_info['unlabeled'],
-            "queried_count": len(queried_indices),
-            "best_val_accuracy": train_summary.get("best_val_accuracy", 0),
-            "best_epoch": train_summary.get("best_epoch", 0),
-            "epochs_trained": train_summary.get("epochs_trained", 0),
-            "test_accuracy": test_metrics["test_accuracy"],
-            "test_f1": test_metrics["test_f1"],
-            "test_precision": test_metrics["test_precision"],
-            "test_recall": test_metrics["test_recall"],
-        }
+        cycle_metrics = self.finalize_cycle(test_metrics)
         
-        self.cycle_results.append(cycle_result)
-        self._save_results()
+        queried_images = []
+        if cycle_num < al_config.num_cycles:
+            pool_info = self.data_manager.get_pool_info()
+            if pool_info["unlabeled"] > 0:
+                queried_images = self.query_samples()
+                
+                simulated_annotations = [
+                    {"image_id": img.image_id, "user_label": img.ground_truth}
+                    for img in queried_images
+                ]
+                self.receive_annotations(simulated_annotations)
         
         logger.info(
             f"Cycle {cycle_num} complete | "
-            f"Val Acc: {cycle_result['best_val_accuracy']:.4f}, "
-            f"Test Acc: {cycle_result['test_accuracy']:.4f}"
+            f"Val Acc: {cycle_metrics.best_val_accuracy:.4f}, "
+            f"Test Acc: {cycle_metrics.test_accuracy:.4f}"
         )
         
-        return cycle_result
+        return {
+            "cycle": cycle_num,
+            "metrics": cycle_metrics.model_dump(),
+            "queried_count": len(queried_images),
+        }
     
-    def run_all_cycles(self) -> List[Dict]:
+    def run_all_cycles(self) -> List[CycleMetrics]:
         """
-        Execute all Active Learning cycles.
+        Execute all AL cycles (batch mode).
         
         Returns:
-            List of cycle results
+            List of CycleMetrics for all cycles
         """
         num_cycles = self.config.active_learning.num_cycles
         
@@ -201,8 +489,8 @@ class ActiveLearningLoop:
         logger.info("="*60)
         
         self._log_summary()
+        self._save_results()
         
-        # Save final pool state
         self.data_manager.save_state(self.exp_dir / "al_pool_state.json")
         
         return self.cycle_results
@@ -216,7 +504,7 @@ class ActiveLearningLoop:
             "num_cycles": self.config.active_learning.num_cycles,
             "initial_pool_size": self.config.active_learning.initial_pool_size,
             "batch_size_al": self.config.active_learning.batch_size_al,
-            "cycles": self.cycle_results,
+            "cycles": [c.model_dump() for c in self.cycle_results],
         }
         
         with open(results_file, "w") as f:
@@ -231,29 +519,33 @@ class ActiveLearningLoop:
         
         for r in self.cycle_results:
             logger.info(
-                f"{r['cycle']:<6} {r['labeled_pool_size']:<8} "
-                f"{r['best_val_accuracy']:<10.4f} {r['test_accuracy']:<10.4f} "
-                f"{r['test_f1']:<10.4f}"
+                f"{r.cycle:<6} {r.labeled_pool_size:<8} "
+                f"{r.best_val_accuracy:<10.4f} {r.test_accuracy:<10.4f} "
+                f"{r.test_f1:<10.4f}"
             )
         
         logger.info("-" * 70)
         
-        # Best cycle
-        best = max(self.cycle_results, key=lambda x: x["test_accuracy"])
-        logger.info(f"Best test accuracy: {best['test_accuracy']:.4f} at cycle {best['cycle']}")
+        best = max(self.cycle_results, key=lambda x: x.test_accuracy)
+        logger.info(f"Best test accuracy: {best.test_accuracy:.4f} at cycle {best.cycle}")
         
-        # Improvement from first to last
-        first_acc = self.cycle_results[0]["test_accuracy"]
-        last_acc = self.cycle_results[-1]["test_accuracy"]
-        improvement = last_acc - first_acc
-        logger.info(f"Improvement: {improvement:+.4f} ({100*improvement/first_acc:+.1f}%)")
+        if len(self.cycle_results) > 1:
+            first_acc = self.cycle_results[0].test_accuracy
+            last_acc = self.cycle_results[-1].test_accuracy
+            improvement = last_acc - first_acc
+            pct = 100 * improvement / first_acc if first_acc > 0 else 0
+            logger.info(f"Improvement: {improvement:+.4f} ({pct:+.1f}%)")
     
-    def get_results(self) -> List[Dict]:
+    def get_results(self) -> List[CycleMetrics]:
         """Get all cycle results."""
         return self.cycle_results.copy()
     
-    def get_best_cycle(self) -> Optional[Dict]:
+    def get_best_cycle(self) -> Optional[CycleMetrics]:
         """Get cycle with best test accuracy."""
         if not self.cycle_results:
             return None
-        return max(self.cycle_results, key=lambda x: x["test_accuracy"])
+        return max(self.cycle_results, key=lambda x: x.test_accuracy)
+    
+    def get_current_pool_info(self) -> Dict:
+        """Get current pool statistics."""
+        return self.data_manager.get_pool_info()

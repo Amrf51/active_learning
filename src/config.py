@@ -45,7 +45,7 @@ class ActiveLearningConfig:
     initial_pool_size: int = 50
     batch_size_al: int = 20
     uncertainty_method: str = "least_confidence"
-    reset_mode: str = "pretrained"  # Options: "none", "head_only", "pretrained"
+    reset_mode: str = "pretrained"
 
 
 @dataclass
@@ -58,6 +58,16 @@ class CheckpointConfig:
 
 
 @dataclass
+class DashboardConfig:
+    """Dashboard and worker process configuration."""
+    heartbeat_interval: int = 5
+    heartbeat_timeout: int = 30
+    auto_refresh_interval: int = 3000
+    num_probe_images_per_class: int = 2
+    experiments_base_dir: str = "./experiments"
+
+
+@dataclass
 class Config:
     """Master configuration object."""
     model: ModelConfig = field(default_factory=ModelConfig)
@@ -65,6 +75,7 @@ class Config:
     data: DataConfig = field(default_factory=DataConfig)
     active_learning: ActiveLearningConfig = field(default_factory=ActiveLearningConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
+    dashboard: DashboardConfig = field(default_factory=DashboardConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
@@ -80,6 +91,7 @@ class Config:
         data_config = DataConfig(**data.get("data", {}))
         al_config = ActiveLearningConfig(**data.get("active_learning", {}))
         checkpoint_config = CheckpointConfig(**data.get("checkpoint", {}))
+        dashboard_config = DashboardConfig(**data.get("dashboard", {}))
         
         return cls(
             model=model_config,
@@ -87,6 +99,7 @@ class Config:
             data=data_config,
             active_learning=al_config,
             checkpoint=checkpoint_config,
+            dashboard=dashboard_config,
         )
 
     def save_to(self, path: str) -> None:
@@ -99,6 +112,7 @@ class Config:
             "data": asdict(self.data),
             "active_learning": asdict(self.active_learning),
             "checkpoint": asdict(self.checkpoint),
+            "dashboard": asdict(self.dashboard),
         }
         
         with open(path, "w") as f:
@@ -112,4 +126,5 @@ class Config:
             "data": asdict(self.data),
             "active_learning": asdict(self.active_learning),
             "checkpoint": asdict(self.checkpoint),
+            "dashboard": asdict(self.dashboard),
         }
