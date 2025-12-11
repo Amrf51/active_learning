@@ -96,7 +96,7 @@ class ProbeImage(BaseModel):
     true_class: str
     true_class_idx: int
     probe_type: str
-    predictions_by_cycle: Dict[int, Dict[str, float]] = Field(default_factory=dict)
+    predictions_by_cycle: Dict[int, Dict[str, Any]] = Field(default_factory=dict)
 
 
 class ExperimentConfig(BaseModel):
