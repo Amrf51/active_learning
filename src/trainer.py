@@ -19,7 +19,7 @@ import numpy as np
 from typing import Dict, Tuple, Optional, List, Callable
 import logging
 
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
 from .models import get_model
 from .state import EpochMetrics
 
@@ -334,7 +334,8 @@ class Trainer:
     def evaluate(
         self,
         test_loader: DataLoader,
-        class_names: Optional[List[str]] = None
+        class_names: Optional[List[str]] = None,
+        save_cm_path: Optional[Path] = None
     ) -> Dict:
         """
         Evaluate model on test set.
@@ -342,6 +343,7 @@ class Trainer:
         Args:
             test_loader: Test DataLoader
             class_names: Optional list of class names
+            save_cm_path: Optional path to save confusion matrix as .npy file
             
         Returns:
             Dict with evaluation metrics
@@ -362,6 +364,15 @@ class Trainer:
         precision, recall, f1, _ = precision_recall_fscore_support(
             all_labels, all_preds, average="weighted", zero_division=0
         )
+        
+        # Compute and optionally save confusion matrix
+        if save_cm_path is not None:
+            cm = confusion_matrix(all_labels, all_preds)
+            # Ensure parent directory exists
+            save_cm_path.parent.mkdir(parents=True, exist_ok=True)
+            # Save as numpy array (not in JSON - too large)
+            np.save(save_cm_path, cm)
+            logger.info(f"Confusion matrix saved to {save_cm_path}")
         
         metrics = {
             "test_accuracy": float(accuracy),

@@ -38,6 +38,14 @@ class ExperimentPhase(str, Enum):
     ABORT = "ABORT"
 
 
+class Command(str, Enum):
+    """Commands for dashboard-worker communication."""
+    START_CYCLE = "START_CYCLE"
+    PAUSE = "PAUSE"
+    STOP = "STOP"
+    CONTINUE = "CONTINUE"
+
+
 class EpochMetrics(BaseModel):
     """Metrics for a single training epoch."""
     epoch: int
@@ -138,6 +146,7 @@ class ExperimentState(BaseModel):
     created_at: datetime
     
     phase: ExperimentPhase = ExperimentPhase.IDLE
+    command: Optional[Command] = None
     worker_pid: Optional[int] = None
     last_heartbeat: Optional[datetime] = None
     error_message: Optional[str] = None
@@ -480,6 +489,31 @@ class StateManager:
         
         age = datetime.now() - state.last_heartbeat
         return age.total_seconds() < timeout_seconds
+    
+    def set_command(self, command: Command) -> None:
+        """
+        Set a command for the worker to execute.
+        
+        Args:
+            command: Command to set
+        """
+        self.update_state(command=command)
+        logger.info(f"Command set: {command}")
+    
+    def clear_command(self) -> None:
+        """Clear the current command."""
+        self.update_state(command=None)
+        logger.info("Command cleared")
+    
+    def update_probe_images(self, probe_images: List[ProbeImage]) -> None:
+        """
+        Update probe images in state.
+        
+        Args:
+            probe_images: List of ProbeImage objects
+        """
+        self.update_state(probe_images=probe_images)
+        logger.info(f"Updated {len(probe_images)} probe images")
 
 
 class ExperimentManager:

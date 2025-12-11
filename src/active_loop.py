@@ -28,6 +28,7 @@ from .state import (
     EpochMetrics,
     CycleMetrics,
     QueriedImage,
+    ProbeImage,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,7 @@ class ActiveLearningLoop:
         self.cycle_results: List[CycleMetrics] = []
         self.current_cycle = 0
         self.current_train_loader: Optional[DataLoader] = None
+        self.probe_images: List[ProbeImage] = []
         
         (self.exp_dir / "queries").mkdir(parents=True, exist_ok=True)
         
@@ -86,6 +88,146 @@ class ActiveLearningLoop:
         logger.info(f"  Samples per query: {al_config.batch_size_al}")
         logger.info(f"  Strategy: {al_config.sampling_strategy}")
         logger.info(f"  Reset mode: {al_config.reset_mode}")
+    
+    def _initialize_probe_images(self, n_probes: int = 12) -> List[ProbeImage]:
+        """
+        Initialize probe images using stratified sampling from validation set.
+        
+        Args:
+            n_probes: Number of probe images to select (10-15 recommended)
+            
+        Returns:
+            List of ProbeImage objects
+        """
+        from sklearn.model_selection import train_test_split
+        import random
+        
+        # Get validation dataset indices and labels
+        val_indices = []
+        val_labels = []
+        
+        # Extract samples from validation loader
+        for batch_idx, (images, labels) in enumerate(self.val_loader):
+            batch_start = batch_idx * self.val_loader.batch_size
+            for i, label in enumerate(labels):
+                val_indices.append(batch_start + i)
+                val_labels.append(label.item())
+        
+        # Convert to numpy for stratified sampling
+        val_indices = np.array(val_indices)
+        val_labels = np.array(val_labels)
+        
+        # Get unique classes and their counts
+        unique_classes, class_counts = np.unique(val_labels, return_counts=True)
+        
+        # Calculate samples per class (at least 1 per class, distribute remaining)
+        min_per_class = 1
+        remaining_probes = n_probes - len(unique_classes)
+        
+        if remaining_probes < 0:
+            # If we have more classes than probes, just take 1 per class up to n_probes
+            samples_per_class = {cls: 1 for cls in unique_classes[:n_probes]}
+        else:
+            # Distribute remaining probes proportionally to class sizes
+            samples_per_class = {cls: min_per_class for cls in unique_classes}
+            
+            # Distribute remaining samples proportionally
+            total_samples = len(val_labels)
+            for cls, count in zip(unique_classes, class_counts):
+                if remaining_probes > 0:
+                    additional = int(remaining_probes * (count / total_samples))
+                    samples_per_class[cls] += additional
+                    remaining_probes -= additional
+        
+        # Select probe images
+        probe_images = []
+        probe_id = 0
+        
+        for cls in unique_classes:
+            if probe_id >= n_probes:
+                break
+                
+            # Get indices for this class
+            class_indices = val_indices[val_labels == cls]
+            n_samples = min(samples_per_class[cls], len(class_indices))
+            
+            # Randomly select samples from this class
+            selected_indices = np.random.choice(class_indices, size=n_samples, replace=False)
+            
+            for idx in selected_indices:
+                if probe_id >= n_probes:
+                    break
+                
+                # Get image info from dataset
+                try:
+                    # Access the underlying dataset from the validation loader
+                    dataset = self.val_loader.dataset
+                    image, label = dataset[idx]
+                    
+                    # Create probe image
+                    probe_image = ProbeImage(
+                        image_id=int(idx),
+                        image_path=f"val_sample_{idx}",  # Placeholder path
+                        display_path=f"val_sample_{idx}",  # Will be updated when cached
+                        true_class=self.class_names[cls] if self.class_names else str(cls),
+                        true_class_idx=int(cls),
+                        probe_type="validation_stratified",
+                        predictions_by_cycle={}
+                    )
+                    
+                    probe_images.append(probe_image)
+                    probe_id += 1
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to create probe image for index {idx}: {e}")
+                    continue
+        
+        logger.info(f"Initialized {len(probe_images)} probe images across {len(unique_classes)} classes")
+        
+        # Store probe images
+        self.probe_images = probe_images
+        
+        return probe_images
+    
+    def _update_probe_predictions(self, cycle_num: int) -> None:
+        """
+        Update probe image predictions for the current cycle.
+        
+        Args:
+            cycle_num: Current cycle number
+        """
+        if not self.probe_images:
+            logger.warning("No probe images to update")
+            return
+        
+        # Get predictions for all probe images
+        probe_indices = [probe.image_id for probe in self.probe_images]
+        
+        try:
+            # Get dataset from validation loader
+            dataset = self.val_loader.dataset
+            
+            # Get predictions from trainer
+            predictions = self.trainer.get_predictions_for_indices(
+                probe_indices, dataset, self.class_names
+            )
+            
+            # Update each probe image with new predictions
+            for i, probe in enumerate(self.probe_images):
+                if i < len(predictions):
+                    pred = predictions[i]
+                    
+                    # Store prediction for this cycle
+                    probe.predictions_by_cycle[cycle_num] = {
+                        "predicted_class": pred.get("predicted_class", str(pred["predicted_label"])),
+                        "confidence": pred["confidence"],
+                        "probabilities": pred["probabilities"]
+                    }
+            
+            logger.info(f"Updated probe predictions for cycle {cycle_num}")
+            
+        except Exception as e:
+            logger.error(f"Failed to update probe predictions: {e}")
     
     def prepare_cycle(self, cycle_num: int) -> Dict:
         """
@@ -100,6 +242,10 @@ class ActiveLearningLoop:
             Dict with cycle preparation info
         """
         self.current_cycle = cycle_num
+        
+        # Initialize probe images on first cycle
+        if cycle_num == 1 and not self.probe_images:
+            self.probe_images = self._initialize_probe_images()
         
         reset_mode = self.config.active_learning.reset_mode
         self.trainer.reset_model_weights(mode=reset_mode)
@@ -405,6 +551,9 @@ class ActiveLearningLoop:
         )
         
         self.cycle_results.append(cycle_metrics)
+        
+        # Update probe image predictions for this cycle
+        self._update_probe_predictions(self.current_cycle)
         
         return cycle_metrics
     
