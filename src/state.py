@@ -98,7 +98,6 @@ class ProbeImage(BaseModel):
     probe_type: str
     predictions_by_cycle: Dict[int, Dict[str, Any]] = Field(default_factory=dict)
 
-
 class ExperimentConfig(BaseModel):
     """Experiment configuration snapshot (immutable after start)."""
     model_name: str
