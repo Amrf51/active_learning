@@ -27,6 +27,7 @@ class ExperimentPhase(str, Enum):
     """Possible phases of an experiment lifecycle."""
     IDLE = "IDLE"
     INITIALIZING = "INITIALIZING"
+    PREPARING = "PREPARING"
     TRAINING = "TRAINING"
     VALIDATING = "VALIDATING"
     EVALUATING = "EVALUATING"
@@ -664,6 +665,7 @@ class ExperimentManager:
             
             active_phases = {
                 ExperimentPhase.INITIALIZING,
+                ExperimentPhase.PREPARING,
                 ExperimentPhase.TRAINING,
                 ExperimentPhase.VALIDATING,
                 ExperimentPhase.EVALUATING,
