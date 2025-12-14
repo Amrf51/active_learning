@@ -36,35 +36,72 @@ st.set_page_config(
 # Custom CSS
 st.markdown("""
     <style>
-    .config-section {
+    /* Main content area background */
+    .main .block-container {
         background-color: #f8f9fa;
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+    
+    .stApp {
+        background-color: #f8f9fa;
+    }
+    
+    .config-section {
+        background-color: #ffffff;
         padding: 1.5rem;
         border-radius: 10px;
         margin: 1rem 0;
         border-left: 4px solid #007bff;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
     
     .dataset-info {
         background-color: #e8f5e8;
-        padding: 1rem;
-        border-radius: 8px;
+        padding: 1.5rem;
+        border-radius: 10px;
         margin: 1rem 0;
+        border: 1px solid #c3e6cb;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     
     .warning-box {
         background-color: #fff3cd;
         border: 1px solid #ffeaa7;
-        padding: 1rem;
-        border-radius: 8px;
+        padding: 1.5rem;
+        border-radius: 10px;
         margin: 1rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     
     .success-box {
         background-color: #d4edda;
         border: 1px solid #c3e6cb;
-        padding: 1rem;
-        border-radius: 8px;
+        padding: 1.5rem;
+        border-radius: 10px;
         margin: 1rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    
+    /* Metrics styling */
+    [data-testid="metric-container"] {
+        background-color: #ffffff;
+        border-radius: 8px;
+        padding: 1rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        border: 1px solid #e9ecef;
+    }
+    
+    /* Form elements styling */
+    .stSelectbox > div > div {
+        background-color: #ffffff;
+        border-radius: 6px;
+    }
+    
+    .stSlider > div > div {
+        background-color: #ffffff;
+        border-radius: 6px;
+        padding: 0.5rem;
     }
     </style>
 """, unsafe_allow_html=True)

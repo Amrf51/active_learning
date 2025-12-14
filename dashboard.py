@@ -24,6 +24,7 @@ src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
 from state import ExperimentManager, StateManager
+from theme_options import get_theme_css, get_available_themes
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,56 +38,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
-st.markdown("""
-    <style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1.5rem;
-        border-radius: 10px;
-        margin: 1rem 0;
-        border-left: 4px solid #1f77b4;
-    }
-    
-    .status-running {
-        color: #28a745;
-        font-weight: bold;
-    }
-    
-    .status-idle {
-        color: #6c757d;
-        font-weight: bold;
-    }
-    
-    .status-error {
-        color: #dc3545;
-        font-weight: bold;
-    }
-    
-    .experiment-card {
-        background-color: #ffffff;
-        padding: 1rem;
-        border-radius: 8px;
-        border: 1px solid #dee2e6;
-        margin: 0.5rem 0;
-    }
-    
-    .nav-info {
-        background-color: #e3f2fd;
-        padding: 1rem;
-        border-radius: 8px;
-        margin-bottom: 1rem;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# Apply theme CSS
+st.markdown(get_theme_css(st.session_state.theme), unsafe_allow_html=True)
 
 
 def initialize_session_state():
@@ -100,6 +53,34 @@ def initialize_session_state():
     
     if "state_manager" not in st.session_state:
         st.session_state.state_manager = None
+    
+    if "theme" not in st.session_state:
+        st.session_state.theme = "light_gray"
+
+
+def display_theme_selector():
+    """Display theme selection in sidebar."""
+    st.sidebar.header("🎨 Theme")
+    
+    themes = get_available_themes()
+    theme_names = [name for key, name in themes]
+    theme_keys = [key for key, name in themes]
+    
+    current_index = theme_keys.index(st.session_state.theme) if st.session_state.theme in theme_keys else 0
+    
+    selected_theme_name = st.sidebar.selectbox(
+        "Choose Theme",
+        theme_names,
+        index=current_index,
+        help="Change the dashboard color scheme"
+    )
+    
+    # Find the key for the selected theme
+    selected_theme_key = theme_keys[theme_names.index(selected_theme_name)]
+    
+    if selected_theme_key != st.session_state.theme:
+        st.session_state.theme = selected_theme_key
+        st.rerun()
 
 
 def display_experiment_selector():
@@ -218,7 +199,8 @@ def main():
     # Display navigation info
     display_navigation_info()
     
-    # Sidebar experiment selection
+    # Sidebar controls
+    display_theme_selector()
     selected_exp = display_experiment_selector()
     display_experiment_status()
     
@@ -260,8 +242,8 @@ def main():
     experiments = st.session_state.experiment_manager.list_experiments()
     
     if experiments:
-        # Sort by creation date (most recent first)
-        experiments.sort(key=lambda x: x.get("created", ""), reverse=True)
+        # Sort by creation date (most recent first) - handle None values
+        experiments.sort(key=lambda x: x.get("created") or "1900-01-01", reverse=True)
         
         for exp in experiments[:5]:  # Show last 5 experiments
             with st.expander(f"🔬 {exp['experiment_id']}", expanded=False):
