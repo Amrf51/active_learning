@@ -36,15 +36,15 @@ st.set_page_config(
 # Custom CSS
 st.markdown("""
     <style>
-    /* Main content area background */
+    /* 🎨 MAIN BACKGROUND COLOR - Change this to modify the background */
     .main .block-container {
-        background-color: #f8f9fa;
+        background-color: #f0f8ff;  /* 👈 CHANGE THIS COLOR */
         padding-top: 2rem;
         padding-bottom: 2rem;
     }
     
     .stApp {
-        background-color: #f8f9fa;
+        background-color: #f0f8ff;  /* 👈 CHANGE THIS COLOR TOO */
     }
     
     .config-section {
