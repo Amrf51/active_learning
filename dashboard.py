@@ -24,7 +24,6 @@ src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
 from state import ExperimentManager, StateManager
-from theme_options import get_theme_css, get_available_themes
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -38,8 +37,79 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Apply theme CSS
-st.markdown(get_theme_css(st.session_state.theme), unsafe_allow_html=True)
+# Custom CSS for better styling
+st.markdown("""
+    <style>
+    /* 🎨 MAIN BACKGROUND COLOR - Change this to modify the background */
+    .main .block-container {
+        background-color: #f0f8ff;  /* 👈 CHANGE THIS COLOR */
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+    
+    .stApp {
+        background-color: #f0f8ff;  /* 👈 CHANGE THIS COLOR TOO */
+    }
+    
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    
+    .metric-card {
+        background-color: #ffffff;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+        border-left: 4px solid #1f77b4;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .status-running {
+        color: #28a745;
+        font-weight: bold;
+    }
+    
+    .status-idle {
+        color: #6c757d;
+        font-weight: bold;
+    }
+    
+    .status-error {
+        color: #dc3545;
+        font-weight: bold;
+    }
+    
+    .experiment-card {
+        background-color: #ffffff;
+        padding: 1rem;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        margin: 0.5rem 0;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .nav-info {
+        background-color: #ffffff;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        border: 1px solid #d1ecf1;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    [data-testid="metric-container"] {
+        background-color: #ffffff;
+        border-radius: 8px;
+        padding: 1rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        border: 1px solid #e9ecef;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 
 def initialize_session_state():
@@ -54,33 +124,7 @@ def initialize_session_state():
     if "state_manager" not in st.session_state:
         st.session_state.state_manager = None
     
-    if "theme" not in st.session_state:
-        st.session_state.theme = "light_gray"
 
-
-def display_theme_selector():
-    """Display theme selection in sidebar."""
-    st.sidebar.header("🎨 Theme")
-    
-    themes = get_available_themes()
-    theme_names = [name for key, name in themes]
-    theme_keys = [key for key, name in themes]
-    
-    current_index = theme_keys.index(st.session_state.theme) if st.session_state.theme in theme_keys else 0
-    
-    selected_theme_name = st.sidebar.selectbox(
-        "Choose Theme",
-        theme_names,
-        index=current_index,
-        help="Change the dashboard color scheme"
-    )
-    
-    # Find the key for the selected theme
-    selected_theme_key = theme_keys[theme_names.index(selected_theme_name)]
-    
-    if selected_theme_key != st.session_state.theme:
-        st.session_state.theme = selected_theme_key
-        st.rerun()
 
 
 def display_experiment_selector():
@@ -199,8 +243,7 @@ def main():
     # Display navigation info
     display_navigation_info()
     
-    # Sidebar controls
-    display_theme_selector()
+    # Sidebar experiment selection
     selected_exp = display_experiment_selector()
     display_experiment_status()
     
