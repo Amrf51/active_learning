@@ -1,19 +1,35 @@
 """
-ActiveLearningLoop - Orchestrates the Active Learning training cycles.
+ActiveLearningLoop - Orchestrates Active Learning training cycles.
 
-Responsibilities:
-- Manage AL cycle execution
-- Train model on labeled data each cycle
-- Query samples from unlabeled pool
-- Update data manager with new labels
-- Track metrics and results
-- Save cycle data for frontend visualization
+This module supports two execution modes:
+
+1. Batch Mode (CLI): run_all_cycles() executes everything automatically
+2. Interactive Mode (Dashboard): Individual methods for step-by-step control
+   - prepare_cycle()
+   - train_single_epoch()
+   - run_validation()
+   - run_evaluation()
+   - query_samples()
+   - receive_annotations()
+
+The interactive mode allows the worker process to update state after each
+step, enabling real-time visualization in the Streamlit dashboard.
 """
 
 import json
+import shutil
+import numpy as np
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Callable, Optional, Tuple
+from torch.utils.data import DataLoader
 import logging
+
+from .state import (
+    EpochMetrics,
+    CycleMetrics,
+    QueriedImage,
+    ProbeImage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,233 +38,663 @@ class ActiveLearningLoop:
     """
     Orchestrates the Active Learning training loop.
     
-    Process for each cycle:
-    1. Get labeled data from manager
-    2. Train model on labeled data
-    3. Evaluate on test set
-    4. Query uncertain samples from unlabeled pool using strategy
-    5. Update data manager (move queried samples to labeled)
-    6. Log metrics and results
-    
-    Repeat for N cycles
+    Supports both batch execution (run_all_cycles) and step-by-step
+    execution for interactive dashboard use.
     """
     
-    def __init__(self,
-                 trainer,
-                 data_manager,
-                 strategy,
-                 test_loader,
-                 exp_dir: Path,
-                 config):
+    def __init__(
+        self,
+        trainer,
+        data_manager,
+        strategy: Callable,
+        val_loader: DataLoader,
+        test_loader: DataLoader,
+        exp_dir: Path,
+        config,
+        class_names: Optional[List[str]] = None
+    ):
         """
         Initialize ActiveLearningLoop.
         
         Args:
-            trainer: Trainer instance (has train() and evaluate() methods)
-            data_manager: ALDataManager instance (manages labeled/unlabeled pools)
-            strategy: Strategy function for querying samples
-                     Signature: strategy(model, unlabeled_loader, n_samples, device) -> query_indices
-            test_loader: Fixed test set DataLoader (never changes across cycles)
-            exp_dir: Experiment directory for saving results
-            config: Configuration object with active_learning settings
-                    Should have: num_cycles, batch_size_al, etc.
+            trainer: Trainer instance
+            data_manager: ALDataManager instance
+            strategy: Strategy function (model, loader, n_samples, device) -> indices
+            val_loader: Fixed validation DataLoader
+            test_loader: Fixed test DataLoader
+            exp_dir: Experiment directory
+            config: Config object
+            class_names: List of class names for display
         """
         self.trainer = trainer
         self.data_manager = data_manager
         self.strategy = strategy
+        self.val_loader = val_loader
         self.test_loader = test_loader
         self.exp_dir = Path(exp_dir)
         self.config = config
+        self.class_names = class_names or []
         
-        # Track results across cycles
-        self.cycle_results = []
+        self.cycle_results: List[CycleMetrics] = []
+        self.current_cycle = 0
+        self.current_train_loader: Optional[DataLoader] = None
+        self.probe_images: List[ProbeImage] = []
         
-        logger.info("ActiveLearningLoop initialized")
-        logger.info(f"  Max cycles: {config.active_learning.num_cycles}")
-        logger.info(f"  Batch size for querying: {config.active_learning.batch_size_al}")
-        logger.info(f"  Strategy: {config.active_learning.sampling_strategy}")
+        (self.exp_dir / "queries").mkdir(parents=True, exist_ok=True)
+        
+        al_config = config.active_learning
+        logger.info("ActiveLearningLoop initialized:")
+        logger.info(f"  Cycles: {al_config.num_cycles}")
+        logger.info(f"  Samples per query: {al_config.batch_size_al}")
+        logger.info(f"  Strategy: {al_config.sampling_strategy}")
+        logger.info(f"  Reset mode: {al_config.reset_mode}")
     
-    def run_cycle(self, cycle_num: int):
+    def _initialize_probe_images(self, n_probes: int = 12) -> List[ProbeImage]:
         """
-        Execute one Active Learning cycle.
-        
-        Steps:
-        1. Train on current labeled set
-        2. Evaluate on test set
-        3. Query new samples from unlabeled pool
-        4. Update data manager
+        Initialize probe images using stratified sampling from validation set.
         
         Args:
-            cycle_num: Current cycle number (1-indexed)
+            n_probes: Number of probe images to select (10-15 recommended)
+            
+        Returns:
+            List of ProbeImage objects
         """
-        logger.info(f"\n{'='*70}")
-        logger.info(f"AL CYCLE {cycle_num}/{self.config.active_learning.num_cycles}")
-        logger.info(f"{'='*70}")
+        from sklearn.model_selection import train_test_split
+        import random
         
-        # Step 1: Get labeled data and train
-        logger.info("Step 1: Training on labeled data...")
+        # Get validation dataset indices and labels
+        val_indices = []
+        val_labels = []
         
-        train_loader = self.data_manager.get_labeled_loader(
-            batch_size=self.config.training.batch_size,
-            shuffle=True,
-            num_workers=4
-        )
+        # Extract samples from validation loader
+        for batch_idx, (images, labels) in enumerate(self.val_loader):
+            batch_start = batch_idx * self.val_loader.batch_size
+            for i, label in enumerate(labels):
+                val_indices.append(batch_start + i)
+                val_labels.append(label.item())
+        
+        # Convert to numpy for stratified sampling
+        val_indices = np.array(val_indices)
+        val_labels = np.array(val_labels)
+        
+        # Get unique classes and their counts
+        unique_classes, class_counts = np.unique(val_labels, return_counts=True)
+        
+        # Calculate samples per class (at least 1 per class, distribute remaining)
+        min_per_class = 1
+        remaining_probes = n_probes - len(unique_classes)
+        
+        if remaining_probes < 0:
+            # If we have more classes than probes, just take 1 per class up to n_probes
+            samples_per_class = {cls: 1 for cls in unique_classes[:n_probes]}
+        else:
+            # Distribute remaining probes proportionally to class sizes
+            samples_per_class = {cls: min_per_class for cls in unique_classes}
+            
+            # Distribute remaining samples proportionally
+            total_samples = len(val_labels)
+            for cls, count in zip(unique_classes, class_counts):
+                if remaining_probes > 0:
+                    additional = int(remaining_probes * (count / total_samples))
+                    samples_per_class[cls] += additional
+                    remaining_probes -= additional
+        
+        # Select probe images
+        probe_images = []
+        probe_id = 0
+        
+        for cls in unique_classes:
+            if probe_id >= n_probes:
+                break
+                
+            # Get indices for this class
+            class_indices = val_indices[val_labels == cls]
+            n_samples = min(samples_per_class[cls], len(class_indices))
+            
+            # Randomly select samples from this class
+            selected_indices = np.random.choice(class_indices, size=n_samples, replace=False)
+            
+            for idx in selected_indices:
+                if probe_id >= n_probes:
+                    break
+                
+                # Get image info from dataset
+                try:
+                    # Access the underlying dataset from the validation loader
+                    dataset = self.val_loader.dataset
+                    image, label = dataset[idx]
+                    
+                    # Create probe image
+                    probe_image = ProbeImage(
+                        image_id=int(idx),
+                        image_path=f"val_sample_{idx}",  # Placeholder path
+                        display_path=f"val_sample_{idx}",  # Will be updated when cached
+                        true_class=self.class_names[cls] if self.class_names else str(cls),
+                        true_class_idx=int(cls),
+                        probe_type="validation_stratified",
+                        predictions_by_cycle={}
+                    )
+                    
+                    probe_images.append(probe_image)
+                    probe_id += 1
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to create probe image for index {idx}: {e}")
+                    continue
+        
+        logger.info(f"Initialized {len(probe_images)} probe images across {len(unique_classes)} classes")
+        
+        # Store probe images
+        self.probe_images = probe_images
+        
+        return probe_images
+    
+    def _update_probe_predictions(self, cycle_num: int) -> None:
+        """
+        Update probe image predictions for the current cycle.
+        
+        Args:
+            cycle_num: Current cycle number
+        """
+        if not self.probe_images:
+            logger.warning("No probe images to update")
+            return
+        
+        # Get predictions for all probe images
+        probe_indices = [probe.image_id for probe in self.probe_images]
+        
+        try:
+            # Get dataset from validation loader
+            dataset = self.val_loader.dataset
+            
+            # Get predictions from trainer
+            predictions = self.trainer.get_predictions_for_indices(
+                probe_indices, dataset, self.class_names
+            )
+            
+            # Update each probe image with new predictions
+            for i, probe in enumerate(self.probe_images):
+                if i < len(predictions):
+                    pred = predictions[i]
+                    
+                    # Store prediction for this cycle
+                    probe.predictions_by_cycle[cycle_num] = {
+                        "predicted_class": pred.get("predicted_class", str(pred["predicted_label"])),
+                        "confidence": pred["confidence"],
+                        "probabilities": pred["probabilities"]
+                    }
+            
+            logger.info(f"Updated probe predictions for cycle {cycle_num}")
+            
+        except Exception as e:
+            logger.error(f"Failed to update probe predictions: {e}")
+    
+    def prepare_cycle(self, cycle_num: int) -> Dict:
+        """
+        Prepare for a new AL cycle.
+        
+        Resets model weights and prepares data loaders.
+        
+        Args:
+            cycle_num: Cycle number (1-indexed)
+            
+        Returns:
+            Dict with cycle preparation info
+        """
+        self.current_cycle = cycle_num
+        
+        # Initialize probe images on first cycle
+        if cycle_num == 1 and not self.probe_images:
+            self.probe_images = self._initialize_probe_images()
+        
+        reset_mode = self.config.active_learning.reset_mode
+        self.trainer.reset_model_weights(mode=reset_mode)
         
         pool_info = self.data_manager.get_pool_info()
-        logger.info(f"  Pool sizes - Labeled: {pool_info['labeled']}, "
-                   f"Unlabeled: {pool_info['unlabeled']}")
-        logger.info(f"  Training batches: {len(train_loader)}")
         
-        # Train (for AL, we typically don't use validation)
-        self.trainer.train(train_loader, val_loader=None)
+        self.current_train_loader = self.data_manager.get_labeled_loader(
+            batch_size=self.config.training.batch_size,
+            shuffle=True,
+            num_workers=self.config.data.num_workers
+        )
         
-        # Step 2: Evaluate on test set
-        logger.info("Step 2: Evaluating on test set...")
+        logger.info(f"Cycle {cycle_num} prepared:")
+        logger.info(f"  Labeled: {pool_info['labeled']}")
+        logger.info(f"  Unlabeled: {pool_info['unlabeled']}")
+        logger.info(f"  Reset mode: {reset_mode}")
         
-        metrics = self.trainer.evaluate(self.test_loader)
-        
-        # Store cycle results
-        cycle_result = {
+        return {
             "cycle": cycle_num,
-            "labeled_pool_size": pool_info["labeled"],
-            "unlabeled_pool_size": pool_info["unlabeled"],
-            "test_accuracy": metrics.get("test_accuracy", 0),
-            "test_f1": metrics.get("test_f1", 0),
-            "test_precision": metrics.get("test_precision", 0),
-            "test_recall": metrics.get("test_recall", 0),
+            "labeled_count": pool_info["labeled"],
+            "unlabeled_count": pool_info["unlabeled"],
+            "reset_mode": reset_mode,
+            "train_batches": len(self.current_train_loader),
         }
+    
+    def train_single_epoch(self, epoch_num: int) -> EpochMetrics:
+        """
+        Train one epoch within current cycle.
         
-        logger.info(f"  Accuracy: {metrics.get('test_accuracy', 0):.4f}")
-        logger.info(f"  F1 Score: {metrics.get('test_f1', 0):.4f}")
-        
-        # Step 3 & 4: Query and update pools (if not last cycle)
-        if cycle_num < self.config.active_learning.num_cycles:
-            logger.info("Step 3: Querying uncertain samples...")
+        Args:
+            epoch_num: Epoch number (1-indexed within cycle)
             
-            # Get unlabeled data
-            unlabeled_loader = self.data_manager.get_unlabeled_loader(
-                batch_size=128,
-                shuffle=False,
-                num_workers=4
+        Returns:
+            EpochMetrics for this epoch
+        """
+        if self.current_train_loader is None:
+            raise RuntimeError("Call prepare_cycle() before training")
+        
+        metrics = self.trainer.train_single_epoch(
+            self.current_train_loader,
+            self.val_loader,
+            epoch_num
+        )
+        
+        return metrics
+    
+    def should_stop_early(self) -> bool:
+        """Check if early stopping criteria is met."""
+        return self.trainer.should_stop_early()
+    
+    def run_validation(self) -> Tuple[float, float]:
+        """
+        Run validation pass.
+        
+        Returns:
+            Tuple of (val_loss, val_accuracy)
+        """
+        return self.trainer.validate(self.val_loader)
+    
+    def run_evaluation(self) -> Dict:
+        """
+        Run test set evaluation.
+        
+        Returns:
+            Dict with test metrics
+        """
+        test_metrics = self.trainer.evaluate(
+            self.test_loader,
+            class_names=self.class_names
+        )
+        
+        if self.config.checkpoint.save_best_per_cycle:
+            self.trainer.save_cycle_checkpoint(self.current_cycle)
+        
+        return test_metrics
+    
+    def query_samples(self) -> List[QueriedImage]:
+        """
+        Apply AL strategy to select samples for annotation.
+        
+        Returns:
+            List of QueriedImage objects with full info for UI
+        """
+        al_config = self.config.active_learning
+        
+        pool_info = self.data_manager.get_pool_info()
+        if pool_info["unlabeled"] == 0:
+            logger.warning("No unlabeled samples remaining")
+            return []
+        
+        n_query = min(al_config.batch_size_al, pool_info["unlabeled"])
+        
+        unlabeled_loader = self.data_manager.get_unlabeled_loader(
+            batch_size=self.config.training.batch_size,
+            shuffle=False,
+            num_workers=self.config.data.num_workers
+        )
+        
+        query_indices = self.strategy(
+            self.trainer.model,
+            unlabeled_loader,
+            n_query,
+            self.trainer.device
+        )
+        
+        queried_images = self._build_queried_images(query_indices)
+        
+        self._cache_queried_images(queried_images)
+        
+        logger.info(f"Queried {len(queried_images)} samples for annotation")
+        
+        return queried_images
+    
+    def _build_queried_images(self, query_indices: np.ndarray) -> List[QueriedImage]:
+        """
+        Build QueriedImage objects with full information.
+        
+        Args:
+            query_indices: Indices into unlabeled pool
+            
+        Returns:
+            List of QueriedImage objects
+        """
+        queried_images = []
+        unlabeled_indices = self.data_manager.get_unlabeled_indices()
+        
+        absolute_indices = [unlabeled_indices[i] for i in query_indices]
+        
+        predictions = self.trainer.get_predictions_for_indices(
+            absolute_indices,
+            self.data_manager.dataset,
+            self.class_names
+        )
+        
+        strategy_name = self.config.active_learning.sampling_strategy
+        uncertainty_method = self.config.active_learning.uncertainty_method
+        
+        for i, (rel_idx, abs_idx) in enumerate(zip(query_indices, absolute_indices)):
+            pred = predictions[i]
+            
+            img_info = self.data_manager.get_image_info(abs_idx)
+            
+            probs = pred["probabilities"]
+            uncertainty = self._compute_uncertainty(probs, strategy_name, uncertainty_method)
+            selection_reason = self._format_selection_reason(
+                probs, uncertainty, strategy_name, uncertainty_method
             )
             
-            logger.info(f"  Unlabeled batches: {len(unlabeled_loader)}")
-            logger.info(f"  Requesting {self.config.active_learning.batch_size_al} samples")
+            prob_dict = {}
+            for j, class_name in enumerate(self.class_names):
+                prob_dict[class_name] = probs[j]
             
-            # Query using strategy
-            try:
-                query_indices = self.strategy(
-                    self.trainer.model,
-                    unlabeled_loader,
-                    self.config.active_learning.batch_size_al,
-                    self.trainer.device
-                )
-            except Exception as e:
-                logger.error(f"Error in strategy: {e}")
-                raise
+            queried_image = QueriedImage(
+                image_id=abs_idx,
+                image_path=img_info["path"],
+                display_path="",
+                ground_truth=img_info["label"],
+                ground_truth_name=self.class_names[img_info["label"]] if self.class_names else str(img_info["label"]),
+                model_probabilities=prob_dict,
+                predicted_class=pred.get("predicted_class", str(pred["predicted_label"])),
+                predicted_confidence=pred["confidence"],
+                uncertainty_score=uncertainty,
+                selection_reason=selection_reason
+            )
             
-            logger.info(f"  Queried indices count: {len(query_indices)}")
-            
-            # Step 4: Update data manager
-            logger.info("Step 4: Updating labeled pool...")
-            
-            self.data_manager.update_labeled_pool(query_indices)
-            
-            # Save queried indices for reference
-            queried_file = self.exp_dir / f"cycle_{cycle_num}_queried_indices.json"
-            with open(queried_file, "w") as f:
-                json.dump(query_indices.tolist() if hasattr(query_indices, 'tolist') else query_indices, f)
-            logger.info(f"  Queried indices saved to {queried_file}")
+            queried_images.append(queried_image)
+        
+        return queried_images
+    
+    def _compute_uncertainty(
+        self,
+        probs: List[float],
+        strategy: str,
+        method: str
+    ) -> float:
+        """Compute uncertainty score for a single sample."""
+        probs = np.array(probs)
+        
+        if strategy in ["uncertainty", "least_confidence"]:
+            if method == "entropy":
+                return float(-np.sum(probs * np.log(probs + 1e-10)))
+            else:
+                return float(1.0 - probs.max())
+        
+        elif strategy == "entropy":
+            return float(-np.sum(probs * np.log(probs + 1e-10)))
+        
+        elif strategy == "margin":
+            sorted_probs = np.sort(probs)[::-1]
+            return float(sorted_probs[0] - sorted_probs[1]) if len(sorted_probs) > 1 else 0.0
         
         else:
-            logger.info("Step 3: Final cycle - no querying")
-        
-        # Save cycle result
-        self.cycle_results.append(cycle_result)
-        self._save_cycle_results()
-        
-        logger.info(f"Cycle {cycle_num} complete!\n")
+            return float(1.0 - probs.max())
     
-    def run_all_cycles(self) -> List[Dict]:
+    def _format_selection_reason(
+        self,
+        probs: List[float],
+        uncertainty: float,
+        strategy: str,
+        method: str
+    ) -> str:
+        """Format human-readable selection reason."""
+        probs = np.array(probs)
+        max_prob = probs.max()
+        
+        if strategy in ["uncertainty", "least_confidence"]:
+            return f"Low confidence: {max_prob:.0%}"
+        
+        elif strategy == "entropy":
+            return f"High entropy: {uncertainty:.2f}"
+        
+        elif strategy == "margin":
+            sorted_probs = np.sort(probs)[::-1]
+            margin = sorted_probs[0] - sorted_probs[1] if len(sorted_probs) > 1 else 0
+            return f"Small margin: {margin:.0%}"
+        
+        elif strategy == "random":
+            return "Random selection"
+        
+        else:
+            return f"Uncertainty: {uncertainty:.2f}"
+    
+    def _cache_queried_images(self, queried_images: List[QueriedImage]) -> None:
         """
-        Execute all Active Learning cycles.
+        Copy queried images to experiment folder for display.
+        
+        Args:
+            queried_images: List of QueriedImage objects (modified in place)
+        """
+        cache_dir = self.exp_dir / "queries" / f"cycle_{self.current_cycle}"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        for img in queried_images:
+            src_path = Path(img.image_path)
+            if src_path.exists():
+                dst_filename = f"{img.image_id}_{src_path.name}"
+                dst_path = cache_dir / dst_filename
+                
+                try:
+                    shutil.copy(src_path, dst_path)
+                    img.display_path = str(dst_path)
+                except Exception as e:
+                    logger.warning(f"Failed to cache image {src_path}: {e}")
+                    img.display_path = img.image_path
+            else:
+                logger.warning(f"Source image not found: {src_path}")
+                img.display_path = img.image_path
+    
+    def receive_annotations(
+        self,
+        annotations: List[Dict]
+    ) -> Dict:
+        """
+        Process user annotations and update pools.
+        
+        Args:
+            annotations: List of dicts with image_id and user_label
+            
+        Returns:
+            Dict with annotation processing summary
+        """
+        result = self.data_manager.update_labeled_pool_with_annotations(annotations)
+        
+        query_file = self.exp_dir / f"cycle_{self.current_cycle}_annotations.json"
+        with open(query_file, "w") as f:
+            json.dump({
+                "cycle": self.current_cycle,
+                "annotations": annotations,
+                "summary": result
+            }, f, indent=2)
+        
+        logger.info(
+            f"Annotations processed: {result['moved_count']} samples added to labeled pool"
+        )
+        
+        return result
+    
+    def finalize_cycle(self, test_metrics: Dict) -> CycleMetrics:
+        """
+        Create and store cycle metrics after completion.
+        
+        Args:
+            test_metrics: Test evaluation metrics
+            
+        Returns:
+            CycleMetrics for this cycle
+        """
+        pool_info = self.data_manager.get_pool_info()
+        training_summary = self.trainer.get_training_summary()
+        
+        cycle_metrics = CycleMetrics(
+            cycle=self.current_cycle,
+            labeled_pool_size=pool_info["labeled"],
+            unlabeled_pool_size=pool_info["unlabeled"],
+            epochs_trained=training_summary["epochs_trained"],
+            best_val_accuracy=training_summary["best_val_accuracy"],
+            best_epoch=training_summary["best_epoch"],
+            test_accuracy=test_metrics["test_accuracy"],
+            test_f1=test_metrics["test_f1"],
+            test_precision=test_metrics["test_precision"],
+            test_recall=test_metrics["test_recall"],
+            per_class_metrics=test_metrics.get("per_class"),
+        )
+        
+        self.cycle_results.append(cycle_metrics)
+        
+        # Update probe image predictions for this cycle
+        self._update_probe_predictions(self.current_cycle)
+        
+        return cycle_metrics
+    
+    def run_cycle(self, cycle_num: int) -> Dict:
+        """
+        Execute one complete AL cycle (batch mode).
+        
+        Args:
+            cycle_num: Cycle number (1-indexed)
+            
+        Returns:
+            Dict with cycle results
+        """
+        al_config = self.config.active_learning
+        
+        logger.info(f"\n{'='*60}")
+        logger.info(f"CYCLE {cycle_num}/{al_config.num_cycles}")
+        logger.info(f"{'='*60}")
+        
+        self.prepare_cycle(cycle_num)
+        
+        epochs = self.config.training.epochs
+        for epoch in range(1, epochs + 1):
+            metrics = self.train_single_epoch(epoch)
+            
+            logger.info(
+                f"Epoch {epoch}/{epochs} | "
+                f"Train Loss: {metrics.train_loss:.4f}, Train Acc: {metrics.train_accuracy:.4f}"
+                + (f" | Val Acc: {metrics.val_accuracy:.4f}" if metrics.val_accuracy else "")
+            )
+            
+            if self.should_stop_early():
+                logger.info(f"Early stopping at epoch {epoch}")
+                break
+        
+        test_metrics = self.run_evaluation()
+        
+        cycle_metrics = self.finalize_cycle(test_metrics)
+        
+        queried_images = []
+        if cycle_num < al_config.num_cycles:
+            pool_info = self.data_manager.get_pool_info()
+            if pool_info["unlabeled"] > 0:
+                queried_images = self.query_samples()
+                
+                simulated_annotations = [
+                    {"image_id": img.image_id, "user_label": img.ground_truth}
+                    for img in queried_images
+                ]
+                self.receive_annotations(simulated_annotations)
+        
+        logger.info(
+            f"Cycle {cycle_num} complete | "
+            f"Val Acc: {cycle_metrics.best_val_accuracy:.4f}, "
+            f"Test Acc: {cycle_metrics.test_accuracy:.4f}"
+        )
+        
+        return {
+            "cycle": cycle_num,
+            "metrics": cycle_metrics.model_dump(),
+            "queried_count": len(queried_images),
+        }
+    
+    def run_all_cycles(self) -> List[CycleMetrics]:
+        """
+        Execute all AL cycles (batch mode).
         
         Returns:
-            List of cycle results (each result is a dict with metrics)
+            List of CycleMetrics for all cycles
         """
-        logger.info("\n" + "="*70)
-        logger.info("STARTING ACTIVE LEARNING TRAINING")
-        logger.info("="*70)
+        num_cycles = self.config.active_learning.num_cycles
         
-        # Run each cycle
-        for cycle in range(1, self.config.active_learning.num_cycles + 1):
+        logger.info("\n" + "="*60)
+        logger.info("STARTING ACTIVE LEARNING")
+        logger.info("="*60)
+        
+        for cycle in range(1, num_cycles + 1):
             self.run_cycle(cycle)
         
-        logger.info("\n" + "="*70)
+        logger.info("\n" + "="*60)
         logger.info("ACTIVE LEARNING COMPLETE")
-        logger.info("="*70)
+        logger.info("="*60)
         
-        # Print summary
         self._log_summary()
+        self._save_results()
         
-        # Save final state
-        self.data_manager.save_state()
-        logger.info("Pool state saved")
+        self.data_manager.save_state(self.exp_dir / "al_pool_state.json")
         
         return self.cycle_results
     
-    def _save_cycle_results(self):
-        """Save all cycle results to JSON."""
+    def _save_results(self):
+        """Save cycle results to JSON."""
         results_file = self.exp_dir / "al_cycle_results.json"
+        
+        output = {
+            "strategy": self.config.active_learning.sampling_strategy,
+            "num_cycles": self.config.active_learning.num_cycles,
+            "initial_pool_size": self.config.active_learning.initial_pool_size,
+            "batch_size_al": self.config.active_learning.batch_size_al,
+            "cycles": [c.model_dump() for c in self.cycle_results],
+        }
+        
         with open(results_file, "w") as f:
-            json.dump(self.cycle_results, f, indent=2)
-        logger.info(f"Cycle results saved to {results_file}")
+            json.dump(output, f, indent=2)
     
     def _log_summary(self):
-        """Log summary of all completed cycles."""
-        logger.info("AL CYCLE SUMMARY")
+        """Log summary of all cycles."""
+        logger.info("\nAL CYCLE SUMMARY")
+        logger.info("-" * 70)
+        logger.info(f"{'Cycle':<6} {'Labeled':<8} {'Val Acc':<10} {'Test Acc':<10} {'Test F1':<10}")
         logger.info("-" * 70)
         
-        logger.info(f"{'Cycle':<8} {'Labeled':<10} {'Unlabeled':<12} {'Accuracy':<12} {'F1':<10}")
-        logger.info("-" * 70)
-        
-        for result in self.cycle_results:
+        for r in self.cycle_results:
             logger.info(
-                f"{result['cycle']:<8} "
-                f"{result['labeled_pool_size']:<10} "
-                f"{result['unlabeled_pool_size']:<12} "
-                f"{result['test_accuracy']:<12.4f} "
-                f"{result['test_f1']:<10.4f}"
+                f"{r.cycle:<6} {r.labeled_pool_size:<8} "
+                f"{r.best_val_accuracy:<10.4f} {r.test_accuracy:<10.4f} "
+                f"{r.test_f1:<10.4f}"
             )
         
         logger.info("-" * 70)
         
-        # Best accuracy
-        best = max(self.cycle_results, key=lambda x: x["test_accuracy"])
-        logger.info(f"\nBest accuracy: {best['test_accuracy']:.4f} at cycle {best['cycle']}")
+        best = max(self.cycle_results, key=lambda x: x.test_accuracy)
+        logger.info(f"Best test accuracy: {best.test_accuracy:.4f} at cycle {best.cycle}")
         
-        # Improvement
-        first_acc = self.cycle_results[0]["test_accuracy"]
-        last_acc = self.cycle_results[-1]["test_accuracy"]
-        improvement = last_acc - first_acc
-        logger.info(f"Improvement: {improvement:+.4f} ({improvement/first_acc*100:+.1f}%)")
+        if len(self.cycle_results) > 1:
+            first_acc = self.cycle_results[0].test_accuracy
+            last_acc = self.cycle_results[-1].test_accuracy
+            improvement = last_acc - first_acc
+            pct = 100 * improvement / first_acc if first_acc > 0 else 0
+            logger.info(f"Improvement: {improvement:+.4f} ({pct:+.1f}%)")
     
-    def get_results(self) -> List[Dict]:
-        """
-        Get cycle results.
-        
-        Returns:
-            List of cycle results with metrics
-        """
-        return self.cycle_results
+    def get_results(self) -> List[CycleMetrics]:
+        """Get all cycle results."""
+        return self.cycle_results.copy()
     
-    def get_best_cycle(self) -> Dict:
-        """
-        Get best performing cycle.
-        
-        Returns:
-            Cycle result with highest test accuracy
-        """
+    def get_best_cycle(self) -> Optional[CycleMetrics]:
+        """Get cycle with best test accuracy."""
         if not self.cycle_results:
             return None
-        return max(self.cycle_results, key=lambda x: x["test_accuracy"])
+        return max(self.cycle_results, key=lambda x: x.test_accuracy)
+    
+    def get_current_pool_info(self) -> Dict:
+        """Get current pool statistics."""
+        return self.data_manager.get_pool_info()

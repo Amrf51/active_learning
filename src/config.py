@@ -1,7 +1,7 @@
 """Configuration management using dataclasses and YAML."""
 
 from dataclasses import dataclass, asdict, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from pathlib import Path
 import yaml
 
@@ -30,8 +30,8 @@ class TrainingConfig:
 class DataConfig:
     """Data loading configuration."""
     data_dir: str = "./data/raw/kaggle-vehicle/"
-    train_split: float = 0.8
-    val_split: float = 0.1
+    val_split: float = 0.15
+    test_split: float = 0.15
     augmentation: bool = True
     num_workers: int = 4
 
@@ -41,10 +41,11 @@ class ActiveLearningConfig:
     """Active Learning parameters."""
     enabled: bool = False
     num_cycles: int = 5
-    sampling_strategy: str = "uncertainty"  # uncertainty, margin, entropy, random
+    sampling_strategy: str = "uncertainty"
     initial_pool_size: int = 50
     batch_size_al: int = 20
-    uncertainty_method: str = "least_confidence"  # least_confidence, margin, entropy
+    uncertainty_method: str = "least_confidence"
+    reset_mode: str = "pretrained"
 
 
 @dataclass
@@ -52,7 +53,18 @@ class CheckpointConfig:
     """Checkpoint and logging configuration."""
     save_every_n_epochs: int = 5
     save_best_model: bool = True
-    log_every_n_batches: int = 100
+    save_best_per_cycle: bool = True
+    log_every_n_batches: int = 50
+
+
+@dataclass
+class DashboardConfig:
+    """Dashboard and worker process configuration."""
+    heartbeat_interval: int = 5
+    heartbeat_timeout: int = 30
+    auto_refresh_interval: int = 3000
+    num_probe_images_per_class: int = 2
+    experiments_base_dir: str = "./experiments"
 
 
 @dataclass
@@ -63,29 +75,23 @@ class Config:
     data: DataConfig = field(default_factory=DataConfig)
     active_learning: ActiveLearningConfig = field(default_factory=ActiveLearningConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
+    dashboard: DashboardConfig = field(default_factory=DashboardConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
-        """Load configuration from YAML file.
-        
-        Args:
-            path: Path to YAML config file
-            
-        Returns:
-            Config object
-        """
+        """Load configuration from YAML file."""
         with open(path, "r") as f:
             data = yaml.safe_load(f)
         
         if data is None:
             data = {}
         
-        # Convert nested dicts to dataclass objects
         model_config = ModelConfig(**data.get("model", {}))
         training_config = TrainingConfig(**data.get("training", {}))
         data_config = DataConfig(**data.get("data", {}))
         al_config = ActiveLearningConfig(**data.get("active_learning", {}))
         checkpoint_config = CheckpointConfig(**data.get("checkpoint", {}))
+        dashboard_config = DashboardConfig(**data.get("dashboard", {}))
         
         return cls(
             model=model_config,
@@ -93,14 +99,11 @@ class Config:
             data=data_config,
             active_learning=al_config,
             checkpoint=checkpoint_config,
+            dashboard=dashboard_config,
         )
 
     def save_to(self, path: str) -> None:
-        """Save configuration to YAML file.
-        
-        Args:
-            path: Path where to save the YAML config
-        """
+        """Save configuration to YAML file."""
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         
         config_dict = {
@@ -109,6 +112,7 @@ class Config:
             "data": asdict(self.data),
             "active_learning": asdict(self.active_learning),
             "checkpoint": asdict(self.checkpoint),
+            "dashboard": asdict(self.dashboard),
         }
         
         with open(path, "w") as f:
@@ -122,4 +126,5 @@ class Config:
             "data": asdict(self.data),
             "active_learning": asdict(self.active_learning),
             "checkpoint": asdict(self.checkpoint),
+            "dashboard": asdict(self.dashboard),
         }
