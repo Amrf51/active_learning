@@ -21,9 +21,8 @@ import logging
 src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
-from state import ExperimentManager, StateManager
-from config import ConfigManager, Config, ExperimentConfig, DatasetInfo, ExperimentState, ExperimentPhase
-from config import Config
+from state import ExperimentManager, StateManager, ExperimentConfig, DatasetInfo, ExperimentState, ExperimentPhase
+from config import ConfigManager, Config
 
 logger = logging.getLogger(__name__)
 

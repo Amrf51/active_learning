@@ -40,73 +40,60 @@ st.set_page_config(
 # Custom CSS for better styling
 st.markdown("""
     <style>
-    /* 🎨 MAIN BACKGROUND COLOR - Change this to modify the background */
-    .main .block-container {
-        background-color: #f0f8ff;  /* 👈 CHANGE THIS COLOR */
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-    }
-    
-    .stApp {
-        background-color: #f0f8ff;  /* 👈 CHANGE THIS COLOR TOO */
-    }
-    
+    /* 1. MAIN HEADER */
     .main-header {
         font-size: 2.5rem;
         font-weight: bold;
-        color: #1f77b4;
+        color: #e6f1ff; /* Light Text (was blue) */
         text-align: center;
         margin-bottom: 2rem;
     }
-    
+
+    /* 2. METRIC CARD (Matches .config-section) */
     .metric-card {
-        background-color: #ffffff;
+        background-color: #112240; /* Dark Navy */
         padding: 1.5rem;
         border-radius: 10px;
         margin: 1rem 0;
-        border-left: 4px solid #1f77b4;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-left: 4px solid #1f77b4; /* Blue Accent */
+        color: #e6f1ff; /* Light Text */
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     }
-    
+
+    /* 3. STATUS COLORS (Brightened for Dark Mode) */
     .status-running {
-        color: #28a745;
+        color: #4ade80; /* Bright Green */
         font-weight: bold;
     }
-    
+
     .status-idle {
-        color: #6c757d;
+        color: #8892b0; /* Light Slate/Gray */
         font-weight: bold;
     }
-    
+
     .status-error {
-        color: #dc3545;
+        color: #ff6b6b; /* Soft Red */
         font-weight: bold;
     }
-    
+
+    /* 4. EXPERIMENT CARD (Matches .config-section but simpler) */
     .experiment-card {
-        background-color: #ffffff;
+        background-color: #112240; /* Dark Navy */
         padding: 1rem;
         border-radius: 8px;
-        border: 1px solid #dee2e6;
+        border: 1px solid #233554; /* Dark Blue Border */
         margin: 0.5rem 0;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        color: #e6f1ff; /* Light Text */
     }
-    
+
+    /* 5. NAV INFO (Matches .dataset-info) */
     .nav-info {
-        background-color: #ffffff;
-        padding: 1.5rem;
+        background-color: #0f3d3e; /* Dark Teal */
+        padding: 1rem;
         border-radius: 8px;
         margin-bottom: 1rem;
-        border: 1px solid #d1ecf1;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
-    
-    [data-testid="metric-container"] {
-        background-color: #ffffff;
-        border-radius: 8px;
-        padding: 1rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        border: 1px solid #e9ecef;
+        border: 1px solid #20c997; /* Bright Teal Border */
+        color: #e6f1ff; /* Light Text */
     }
     </style>
 """, unsafe_allow_html=True)

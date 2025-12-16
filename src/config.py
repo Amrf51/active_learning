@@ -1,7 +1,7 @@
 """Configuration management using dataclasses and YAML."""
 
 from dataclasses import dataclass, asdict, field
-from typing import Any, Dict
+from typing import Any, Dict, List
 from pathlib import Path
 import yaml
 
