@@ -37,72 +37,51 @@ st.set_page_config(
 # Custom CSS
 st.markdown("""
     <style>
-    /* 🎨 MAIN BACKGROUND COLOR - Change this to modify the background */
-    .main .block-container {
-        background-color: #f0f8ff;  /* 👈 CHANGE THIS COLOR */
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-    }
-    
-    .stApp {
-        background-color: #f0f8ff;  /* 👈 CHANGE THIS COLOR TOO */
-    }
-    
+    /* 1. CONFIGURATION CARD (The main container) */
     .config-section {
-        background-color: #ffffff;
+        background-color: #112240; /* Dark Navy */
         padding: 1.5rem;
         border-radius: 10px;
         margin: 1rem 0;
-        border-left: 4px solid #007bff;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        border-left: 4px solid #1f77b4; /* Matching Blue Accent */
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     }
     
+    /* 2. DATASET INFO BOX (Informational) */
     .dataset-info {
-        background-color: #e8f5e8;
-        padding: 1.5rem;
-        border-radius: 10px;
-        margin: 1rem 0;
-        border: 1px solid #c3e6cb;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    
-    .warning-box {
-        background-color: #fff3cd;
-        border: 1px solid #ffeaa7;
-        padding: 1.5rem;
-        border-radius: 10px;
-        margin: 1rem 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    
-    .success-box {
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        padding: 1.5rem;
-        border-radius: 10px;
-        margin: 1rem 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    
-    /* Metrics styling */
-    [data-testid="metric-container"] {
-        background-color: #ffffff;
-        border-radius: 8px;
+        background-color: #0f3d3e; /* Dark Teal/Green to distinguish it */
         padding: 1rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        margin: 1rem 0;
+        border: 1px solid #20c997; /* Bright Teal Border */
+        color: #e6f1ff;
+    }
+
+    /* 3. WARNING BOX (Yellow/Orange) */
+    .warning-box {
+        background-color: #332b00; /* Dark Amber/Brown */
+        border: 1px solid #ffca28; /* Bright Amber Border */
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+        color: #ffe082; /* Light Yellow Text */
+    }
+
+    /* 4. SUCCESS BOX (Green) */
+    .success-box {
+        background-color: #052c16; /* Very Dark Green */
+        border: 1px solid #4ade80; /* Bright Green Border */
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+        color: #bbf7d0; /* Light Green Text */
     }
     
-    /* Form elements styling */
-    .stSelectbox > div > div {
-        background-color: #ffffff;
-        border-radius: 6px;
-    }
-    
-    .stSlider > div > div {
-        background-color: #ffffff;
-        border-radius: 6px;
-        padding: 0.5rem;
+    /* 5. TEXT INPUTS FIX (Make typing visible) */
+    /* Since we set global text to white, we need to fix the input boxes */
+    .stTextInput > div > div > input {
+        color: white;
+        background-color: #112240;
     }
     </style>
 """, unsafe_allow_html=True)
