@@ -21,7 +21,8 @@ import logging
 src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
-from state import ExperimentManager, StateManager, ExperimentConfig, DatasetInfo, ExperimentState, ExperimentPhase
+from state import ExperimentManager, StateManager
+from config import ConfigManager, Config, ExperimentConfig, DatasetInfo, ExperimentState, ExperimentPhase
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -113,6 +114,9 @@ def initialize_session_state():
         experiments_dir = Path("experiments")
         st.session_state.experiment_manager = ExperimentManager(experiments_dir)
     
+    if "config_manager" not in st.session_state:
+        st.session_state.config_manager = ConfigManager()
+    
     if "config_form_data" not in st.session_state:
         st.session_state.config_form_data = {
             "experiment_name": "",
@@ -130,6 +134,185 @@ def initialize_session_state():
     
     if "dataset_info" not in st.session_state:
         st.session_state.dataset_info = None
+
+
+def display_template_management():
+    """Display template management section."""
+    st.markdown("---")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("📋 Configuration Templates")
+        st.markdown("Load from existing templates or save current configuration as a template.")
+    
+    with col2:
+        if st.button("🔄 Refresh Templates"):
+            st.rerun()
+    
+    # Get available templates
+    templates = st.session_state.config_manager.list_templates()
+    
+    if templates:
+        # Template selection
+        template_options = {}
+        for template in templates:
+            status = "🔄 AL" if template["has_active_learning"] else "📊 Standard"
+            legacy = " (Legacy)" if template["is_legacy"] else ""
+            label = f"{status} {template['name']}{legacy}"
+            template_options[label] = template
+        
+        selected_template_label = st.selectbox(
+            "Load Configuration Template",
+            options=["-- Select Template --"] + list(template_options.keys()),
+            help="Choose a template to load its configuration"
+        )
+        
+        if selected_template_label != "-- Select Template --":
+            template = template_options[selected_template_label]
+            
+            col1, col2, col3 = st.columns([2, 1, 1])
+            
+            with col1:
+                st.markdown(f"**Description:** {template['description']}")
+                if template['tags']:
+                    st.markdown(f"**Tags:** {', '.join(template['tags'])}")
+                st.markdown(f"**Created:** {template['created_at']}")
+            
+            with col2:
+                if st.button("📥 Load Template", key="load_template"):
+                    load_template_config(template['name'])
+            
+            with col3:
+                if st.button("👁️ Preview", key="preview_template"):
+                    preview_template_config(template['name'])
+    
+    else:
+        st.info("No templates found. Create your first template by configuring an experiment and saving it.")
+    
+    # Save current config as template
+    st.markdown("### 💾 Save Current Configuration")
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        template_name = st.text_input(
+            "Template Name",
+            placeholder="e.g., resnet50_uncertainty_baseline",
+            help="Name for the new template"
+        )
+        
+        template_description = st.text_area(
+            "Description (Optional)",
+            placeholder="Describe this configuration template...",
+            height=60
+        )
+    
+    with col2:
+        st.markdown("<br>", unsafe_allow_html=True)  # Spacing
+        if st.button("💾 Save Template", disabled=not template_name.strip()):
+            save_current_config_as_template(template_name.strip(), template_description.strip())
+    
+    st.markdown("---")
+
+
+def load_template_config(template_name: str):
+    """Load configuration from a template."""
+    try:
+        config = Config.from_template(template_name)
+        
+        # Update form data with template values
+        st.session_state.config_form_data.update({
+            "model_name": config.model.name,
+            "num_cycles": config.active_learning.num_cycles,
+            "sampling_strategy": config.active_learning.sampling_strategy,
+            "initial_pool_size": config.active_learning.initial_pool_size,
+            "batch_size_al": config.active_learning.batch_size_al,
+            "epochs_per_cycle": config.training.epochs,
+            "batch_size": config.training.batch_size,
+            "learning_rate": config.training.learning_rate,
+            "reset_mode": config.active_learning.reset_mode,
+            "seed": config.training.seed
+        })
+        
+        st.success(f"✅ Loaded template: {template_name}")
+        st.rerun()
+        
+    except Exception as e:
+        st.error(f"❌ Failed to load template: {e}")
+
+
+def preview_template_config(template_name: str):
+    """Preview a template configuration."""
+    try:
+        config = Config.from_template(template_name)
+        config_dict = config.to_dict()
+        
+        st.markdown(f"### 👁️ Template Preview: {template_name}")
+        
+        # Display in expandable sections
+        with st.expander("🏗️ Model Configuration", expanded=True):
+            st.json(config_dict["model"])
+        
+        with st.expander("🎯 Training Configuration"):
+            st.json(config_dict["training"])
+        
+        with st.expander("🔄 Active Learning Configuration"):
+            st.json(config_dict["active_learning"])
+        
+        with st.expander("💾 Checkpoint Configuration"):
+            st.json(config_dict["checkpoint"])
+        
+    except Exception as e:
+        st.error(f"❌ Failed to preview template: {e}")
+
+
+def save_current_config_as_template(template_name: str, description: str):
+    """Save current form configuration as a template."""
+    try:
+        # Create config from current form data
+        config = create_config_from_form_data()
+        
+        # Save as template
+        template_path = config.save_as_template(template_name, description)
+        
+        st.success(f"✅ Saved template: {template_name}")
+        st.info(f"📁 Template saved to: {template_path}")
+        
+        # Refresh templates
+        st.rerun()
+        
+    except Exception as e:
+        st.error(f"❌ Failed to save template: {e}")
+
+
+def create_config_from_form_data() -> Config:
+    """Create a Config object from current form data."""
+    form_data = st.session_state.config_form_data
+    
+    # Create config with form values
+    config = Config()
+    
+    # Model config
+    config.model.name = form_data["model_name"]
+    config.model.pretrained = True
+    config.model.num_classes = 4  # Default for vehicle dataset
+    
+    # Training config
+    config.training.epochs = form_data["epochs_per_cycle"]
+    config.training.batch_size = form_data["batch_size"]
+    config.training.learning_rate = form_data["learning_rate"]
+    config.training.seed = form_data["seed"]
+    
+    # Active Learning config
+    config.active_learning.enabled = True
+    config.active_learning.num_cycles = form_data["num_cycles"]
+    config.active_learning.sampling_strategy = form_data["sampling_strategy"]
+    config.active_learning.initial_pool_size = form_data["initial_pool_size"]
+    config.active_learning.batch_size_al = form_data["batch_size_al"]
+    config.active_learning.reset_mode = form_data["reset_mode"]
+    
+    return config
 
 
 def load_dataset_info():
@@ -523,6 +706,10 @@ def initialize_experiment():
         # Save updated state
         state_manager.write_state(state)
         
+        # Also save the full Config object to the experiment directory
+        full_config = create_config_from_form_data()
+        full_config.save_to(str(exp_dir / "config.yaml"), include_metadata=True)
+        
         # Set as active experiment
         st.session_state.experiment_manager.set_active(exp_dir)
         
@@ -550,6 +737,9 @@ def main():
     
     st.title("⚙️ Experiment Configuration")
     st.markdown("Set up a new Active Learning experiment with your preferred settings.")
+    
+    # Template management section
+    display_template_management()
     
     # Experiment name input
     st.subheader("📝 Experiment Details")
