@@ -131,8 +131,20 @@ def initialize_from_state(state_manager: StateManager) -> tuple:
     logger.info(f"  Data dir: {config.data.data_dir}")
     
     # Initialize data loaders
-    train_loader, val_loader, test_loader, class_names = get_dataloaders(config)
-    
+    # train_loader, val_loader, test_loader, class_names = get_dataloaders(config)
+
+    # After (CORRECT): ######################
+    train_loader, val_loader, test_loader, dataset_info = get_dataloaders(
+        data_dir=config.data.data_dir,
+        batch_size=config.training.batch_size,
+        val_split=config.data.val_split,
+        test_split=config.data.test_split,
+        augmentation=config.data.augmentation,
+        num_workers=config.data.num_workers,
+        seed=config.training.seed
+    )
+    class_names = dataset_info["class_names"]
+    ##########################################S
     # Initialize model
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = get_model(config.model, device=device)

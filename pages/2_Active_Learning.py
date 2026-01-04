@@ -33,7 +33,8 @@ sys.path.insert(0, str(src_path))
 
 from state import (
     StateManager, ExperimentManager, ExperimentPhase, Command,
-    EpochMetrics, CycleMetrics, QueriedImage, ProbeImage
+    EpochMetrics, CycleMetrics, QueriedImage, ProbeImage,
+    UserAnnotation, AnnotationSubmission  # Added for annotation submission
 )
 
 logger = logging.getLogger(__name__)
@@ -117,6 +118,15 @@ st.markdown("""
     /* 8. WORKER STATUS */
     .worker-active { color: #4ade80; }
     .worker-inactive { color: #ef4444; }
+    
+    /* 9. IMAGE CARD for queried images */
+    .image-card {
+        background-color: #1a1a2e;
+        padding: 0.5rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        border: 1px solid #333;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -142,6 +152,10 @@ def initialize_session_state():
     
     if "poll_interval" not in st.session_state:
         st.session_state.poll_interval = 1.0  # seconds
+    
+    # Manual annotation state
+    if "manual_annotations" not in st.session_state:
+        st.session_state.manual_annotations = {}
 
 
 def check_experiment_selected():
@@ -350,12 +364,15 @@ def display_control_buttons(state):
         continue_button_type = "primary" if can_continue else "secondary"
         continue_help = get_button_help_text("continue", state.phase)
         
+        # Check if annotations have been submitted
+        annotations_ready = st.session_state.state_manager.annotations_pending()
+        
         if st.button(
             "▶️ Continue",
-            disabled=not can_continue,
+            disabled=not can_continue or not annotations_ready,
             use_container_width=True,
             type=continue_button_type,
-            help=continue_help
+            help=continue_help if annotations_ready else "Submit annotations first before continuing"
         ):
             try:
                 # COMMAND PATTERN: Only write command, never call training functions
@@ -376,20 +393,18 @@ def display_control_buttons(state):
     if state.command:
         st.info(f"🔄 Pending command: **{state.command.value}**")
     
+    # Show annotation status if in awaiting phase
+    if state.phase == ExperimentPhase.AWAITING_ANNOTATION:
+        if annotations_ready:
+            st.success("✅ Annotations submitted. Click **Continue** to proceed to the next cycle.")
+        else:
+            st.warning("⏳ Waiting for annotations. Submit annotations below, then click **Continue**.")
+    
     st.markdown('</div>', unsafe_allow_html=True)
 
 
 def get_button_help_text(button_type: str, phase: ExperimentPhase) -> str:
-    """
-    Get contextual help text for control buttons based on current phase.
-    
-    Args:
-        button_type: Type of button ("start", "pause", "stop", "continue")
-        phase: Current experiment phase
-        
-    Returns:
-        Help text string
-    """
+    """Get contextual help text for control buttons based on current phase."""
     help_texts = {
         "start": {
             ExperimentPhase.IDLE: "Start the next Active Learning cycle",
@@ -419,12 +434,7 @@ def get_button_help_text(button_type: str, phase: ExperimentPhase) -> str:
 
 
 def display_phase_guidance(phase: ExperimentPhase):
-    """
-    Display contextual guidance based on current phase.
-    
-    Args:
-        phase: Current experiment phase
-    """
+    """Display contextual guidance based on current phase."""
     guidance_messages = {
         ExperimentPhase.IDLE: {
             "message": "💡 Click **Start Cycle** to begin the next Active Learning cycle",
@@ -443,7 +453,7 @@ def display_phase_guidance(phase: ExperimentPhase):
             "type": "info"
         },
         ExperimentPhase.AWAITING_ANNOTATION: {
-            "message": "📝 Review queried images below, then click **Continue** to proceed to the next cycle",
+            "message": "📝 Review and annotate the queried images below, then click **Continue** to proceed",
             "type": "info"
         },
         ExperimentPhase.COMPLETED: {
@@ -516,17 +526,11 @@ def create_prediction_monitor_section():
 
 
 def create_queried_images_section():
-    """Create section for queried images display."""
-    st.markdown('<div class="query-section">', unsafe_allow_html=True)
-    st.subheader("🎯 Queried Images")
-    st.markdown("Images selected by the Active Learning strategy for annotation")
-    
-    # Container for queried images
-    queried_images_container = st.empty()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    return queried_images_container
+    """Create section for queried images display - returns None, content rendered directly."""
+    # Note: We return None here because queried images need to render 
+    # directly in main(), not in an st.empty() container which can only
+    # hold one element at a time.
+    return None
 
 
 def main():
@@ -552,7 +556,6 @@ def main():
     # Create containers for different sections
     training_containers = create_training_charts_containers()
     probe_container = create_prediction_monitor_section()
-    query_container = create_queried_images_section()
     
     # Show appropriate content based on current phase
     if state.phase == ExperimentPhase.TRAINING:
@@ -560,7 +563,6 @@ def main():
         display_live_training_visualization(training_containers, state)
         
         # Auto-refresh for live updates during training
-        # This implements the polling loop described in the requirements
         time.sleep(st.session_state.poll_interval)
         st.rerun()
         
@@ -573,66 +575,42 @@ def main():
         st.rerun()
         
     elif state.phase == ExperimentPhase.AWAITING_ANNOTATION:
-        # Show queried images for annotation
-        display_queried_images(query_container, state)
+        # Show queried images for annotation (renders directly, not in container)
+        display_queried_images(state)
     
     # Always show prediction monitor if probe images exist
     display_prediction_monitor(probe_container, state)
 
 
 def check_early_stopping(state) -> tuple:
-    """
-    Check if early stopping occurred by analyzing epoch metrics.
-    
-    Args:
-        state: Current experiment state
-        
-    Returns:
-        Tuple of (early_stopped: bool, stop_epoch: int, reason: str)
-    """
+    """Check if early stopping occurred by analyzing epoch metrics."""
     if not state.current_cycle_epochs or not state.config:
         return False, 0, ""
     
     current_epoch = len(state.current_cycle_epochs)
     total_epochs = state.config.epochs_per_cycle
     
-    # If we have fewer epochs than configured, check if it's early stopping
     if current_epoch < total_epochs and state.phase != ExperimentPhase.TRAINING:
-        # Training stopped before reaching max epochs
-        # This could be early stopping or manual stop
-        
-        # Check if we have validation metrics to determine early stopping
         val_metrics = [m for m in state.current_cycle_epochs if m.val_accuracy is not None]
         
-        if len(val_metrics) >= 3:  # Need at least 3 points to detect plateau
-            # Check for validation accuracy plateau (simple heuristic)
+        if len(val_metrics) >= 3:
             recent_val_accs = [m.val_accuracy for m in val_metrics[-3:]]
             
-            # If validation accuracy hasn't improved in last 3 epochs
             if len(set([round(acc, 4) for acc in recent_val_accs])) <= 2:
                 return True, current_epoch, "Validation accuracy plateau detected"
         
-        # If no clear early stopping pattern, assume manual stop
         return False, current_epoch, "Training stopped manually"
     
     return False, 0, ""
 
 
 def display_early_stopping_indicator(containers, state):
-    """
-    Display early stopping indicator if early stopping was triggered.
-    
-    Args:
-        containers: Chart containers
-        state: Current experiment state
-    """
+    """Display early stopping indicator if early stopping was triggered."""
     early_stopped, stop_epoch, reason = check_early_stopping(state)
     
     if early_stopped:
-        # Add early stopping marker to charts
         with containers["loss_chart"]:
             if state.current_cycle_epochs:
-                # Add a visual marker for early stopping
                 st.markdown(
                     f'<div class="early-stop-marker">⏹️ Early Stop at Epoch {stop_epoch}</div>',
                     unsafe_allow_html=True
@@ -640,13 +618,11 @@ def display_early_stopping_indicator(containers, state):
         
         with containers["accuracy_chart"]:
             if state.current_cycle_epochs:
-                # Show reason for early stopping
                 st.markdown(
                     f'<div class="early-stop-marker">📊 {reason}</div>',
                     unsafe_allow_html=True
                 )
         
-        # Show message explaining early stopping
         with containers["metrics"]:
             st.warning(f"⏹️ **Early Stopping Triggered**\n\n"
                       f"Training stopped at epoch {stop_epoch}/{state.config.epochs_per_cycle}\n\n"
@@ -656,14 +632,7 @@ def display_early_stopping_indicator(containers, state):
 
 
 def display_live_training_visualization(containers, state):
-    """
-    Display live training visualization with state polling.
-    
-    This function implements the core polling loop that reads state every 1 second
-    and updates the training visualizations in real-time. It NEVER calls training
-    functions directly - only reads from ExperimentState.json.
-    """
-    # Check for early stopping first
+    """Display live training visualization with state polling."""
     early_stopped = display_early_stopping_indicator(containers, state)
     
     # Update progress bar
@@ -675,7 +644,6 @@ def display_live_training_visualization(containers, state):
             progress = min(current_epoch / total_epochs, 1.0)
             st.progress(progress)
             
-            # Show epoch progress with timing and early stop indicator
             if st.session_state.last_poll_time:
                 time_since_last = datetime.now() - st.session_state.last_poll_time
                 epoch_text = f"Epoch {current_epoch}/{total_epochs} (Updated {time_since_last.seconds}s ago)"
@@ -689,7 +657,7 @@ def display_live_training_visualization(containers, state):
         else:
             st.info("🔄 Training starting... Waiting for first epoch data")
     
-    # Update current epoch metrics (skip if early stopping message is shown)
+    # Update current epoch metrics
     if not early_stopped:
         with containers["metrics"]:
             if state.current_cycle_epochs:
@@ -711,7 +679,6 @@ def display_live_training_visualization(containers, state):
                     else:
                         st.metric("Val Acc", "N/A")
             else:
-                # Show placeholder metrics during initialization
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("Train Loss", "Waiting...")
@@ -721,9 +688,6 @@ def display_live_training_visualization(containers, state):
                     st.metric("Val Loss", "Waiting...")
                 with col4:
                     st.metric("Val Acc", "Waiting...")
-                st.metric("Val Loss", "Waiting...")
-            with col4:
-                st.metric("Val Acc", "Waiting...")
     
     # Update loss curve chart
     with containers["loss_chart"]:
@@ -731,21 +695,17 @@ def display_live_training_visualization(containers, state):
             epochs = [m.epoch for m in state.current_cycle_epochs]
             train_losses = [m.train_loss for m in state.current_cycle_epochs]
             
-            # Create base chart data
             chart_data = pd.DataFrame({
                 "Epoch": epochs,
                 "Train Loss": train_losses
             })
             
-            # Add validation loss if available
             val_losses = [m.val_loss for m in state.current_cycle_epochs if m.val_loss is not None]
             if val_losses and len(val_losses) == len(epochs):
                 chart_data["Val Loss"] = val_losses
             
-            # Display chart
             st.line_chart(chart_data.set_index("Epoch"))
             
-            # Show trend information
             if len(train_losses) >= 2:
                 trend = "📉 Decreasing" if train_losses[-1] < train_losses[-2] else "📈 Increasing"
                 st.caption(f"Loss trend: {trend}")
@@ -758,21 +718,17 @@ def display_live_training_visualization(containers, state):
             epochs = [m.epoch for m in state.current_cycle_epochs]
             train_accs = [m.train_accuracy for m in state.current_cycle_epochs]
             
-            # Create base chart data
             chart_data = pd.DataFrame({
                 "Epoch": epochs,
                 "Train Accuracy": train_accs
             })
             
-            # Add validation accuracy if available
             val_accs = [m.val_accuracy for m in state.current_cycle_epochs if m.val_accuracy is not None]
             if val_accs and len(val_accs) == len(epochs):
                 chart_data["Val Accuracy"] = val_accs
             
-            # Display chart
             st.line_chart(chart_data.set_index("Epoch"))
             
-            # Show best accuracy so far
             if train_accs:
                 best_acc = max(train_accs)
                 best_epoch = epochs[train_accs.index(best_acc)]
@@ -780,48 +736,7 @@ def display_live_training_visualization(containers, state):
         else:
             st.info("📊 Waiting for training data to plot accuracy curves...")
     
-    # Update last poll time
     st.session_state.last_poll_time = datetime.now()
-
-
-def poll_training_state():
-    """
-    Polling loop for live training updates.
-    
-    This function implements the state polling pattern described in the design:
-    - Reads ExperimentState.json every 1 second using StateManager.read_state()
-    - Updates visualizations with new epoch metrics
-    - Breaks loop when phase changes from TRAINING
-    - Allows Streamlit to process button clicks (Pause, Stop)
-    """
-    if not st.session_state.state_manager:
-        return None
-    
-    try:
-        # Read current state atomically (FileLock handled by StateManager)
-        state = st.session_state.state_manager.read_state()
-        
-        # Check if we should continue polling
-        if state.phase != ExperimentPhase.TRAINING:
-            # Training phase ended - stop polling
-            st.session_state.training_active = False
-            return state
-        
-        # Update training active flag
-        st.session_state.training_active = True
-        
-        return state
-    
-    except Exception as e:
-        logger.error(f"Error polling training state: {e}")
-        st.error(f"❌ Error reading training state: {str(e)}")
-        st.session_state.training_active = False
-        return None
-
-
-def display_live_training_placeholder(containers, state):
-    """Legacy function name - redirect to new implementation."""
-    display_live_training_visualization(containers, state)
 
 
 def display_last_training_results(containers, state):
@@ -832,17 +747,11 @@ def display_last_training_results(containers, state):
         else:
             st.info("No training data available")
     
-    # Use same chart display as live training
-    display_live_training_placeholder(containers, state)
+    display_live_training_visualization(containers, state)
 
 
 def display_prediction_monitor(container, state):
-    """
-    Display prediction monitor with probe images.
-    
-    Shows how model predictions change across cycles on reference images.
-    Highlights correct vs incorrect predictions and prediction changes.
-    """
+    """Display prediction monitor with probe images."""
     with container:
         if not state.probe_images:
             st.info("🔍 No probe images available. They will be initialized when the first cycle starts.")
@@ -851,8 +760,7 @@ def display_prediction_monitor(container, state):
         st.markdown("**Reference Images - Prediction History**")
         st.markdown("Track how model predictions evolve across Active Learning cycles")
         
-        # Display probe images in a responsive grid
-        num_images = min(12, len(state.probe_images))  # Show up to 12 images
+        num_images = min(12, len(state.probe_images))
         cols_per_row = 4
         
         for i in range(0, num_images, cols_per_row):
@@ -866,18 +774,13 @@ def display_prediction_monitor(container, state):
                 probe_img = state.probe_images[idx]
                 
                 with cols[j]:
-                    # Image header with ID and true class
                     st.markdown(f"**Image {probe_img.image_id}**")
                     st.markdown(f"**True Class:** {probe_img.true_class}")
-                    
-                    # Display image placeholder (actual image loading would require file paths)
                     st.markdown("🖼️ *[Image placeholder]*")
                     
-                    # Show prediction history across cycles
                     if probe_img.predictions_by_cycle:
                         st.markdown("**Prediction History:**")
                         
-                        # Sort cycles for chronological display
                         sorted_cycles = sorted(probe_img.predictions_by_cycle.items())
                         
                         previous_pred = None
@@ -885,22 +788,17 @@ def display_prediction_monitor(container, state):
                             pred_class = pred_data.get("predicted_class", "Unknown")
                             confidence = pred_data.get("confidence", 0.0)
                             
-                            # Determine correctness
                             is_correct = pred_class == probe_img.true_class
                             correctness_icon = "✅" if is_correct else "❌"
                             
-                            # Determine if prediction changed
                             change_icon = ""
                             if previous_pred and previous_pred != pred_class:
-                                change_icon = " 🔄"  # Prediction changed
+                                change_icon = " 🔄"
                             
-                            # Format confidence as percentage
                             confidence_pct = f"{confidence:.0%}" if confidence > 0 else "N/A"
                             
-                            # Display prediction with styling
                             pred_text = f"C{cycle}: **{pred_class}** ({confidence_pct}) {correctness_icon}{change_icon}"
                             
-                            # Color coding for correct/incorrect
                             if is_correct:
                                 st.markdown(f'<div style="color: #4ade80;">{pred_text}</div>', 
                                           unsafe_allow_html=True)
@@ -918,7 +816,6 @@ def display_prediction_monitor(container, state):
                         
                         st.markdown(f"**Accuracy:** {accuracy:.0%} ({correct_predictions}/{total_predictions})")
                         
-                        # Highlight prediction changes
                         pred_classes = [pred.get("predicted_class") for _, pred in sorted_cycles]
                         unique_predictions = len(set(pred_classes))
                         if unique_predictions > 1:
@@ -927,190 +824,234 @@ def display_prediction_monitor(container, state):
                     else:
                         st.markdown("*No predictions yet*")
                         st.info("Predictions will appear after the first cycle completes")
-        
-        # Summary statistics for all probe images
-        if state.probe_images and any(img.predictions_by_cycle for img in state.probe_images):
-            st.markdown("---")
-            st.markdown("### 📊 Prediction Monitor Summary")
-            
-            col1, col2, col3 = st.columns(3)
-            
-            # Calculate overall statistics
-            total_images = len(state.probe_images)
-            images_with_predictions = sum(1 for img in state.probe_images if img.predictions_by_cycle)
-            
-            # Calculate latest cycle accuracy
-            latest_cycle = max(
-                max(img.predictions_by_cycle.keys()) 
-                for img in state.probe_images 
-                if img.predictions_by_cycle
-            ) if any(img.predictions_by_cycle for img in state.probe_images) else 0
-            
-            if latest_cycle > 0:
-                latest_correct = 0
-                latest_total = 0
-                
-                for img in state.probe_images:
-                    if latest_cycle in img.predictions_by_cycle:
-                        latest_total += 1
-                        pred_class = img.predictions_by_cycle[latest_cycle].get("predicted_class")
-                        if pred_class == img.true_class:
-                            latest_correct += 1
-                
-                latest_accuracy = latest_correct / latest_total if latest_total > 0 else 0
-            else:
-                latest_accuracy = 0
-                latest_cycle = 0
-            
-            with col1:
-                st.metric("Probe Images", f"{images_with_predictions}/{total_images}")
-            
-            with col2:
-                st.metric("Latest Cycle", f"Cycle {latest_cycle}")
-            
-            with col3:
-                st.metric("Latest Accuracy", f"{latest_accuracy:.0%}")
-            
-            # Show improvement trend if multiple cycles
-            if latest_cycle > 1:
-                # Calculate first cycle accuracy for comparison
-                first_cycle = min(
-                    min(img.predictions_by_cycle.keys()) 
-                    for img in state.probe_images 
-                    if img.predictions_by_cycle
-                )
-                
-                first_correct = 0
-                first_total = 0
-                
-                for img in state.probe_images:
-                    if first_cycle in img.predictions_by_cycle:
-                        first_total += 1
-                        pred_class = img.predictions_by_cycle[first_cycle].get("predicted_class")
-                        if pred_class == img.true_class:
-                            first_correct += 1
-                
-                first_accuracy = first_correct / first_total if first_total > 0 else 0
-                improvement = latest_accuracy - first_accuracy
-                
-                if improvement > 0:
-                    st.success(f"📈 Improved by {improvement:.1%} since cycle {first_cycle}")
-                elif improvement < 0:
-                    st.warning(f"📉 Decreased by {abs(improvement):.1%} since cycle {first_cycle}")
-                else:
-                    st.info(f"➡️ No change since cycle {first_cycle}")
 
 
-def highlight_prediction_changes(probe_images):
+# ============================================================================
+# FIXED: Queried Images Display with Actual Image Thumbnails and Annotation Submission
+# ============================================================================
+
+def display_queried_images(state):
     """
-    Analyze and highlight significant prediction changes across cycles.
+    Display queried images awaiting annotation with actual image thumbnails.
     
-    Args:
-        probe_images: List of ProbeImage objects
-        
-    Returns:
-        Dict with change analysis
+    This function renders directly (not in a container) because st.empty()
+    can only hold one element, and we need to display multiple images.
     """
-    changes_analysis = {
-        "images_with_changes": 0,
-        "total_changes": 0,
-        "improvement_changes": 0,  # Wrong -> Correct
-        "regression_changes": 0,   # Correct -> Wrong
-        "lateral_changes": 0       # Wrong -> Different Wrong
-    }
+    if not state.queried_images:
+        st.info("No queried images available.")
+        return
     
-    for img in probe_images:
-        if not img.predictions_by_cycle or len(img.predictions_by_cycle) < 2:
-            continue
-        
-        sorted_cycles = sorted(img.predictions_by_cycle.items())
-        had_changes = False
-        
-        for i in range(1, len(sorted_cycles)):
-            prev_cycle, prev_pred = sorted_cycles[i-1]
-            curr_cycle, curr_pred = sorted_cycles[i]
-            
-            prev_class = prev_pred.get("predicted_class")
-            curr_class = curr_pred.get("predicted_class")
-            
-            if prev_class != curr_class:
-                had_changes = True
-                changes_analysis["total_changes"] += 1
-                
-                # Classify type of change
-                prev_correct = prev_class == img.true_class
-                curr_correct = curr_class == img.true_class
-                
-                if not prev_correct and curr_correct:
-                    changes_analysis["improvement_changes"] += 1
-                elif prev_correct and not curr_correct:
-                    changes_analysis["regression_changes"] += 1
-                else:
-                    changes_analysis["lateral_changes"] += 1
-        
-        if had_changes:
-            changes_analysis["images_with_changes"] += 1
+    st.markdown('<div class="query-section">', unsafe_allow_html=True)
+    st.subheader("🎯 Queried Images")
+    st.markdown(f"### 📋 {len(state.queried_images)} images selected for annotation")
     
-    return changes_analysis
-
-
-def display_queried_images(container, state):
-    """Display queried images awaiting annotation."""
-    with container:
-        if not state.queried_images:
-            st.info("No queried images available.")
-            return
+    # Annotation mode selection
+    col_mode1, col_mode2 = st.columns([2, 1])
+    
+    with col_mode1:
+        use_ground_truth = st.checkbox(
+            "Use Ground Truth Labels (Simulated Mode)",
+            value=True,
+            help="Automatically use ground truth labels for annotation. Uncheck for manual labeling."
+        )
+    
+    # Get class names from state config
+    if state.config and state.config.class_names:
+        class_names = state.config.class_names
+    else:
+        # Fallback: extract from queried images
+        class_names = list(set(img.ground_truth_name for img in state.queried_images))
+    
+    st.markdown("---")
+    
+    # Display queried images in a grid (2 columns for better image visibility)
+    cols_per_row = 2
+    
+    for row_start in range(0, len(state.queried_images), cols_per_row):
+        cols = st.columns(cols_per_row)
         
-        st.markdown(f"**{len(state.queried_images)} images selected for annotation**")
-        
-        # Display queried images in a grid
-        cols = st.columns(4)
-        
-        for i, queried_img in enumerate(state.queried_images):
-            col_idx = i % 4
+        for col_idx in range(cols_per_row):
+            img_idx = row_start + col_idx
+            if img_idx >= len(state.queried_images):
+                break
+            
+            queried_img = state.queried_images[img_idx]
             
             with cols[col_idx]:
-                st.write(f"**Image {queried_img.image_id}**")
-                st.write(f"**Predicted:** {queried_img.predicted_class}")
-                st.write(f"**Confidence:** {queried_img.predicted_confidence:.2%}")
-                st.write(f"**Uncertainty:** {queried_img.uncertainty_score:.3f}")
-                st.write(f"**Reason:** {queried_img.selection_reason}")
-                
-                # Show ground truth in simulated mode
-                st.write(f"**Ground Truth:** {queried_img.ground_truth_name}")
-                
-                # Expandable probability distribution
-                with st.expander("View Probabilities"):
-                    if queried_img.model_probabilities:
-                        prob_df = pd.DataFrame({
-                            "Class": list(queried_img.model_probabilities.keys()),
-                            "Probability": list(queried_img.model_probabilities.values())
-                        })
-                        st.bar_chart(prob_df.set_index("Class"))
+                with st.container():
+                    st.markdown(f"**Image {queried_img.image_id}**")
+                    
+                    # Display actual image thumbnail
+                    display_image_thumbnail(queried_img)
+                    
+                    # Model predictions
+                    col_pred1, col_pred2 = st.columns(2)
+                    with col_pred1:
+                        st.markdown(f"**Predicted:** {queried_img.predicted_class}")
+                        st.markdown(f"**Confidence:** {queried_img.predicted_confidence:.1%}")
+                    with col_pred2:
+                        st.markdown(f"**Uncertainty:** {queried_img.uncertainty_score:.3f}")
+                        st.caption(f"Reason: {queried_img.selection_reason}")
+                    
+                    # Ground truth or manual selection
+                    if use_ground_truth:
+                        # Show ground truth (simulated mode)
+                        is_correct = queried_img.predicted_class == queried_img.ground_truth_name
+                        icon = "✅" if is_correct else "❌"
+                        st.markdown(f"**Ground Truth:** {queried_img.ground_truth_name} {icon}")
                     else:
-                        st.write("No probability data available")
-        
-        # Annotation controls
-        st.markdown("---")
-        st.markdown("**Annotation Controls**")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            use_ground_truth = st.checkbox(
-                "Use Ground Truth Labels (Simulated Mode)",
-                value=True,
-                help="Automatically use ground truth labels for annotation"
-            )
+                        # Manual label selection
+                        current_selection = st.session_state.manual_annotations.get(
+                            queried_img.image_id, 
+                            queried_img.ground_truth_name  # Default to ground truth
+                        )
+                        
+                        selected_label = st.selectbox(
+                            "Select Label",
+                            options=class_names,
+                            index=class_names.index(current_selection) if current_selection in class_names else 0,
+                            key=f"label_{queried_img.image_id}"
+                        )
+                        
+                        st.session_state.manual_annotations[queried_img.image_id] = selected_label
+                    
+                    # Expandable probability distribution
+                    with st.expander("View Probabilities"):
+                        if queried_img.model_probabilities:
+                            prob_df = pd.DataFrame({
+                                "Class": list(queried_img.model_probabilities.keys()),
+                                "Probability": list(queried_img.model_probabilities.values())
+                            }).sort_values("Probability", ascending=False)
+                            st.bar_chart(prob_df.set_index("Class"))
+                        else:
+                            st.write("No probability data available")
+                    
+                    st.markdown("---")
+    
+    # Annotation submission section
+    st.markdown("### ✅ Submit Annotations")
+    
+    # Show summary
+    if use_ground_truth:
+        # Calculate accuracy preview
+        correct_count = sum(
+            1 for img in state.queried_images 
+            if img.predicted_class == img.ground_truth_name
+        )
+        total = len(state.queried_images)
+        st.info(f"📊 Using ground truth labels. Model predicted {correct_count}/{total} ({correct_count/total:.0%}) correctly.")
+    else:
+        annotated_count = len(st.session_state.manual_annotations)
+        st.info(f"📝 Manual annotation mode. {annotated_count} labels assigned.")
+    
+    # Check if annotations already submitted
+    annotations_pending = st.session_state.state_manager.annotations_pending()
+    
+    if annotations_pending:
+        st.success("✅ Annotations already submitted! Click **Continue** in the control panel to proceed.")
+    else:
+        # Submit button
+        col1, col2, col3 = st.columns([1, 2, 1])
         
         with col2:
-            if st.button("✅ Confirm Annotations", type="primary", use_container_width=True):
-                # In simulated mode, we just continue
-                if use_ground_truth:
-                    st.success("✅ Annotations confirmed using ground truth labels")
-                    # The Continue button in control panel will advance the cycle
+            if st.button("✅ Confirm & Submit Annotations", type="primary", use_container_width=True):
+                success = submit_annotations(state, use_ground_truth, class_names)
+                if success:
+                    st.success("✅ Annotations submitted successfully! Click **Continue** in the control panel to proceed.")
+                    st.balloons()
+                    time.sleep(1)
+                    st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def display_image_thumbnail(queried_img):
+    """Display image thumbnail for a queried image."""
+    image_path = None
+    
+    # Try display_path first, then fall back to image_path
+    if queried_img.display_path and Path(queried_img.display_path).exists():
+        image_path = queried_img.display_path
+    elif queried_img.image_path and Path(queried_img.image_path).exists():
+        image_path = queried_img.image_path
+    
+    if image_path:
+        try:
+            st.image(image_path, use_container_width=True)
+        except Exception as e:
+            st.warning(f"⚠️ Could not load image: {e}")
+            st.markdown("🖼️ *[Image unavailable]*")
+    else:
+        # Show placeholder with path info for debugging
+        st.markdown("🖼️ *[Image not found]*")
+        with st.expander("Debug Info"):
+            st.caption(f"display_path: {queried_img.display_path}")
+            st.caption(f"image_path: {queried_img.image_path}")
+
+
+def submit_annotations(state, use_ground_truth: bool, class_names: list) -> bool:
+    """
+    Submit annotations to the state file for the worker to process.
+    
+    This writes the AnnotationSubmission to user_annotations.json which
+    the worker will read and process.
+    """
+    try:
+        annotations = []
+        
+        for queried_img in state.queried_images:
+            if use_ground_truth:
+                # Use ground truth label
+                user_label = queried_img.ground_truth
+                user_label_name = queried_img.ground_truth_name
+            else:
+                # Use manual annotation from session state
+                user_label_name = st.session_state.manual_annotations.get(
+                    queried_img.image_id,
+                    queried_img.ground_truth_name  # Default to ground truth
+                )
+                # Convert name to index
+                if class_names and user_label_name in class_names:
+                    user_label = class_names.index(user_label_name)
                 else:
-                    st.info("Manual annotation mode not yet implemented")
+                    user_label = queried_img.ground_truth  # Fallback
+            
+            # Check if annotation is correct
+            was_correct = (user_label == queried_img.ground_truth)
+            
+            annotation = UserAnnotation(
+                image_id=queried_img.image_id,
+                user_label=user_label,
+                user_label_name=user_label_name,
+                timestamp=datetime.now(),
+                was_correct=was_correct
+            )
+            annotations.append(annotation)
+        
+        # Create submission
+        submission = AnnotationSubmission(
+            experiment_id=state.experiment_id,
+            cycle=state.current_cycle,
+            annotations=annotations,
+            submitted_at=datetime.now()
+        )
+        
+        # Write to state file
+        st.session_state.state_manager.write_annotations(submission)
+        
+        # Log summary
+        correct_count = sum(1 for a in annotations if a.was_correct)
+        total = len(annotations)
+        
+        st.info(f"📊 Annotation accuracy: {correct_count}/{total} ({correct_count/total:.0%}) correct")
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"❌ Failed to submit annotations: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+        return False
 
 
 if __name__ == "__main__":
