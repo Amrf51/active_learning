@@ -1,0 +1,51 @@
+# ResNet-50 Production Template
+# High-accuracy configuration for production experiments
+
+model:
+  name: "resnet50"
+  pretrained: true
+  num_classes: 4
+
+training:
+  epochs: 25
+  batch_size: 16
+  learning_rate: 0.0005
+  optimizer: "adam"
+  weight_decay: 0.0001
+  early_stopping_patience: 8
+  seed: 42
+
+data:
+  data_dir: "./data/raw/kaggle-vehicle/"
+  val_split: 0.15
+  test_split: 0.15
+  augmentation: true
+  num_workers: 4
+
+active_learning:
+  enabled: true
+  num_cycles: 8
+  sampling_strategy: "uncertainty"
+  initial_pool_size: 100
+  batch_size_al: 30
+  uncertainty_method: "entropy"
+  reset_mode: "pretrained"
+
+checkpoint:
+  save_every_n_epochs: 5
+  save_best_model: true
+  save_best_per_cycle: true
+  log_every_n_batches: 25
+
+dashboard:
+  heartbeat_interval: 5
+  heartbeat_timeout: 30
+  auto_refresh_interval: 3000
+  num_probe_images_per_class: 3
+  experiments_base_dir: "./experiments"
+
+_template_info:
+  name: "resnet50_production"
+  description: "High-accuracy ResNet-50 configuration for production experiments"
+  created_at: "2024-12-16T19:34:00"
+  tags: ["resnet50", "production", "high_accuracy", "active_learning"]

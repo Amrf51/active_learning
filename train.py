@@ -253,20 +253,26 @@ def main(args):
     logger.info(f"Loading config: {config_path}")
     config = Config.from_yaml(str(config_path))
     
-    # Create experiment directory
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    if config.active_learning.enabled:
-        exp_name = f"{args.exp_name}_{config.active_learning.sampling_strategy}_{timestamp}"
+    # Determine experiment directory
+    if Path(args.config).parent.name.startswith(("exp_", "experiment")):
+        # Config is already in an experiment directory
+        exp_dir = Path(args.config).parent
+        logger.info(f"Using existing experiment dir: {exp_dir}")
     else:
-        exp_name = f"{args.exp_name}_{timestamp}"
-    
-    exp_dir = Path("experiments") / exp_name
-    exp_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Experiment dir: {exp_dir}")
-    
-    # Save config copy
-    config.save_to(str(exp_dir / "config.yaml"))
+        # Create new experiment directory
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        if config.active_learning.enabled:
+            exp_name = f"{args.exp_name}_{config.active_learning.sampling_strategy}_{timestamp}"
+        else:
+            exp_name = f"{args.exp_name}_{timestamp}"
+        
+        exp_dir = Path("experiments") / exp_name
+        exp_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Created experiment dir: {exp_dir}")
+        
+        # Save config copy with metadata
+        config.save_to(str(exp_dir / "config.yaml"), include_metadata=True)
     
     # Add file handler for logging
     file_handler = logging.FileHandler(exp_dir / "training.log")

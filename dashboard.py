@@ -24,7 +24,6 @@ src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
 from state import ExperimentManager, StateManager
-from theme_options import get_theme_css, get_available_themes
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -38,8 +37,66 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Apply theme CSS
-st.markdown(get_theme_css(st.session_state.theme), unsafe_allow_html=True)
+# Custom CSS for better styling
+st.markdown("""
+    <style>
+    /* 1. MAIN HEADER */
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #e6f1ff; /* Light Text (was blue) */
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+
+    /* 2. METRIC CARD (Matches .config-section) */
+    .metric-card {
+        background-color: #112240; /* Dark Navy */
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+        border-left: 4px solid #1f77b4; /* Blue Accent */
+        color: #e6f1ff; /* Light Text */
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+
+    /* 3. STATUS COLORS (Brightened for Dark Mode) */
+    .status-running {
+        color: #4ade80; /* Bright Green */
+        font-weight: bold;
+    }
+
+    .status-idle {
+        color: #8892b0; /* Light Slate/Gray */
+        font-weight: bold;
+    }
+
+    .status-error {
+        color: #ff6b6b; /* Soft Red */
+        font-weight: bold;
+    }
+
+    /* 4. EXPERIMENT CARD (Matches .config-section but simpler) */
+    .experiment-card {
+        background-color: #112240; /* Dark Navy */
+        padding: 1rem;
+        border-radius: 8px;
+        border: 1px solid #233554; /* Dark Blue Border */
+        margin: 0.5rem 0;
+        color: #e6f1ff; /* Light Text */
+    }
+
+    /* 5. NAV INFO (Matches .dataset-info) */
+    .nav-info {
+        background-color: #0f3d3e; /* Dark Teal */
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        border: 1px solid #20c997; /* Bright Teal Border */
+        color: #e6f1ff; /* Light Text */
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 
 def initialize_session_state():
@@ -54,33 +111,7 @@ def initialize_session_state():
     if "state_manager" not in st.session_state:
         st.session_state.state_manager = None
     
-    if "theme" not in st.session_state:
-        st.session_state.theme = "light_gray"
 
-
-def display_theme_selector():
-    """Display theme selection in sidebar."""
-    st.sidebar.header("🎨 Theme")
-    
-    themes = get_available_themes()
-    theme_names = [name for key, name in themes]
-    theme_keys = [key for key, name in themes]
-    
-    current_index = theme_keys.index(st.session_state.theme) if st.session_state.theme in theme_keys else 0
-    
-    selected_theme_name = st.sidebar.selectbox(
-        "Choose Theme",
-        theme_names,
-        index=current_index,
-        help="Change the dashboard color scheme"
-    )
-    
-    # Find the key for the selected theme
-    selected_theme_key = theme_keys[theme_names.index(selected_theme_name)]
-    
-    if selected_theme_key != st.session_state.theme:
-        st.session_state.theme = selected_theme_key
-        st.rerun()
 
 
 def display_experiment_selector():
@@ -199,8 +230,7 @@ def main():
     # Display navigation info
     display_navigation_info()
     
-    # Sidebar controls
-    display_theme_selector()
+    # Sidebar experiment selection
     selected_exp = display_experiment_selector()
     display_experiment_status()
     

@@ -1,0 +1,51 @@
+# ResNet-18 Uncertainty Sampling Template
+# Optimized for fast experimentation with uncertainty-based active learning
+
+model:
+  name: "resnet18"
+  pretrained: true
+  num_classes: 4
+
+training:
+  epochs: 15
+  batch_size: 32
+  learning_rate: 0.001
+  optimizer: "adam"
+  weight_decay: 0.0001
+  early_stopping_patience: 5
+  seed: 42
+
+data:
+  data_dir: "./data/raw/kaggle-vehicle/"
+  val_split: 0.15
+  test_split: 0.15
+  augmentation: true
+  num_workers: 4
+
+active_learning:
+  enabled: true
+  num_cycles: 5
+  sampling_strategy: "uncertainty"
+  initial_pool_size: 50
+  batch_size_al: 25
+  uncertainty_method: "entropy"
+  reset_mode: "pretrained"
+
+checkpoint:
+  save_every_n_epochs: 5
+  save_best_model: true
+  save_best_per_cycle: true
+  log_every_n_batches: 50
+
+dashboard:
+  heartbeat_interval: 5
+  heartbeat_timeout: 30
+  auto_refresh_interval: 3000
+  num_probe_images_per_class: 2
+  experiments_base_dir: "./experiments"
+
+_template_info:
+  name: "resnet18_uncertainty"
+  description: "Fast ResNet-18 with uncertainty sampling - ideal for quick experiments"
+  created_at: "2024-12-16T19:34:00"
+  tags: ["resnet18", "uncertainty", "fast", "active_learning"]
