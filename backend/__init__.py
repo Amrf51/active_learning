@@ -37,4 +37,6 @@ __all__ = [
     "get_dataloaders",
     "get_class_names",
     "get_dataset_info",
+    "Config"
+
 ]

@@ -1,18 +1,49 @@
 """
-DatabaseManager: SQLite persistence layer for experiment data.
+DatabaseManager - SQLite Persistence Layer.
 
-This module provides the DatabaseManager class that handles all SQLite operations
-for persistent storage of experiment data, metrics, and historical information.
-It's designed to work alongside WorldState for the hybrid storage approach.
+This module provides persistent storage for experiment data using SQLite.
+It replaces the JSON file approach with proper database schema.
+
+Key Design Decisions:
+1. SQLite for reliability and query capabilities
+2. Paginated access for large datasets
+3. JSON blobs for complex nested data (config, per_class_metrics)
+4. Indexes for common query patterns
+
+Tables:
+- experiments: Experiment metadata and config
+- cycles: Cycle summaries
+- epochs: Per-epoch metrics
+- pool_items: Labeled/unlabeled pool tracking (optional, for large datasets)
+
+Usage:
+    db = DatabaseManager("experiments.db")
+    
+    # Create experiment
+    db.insert_experiment(experiment_id, name, config_dict)
+    
+    # Update progress
+    db.update_experiment_phase(experiment_id, "TRAINING")
+    db.insert_epoch_metrics(experiment_id, cycle, epoch_metrics)
+    
+    # Query history
+    metrics = db.get_epoch_metrics_paginated(experiment_id, cycle, page=1, limit=50)
 """
 
-import sqlite3
 import json
-import logging
+import sqlite3
 from contextlib import contextmanager
-from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Generator, List, Optional, Tuple
+import logging
+
+from .schemas import (
+    ExperimentPhase,
+    ExperimentConfig,
+    EpochMetrics,
+    CycleSummary
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,747 +52,637 @@ class DatabaseManager:
     """
     SQLite database manager for experiment persistence.
     
-    This class handles all database operations for the Active Learning Dashboard,
-    providing persistent storage for experiment data, metrics, and historical
-    information. It's designed to complement WorldState for fast access.
+    Thread Safety:
+        SQLite connections are not thread-safe. This class creates a new
+        connection for each operation using context managers. For the
+        listener thread, consider using a separate DatabaseManager instance.
     
-    Database Schema:
-    - experiments: Main experiment records
-    - cycle_summaries: Summary data for each AL cycle
-    - epoch_metrics: Detailed metrics for each training epoch
-    - pool_items: Dataset pool items (labeled/unlabeled)
-    - queried_images: Images queried for annotation in each cycle
+    Attributes:
+        db_path: Path to SQLite database file
     """
     
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: str | Path):
         """
         Initialize DatabaseManager.
         
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file.
+                     Use ":memory:" for in-memory database (testing).
         """
-        self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.db_path = str(db_path)
+        self._is_memory = (self.db_path == ":memory:")
         
-        # Initialize database schema
+        # For in-memory databases, keep a persistent connection
+        # because each new connection creates a fresh database
+        if self._is_memory:
+            self._persistent_conn = sqlite3.connect(":memory:", check_same_thread=False)
+            self._persistent_conn.row_factory = sqlite3.Row
+        else:
+            self._persistent_conn = None
+            
         self._init_schema()
-        
-        logger.info(f"DatabaseManager initialized with database: {self.db_path}")
+        logger.info(f"DatabaseManager initialized: {self.db_path}")
     
     @contextmanager
-    def _get_connection(self):
+    def _connection(self) -> Generator[sqlite3.Connection, None, None]:
         """
         Context manager for database connections.
         
-        Ensures proper connection handling and automatic cleanup.
+        Yields:
+            SQLite connection with row factory set to dict.
         """
-        conn = None
-        try:
+        if self._is_memory:
+            # Use persistent connection for in-memory database
+            yield self._persistent_conn
+            self._persistent_conn.commit()
+        else:
+            # Create new connection for file-based database
             conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row  # Enable dict-like access
-            yield conn
-        except Exception as e:
-            if conn:
+            conn.row_factory = sqlite3.Row
+            try:
+                yield conn
+                conn.commit()
+            except Exception:
                 conn.rollback()
-            logger.error(f"Database error: {e}")
-            raise
-        finally:
-            if conn:
+                raise
+            finally:
                 conn.close()
     
     def _init_schema(self) -> None:
-        """
-        Initialize database schema with all required tables and indexes.
-        
-        Creates tables for experiments, cycle summaries, epoch metrics,
-        pool items, and queried images with appropriate indexes for performance.
-        """
-        with self._get_connection() as conn:
+        """Initialize database schema."""
+        with self._connection() as conn:
             cursor = conn.cursor()
             
-            # Experiments table - main experiment records
+            # ═══════════════════════════════════════════════════════════
+            # Experiments Table
+            # ═══════════════════════════════════════════════════════════
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS experiments (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    config_json TEXT NOT NULL,
-                    phase TEXT NOT NULL DEFAULT 'IDLE',
+                    experiment_id TEXT PRIMARY KEY,
+                    experiment_name TEXT NOT NULL,
+                    config_json TEXT,
+                    phase TEXT DEFAULT 'IDLE',
                     current_cycle INTEGER DEFAULT 0,
-                    total_cycles INTEGER DEFAULT 0,
-                    current_epoch INTEGER DEFAULT 0,
-                    epochs_per_cycle INTEGER DEFAULT 0,
+                    labeled_count INTEGER DEFAULT 0,
+                    unlabeled_count INTEGER DEFAULT 0,
                     error_message TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    is_active BOOLEAN DEFAULT 1
+                    is_active INTEGER DEFAULT 0,
+                    created_at TEXT,
+                    updated_at TEXT
                 )
             """)
             
-            # Cycle summaries table - summary for each AL cycle
+            # ═══════════════════════════════════════════════════════════
+            # Cycles Table
+            # ═══════════════════════════════════════════════════════════
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS cycle_summaries (
+                CREATE TABLE IF NOT EXISTS cycles (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     experiment_id TEXT NOT NULL,
                     cycle INTEGER NOT NULL,
-                    labeled_count INTEGER DEFAULT 0,
-                    unlabeled_count INTEGER DEFAULT 0,
-                    best_val_acc REAL,
-                    test_acc REAL,
+                    labeled_count INTEGER,
+                    unlabeled_count INTEGER,
+                    epochs_trained INTEGER,
+                    best_val_accuracy REAL,
+                    best_epoch INTEGER,
+                    test_accuracy REAL,
                     test_f1 REAL,
-                    cycle_duration REAL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (experiment_id) REFERENCES experiments (id),
-                    UNIQUE (experiment_id, cycle)
+                    test_precision REAL,
+                    test_recall REAL,
+                    per_class_metrics_json TEXT,
+                    annotation_accuracy REAL,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    FOREIGN KEY (experiment_id) REFERENCES experiments(experiment_id),
+                    UNIQUE(experiment_id, cycle)
                 )
             """)
             
-            # Epoch metrics table - detailed metrics for each epoch
+            # ═══════════════════════════════════════════════════════════
+            # Epochs Table
+            # ═══════════════════════════════════════════════════════════
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS epoch_metrics (
+                CREATE TABLE IF NOT EXISTS epochs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     experiment_id TEXT NOT NULL,
                     cycle INTEGER NOT NULL,
                     epoch INTEGER NOT NULL,
                     train_loss REAL,
+                    train_accuracy REAL,
                     val_loss REAL,
-                    train_acc REAL,
-                    val_acc REAL,
+                    val_accuracy REAL,
                     learning_rate REAL,
-                    epoch_duration REAL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (experiment_id) REFERENCES experiments (id),
-                    UNIQUE (experiment_id, cycle, epoch)
+                    timestamp TEXT,
+                    FOREIGN KEY (experiment_id) REFERENCES experiments(experiment_id),
+                    UNIQUE(experiment_id, cycle, epoch)
                 )
             """)
             
-            # Pool items table - dataset items with their pool status
+            # ═══════════════════════════════════════════════════════════
+            # Indexes for Performance
+            # ═══════════════════════════════════════════════════════════
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS pool_items (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    experiment_id TEXT NOT NULL,
-                    image_path TEXT NOT NULL,
-                    pool_type TEXT NOT NULL, -- 'labeled', 'unlabeled', 'test'
-                    class_idx INTEGER,
-                    true_label TEXT,
-                    predicted_label TEXT,
-                    confidence REAL,
-                    uncertainty REAL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (experiment_id) REFERENCES experiments (id)
-                )
+                CREATE INDEX IF NOT EXISTS idx_cycles_experiment 
+                ON cycles(experiment_id)
             """)
             
-            # Queried images table - images queried for annotation
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS queried_images (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    experiment_id TEXT NOT NULL,
-                    cycle INTEGER NOT NULL,
-                    image_path TEXT NOT NULL,
-                    predictions_json TEXT, -- JSON array of class predictions
-                    annotations_json TEXT, -- JSON of user annotations
-                    uncertainty_score REAL,
-                    query_strategy TEXT,
-                    annotated_at TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (experiment_id) REFERENCES experiments (id)
-                )
+                CREATE INDEX IF NOT EXISTS idx_epochs_experiment_cycle 
+                ON epochs(experiment_id, cycle)
             """)
             
-            # Create indexes for performance
-            indexes = [
-                "CREATE INDEX IF NOT EXISTS idx_experiments_active ON experiments (is_active)",
-                "CREATE INDEX IF NOT EXISTS idx_cycle_summaries_exp ON cycle_summaries (experiment_id)",
-                "CREATE INDEX IF NOT EXISTS idx_epoch_metrics_exp_cycle ON epoch_metrics (experiment_id, cycle)",
-                "CREATE INDEX IF NOT EXISTS idx_pool_items_exp_type ON pool_items (experiment_id, pool_type)",
-                "CREATE INDEX IF NOT EXISTS idx_queried_images_exp_cycle ON queried_images (experiment_id, cycle)"
-            ]
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_experiments_active 
+                ON experiments(is_active)
+            """)
             
-            for index_sql in indexes:
-                cursor.execute(index_sql)
-            
-            conn.commit()
-            logger.info("Database schema initialized successfully")
+            logger.debug("Database schema initialized")
     
-    # Experiment CRUD operations
+    # ═══════════════════════════════════════════════════════════════════════
+    # Experiment CRUD
+    # ═══════════════════════════════════════════════════════════════════════
     
-    def insert_experiment(self, experiment_id: str, name: str, config: Dict[str, Any]) -> bool:
+    def insert_experiment(
+        self,
+        experiment_id: str,
+        experiment_name: str,
+        config: Dict[str, Any],
+        set_active: bool = True
+    ) -> None:
         """
-        Insert a new experiment record.
+        Insert a new experiment.
         
         Args:
-            experiment_id: Unique experiment identifier
-            name: Experiment name
-            config: Experiment configuration dictionary
-            
-        Returns:
-            True if insertion successful
+            experiment_id: Unique identifier
+            experiment_name: Human-readable name
+            config: Configuration dictionary
+            set_active: Whether to set this as the active experiment
         """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Deactivate any existing active experiments
+        now = datetime.now().isoformat()
+        config_json = json.dumps(config)
+        
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            
+            # Clear existing active if setting new active
+            if set_active:
                 cursor.execute("UPDATE experiments SET is_active = 0")
-                
-                # Insert new experiment
-                cursor.execute("""
-                    INSERT INTO experiments (
-                        id, name, config_json, phase, total_cycles, epochs_per_cycle, is_active
-                    ) VALUES (?, ?, ?, ?, ?, ?, 1)
-                """, (
-                    experiment_id,
-                    name,
-                    json.dumps(config),
-                    'INITIALIZING',
-                    config.get('total_cycles', 10),
-                    config.get('epochs_per_cycle', 5)
-                ))
-                
-                conn.commit()
-                logger.info(f"Inserted experiment: {experiment_id}")
-                return True
-                
-        except Exception as e:
-            logger.error(f"Failed to insert experiment {experiment_id}: {e}")
-            return False
+            
+            cursor.execute("""
+                INSERT INTO experiments 
+                (experiment_id, experiment_name, config_json, phase, is_active, created_at, updated_at)
+                VALUES (?, ?, ?, 'IDLE', ?, ?, ?)
+            """, (experiment_id, experiment_name, config_json, int(set_active), now, now))
+            
+        logger.info(f"Inserted experiment: {experiment_id}")
     
-    def update_experiment_phase(self, experiment_id: str, phase: str, 
-                               current_cycle: Optional[int] = None,
-                               current_epoch: Optional[int] = None,
-                               error_message: Optional[str] = None) -> bool:
+    def update_experiment_phase(
+        self,
+        experiment_id: str,
+        phase: str,
+        error_message: Optional[str] = None
+    ) -> None:
         """
-        Update experiment phase and progress.
+        Update experiment phase.
         
         Args:
-            experiment_id: Experiment identifier
-            phase: New phase
-            current_cycle: Current cycle number (optional)
-            current_epoch: Current epoch number (optional)
-            error_message: Error message if phase is ERROR (optional)
+            experiment_id: Experiment to update
+            phase: New phase value
+            error_message: Error details if phase is ERROR
+        """
+        now = datetime.now().isoformat()
+        
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE experiments 
+                SET phase = ?, error_message = ?, updated_at = ?
+                WHERE experiment_id = ?
+            """, (phase, error_message, now, experiment_id))
+            
+        logger.debug(f"Updated experiment {experiment_id} phase to {phase}")
+    
+    def update_experiment_progress(
+        self,
+        experiment_id: str,
+        current_cycle: int,
+        labeled_count: int,
+        unlabeled_count: int
+    ) -> None:
+        """
+        Update experiment progress counters.
+        
+        Args:
+            experiment_id: Experiment to update
+            current_cycle: Current cycle number
+            labeled_count: Labeled pool size
+            unlabeled_count: Unlabeled pool size
+        """
+        now = datetime.now().isoformat()
+        
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE experiments 
+                SET current_cycle = ?, labeled_count = ?, unlabeled_count = ?, updated_at = ?
+                WHERE experiment_id = ?
+            """, (current_cycle, labeled_count, unlabeled_count, now, experiment_id))
+    
+    def get_experiment(self, experiment_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get experiment by ID.
+        
+        Args:
+            experiment_id: Experiment to retrieve
             
         Returns:
-            True if update successful
+            Experiment data dict or None if not found
         """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Build dynamic update query
-                updates = ["phase = ?", "updated_at = CURRENT_TIMESTAMP"]
-                params = [phase]
-                
-                if current_cycle is not None:
-                    updates.append("current_cycle = ?")
-                    params.append(current_cycle)
-                
-                if current_epoch is not None:
-                    updates.append("current_epoch = ?")
-                    params.append(current_epoch)
-                
-                if error_message is not None:
-                    updates.append("error_message = ?")
-                    params.append(error_message)
-                
-                params.append(experiment_id)
-                
-                cursor.execute(f"""
-                    UPDATE experiments 
-                    SET {', '.join(updates)}
-                    WHERE id = ?
-                """, params)
-                
-                conn.commit()
-                return cursor.rowcount > 0
-                
-        except Exception as e:
-            logger.error(f"Failed to update experiment {experiment_id}: {e}")
-            return False
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM experiments WHERE experiment_id = ?
+            """, (experiment_id,))
+            
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            
+            result = dict(row)
+            if result.get("config_json"):
+                result["config"] = json.loads(result["config_json"])
+            if result.get("created_at"):
+                result["created_at"] = datetime.fromisoformat(result["created_at"])
+            
+            return result
     
     def get_active_experiment(self) -> Optional[Dict[str, Any]]:
         """
         Get the currently active experiment.
         
         Returns:
-            Dictionary with experiment data or None if no active experiment
+            Active experiment data dict or None
         """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT * FROM experiments 
-                    WHERE is_active = 1 
-                    ORDER BY updated_at DESC 
-                    LIMIT 1
-                """)
-                
-                row = cursor.fetchone()
-                if row:
-                    experiment = dict(row)
-                    # Parse config JSON
-                    experiment['config'] = json.loads(experiment['config_json'])
-                    return experiment
-                
-                return None
-                
-        except Exception as e:
-            logger.error(f"Failed to get active experiment: {e}")
-            return None
-    
-    def get_experiment_by_id(self, experiment_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get experiment by ID.
-        
-        Args:
-            experiment_id: Experiment identifier
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM experiments WHERE is_active = 1
+            """)
             
-        Returns:
-            Dictionary with experiment data or None if not found
-        """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM experiments WHERE id = ?", (experiment_id,))
-                
-                row = cursor.fetchone()
-                if row:
-                    experiment = dict(row)
-                    experiment['config'] = json.loads(experiment['config_json'])
-                    return experiment
-                
+            row = cursor.fetchone()
+            if row is None:
                 return None
-                
-        except Exception as e:
-            logger.error(f"Failed to get experiment {experiment_id}: {e}")
-            return None
-    
-    # Epoch metrics operations
-    
-    def insert_epoch_metrics(self, experiment_id: str, cycle: int, epoch: int,
-                           metrics: Dict[str, Any]) -> bool:
-        """
-        Insert epoch training metrics.
-        
-        Args:
-            experiment_id: Experiment identifier
-            cycle: Cycle number
-            epoch: Epoch number
-            metrics: Dictionary with training metrics
             
-        Returns:
-            True if insertion successful
-        """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT OR REPLACE INTO epoch_metrics (
-                        experiment_id, cycle, epoch, train_loss, val_loss,
-                        train_acc, val_acc, learning_rate, epoch_duration
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    experiment_id, cycle, epoch,
-                    metrics.get('train_loss'),
-                    metrics.get('val_loss'),
-                    metrics.get('train_acc'),
-                    metrics.get('val_acc'),
-                    metrics.get('learning_rate'),
-                    metrics.get('epoch_duration')
-                ))
-                
-                conn.commit()
-                return True
-                
-        except Exception as e:
-            logger.error(f"Failed to insert epoch metrics: {e}")
-            return False
+            result = dict(row)
+            if result.get("config_json"):
+                result["config"] = json.loads(result["config_json"])
+            if result.get("created_at"):
+                result["created_at"] = datetime.fromisoformat(result["created_at"])
+            
+            return result
     
-    def get_epoch_metrics_paginated(self, experiment_id: str, cycle: Optional[int] = None,
-                                  page: int = 1, limit: int = 50) -> Tuple[List[Dict[str, Any]], int]:
+    def set_active_experiment(self, experiment_id: str) -> None:
         """
-        Get paginated epoch metrics.
+        Set an experiment as active.
         
         Args:
-            experiment_id: Experiment identifier
-            cycle: Specific cycle (optional, gets all cycles if None)
-            page: Page number (1-based)
+            experiment_id: Experiment to activate
+        """
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE experiments SET is_active = 0")
+            cursor.execute("""
+                UPDATE experiments SET is_active = 1 WHERE experiment_id = ?
+            """, (experiment_id,))
+            
+        logger.info(f"Set active experiment: {experiment_id}")
+    
+    def list_experiments(
+        self,
+        page: int = 1,
+        limit: int = 20
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """
+        List experiments with pagination.
+        
+        Args:
+            page: Page number (1-indexed)
             limit: Items per page
             
         Returns:
-            Tuple of (metrics_list, total_count)
+            Tuple of (experiments list, total count)
         """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Build query with optional cycle filter
-                where_clause = "WHERE experiment_id = ?"
-                params = [experiment_id]
-                
-                if cycle is not None:
-                    where_clause += " AND cycle = ?"
-                    params.append(cycle)
-                
-                # Get total count
-                cursor.execute(f"SELECT COUNT(*) FROM epoch_metrics {where_clause}", params)
-                total_count = cursor.fetchone()[0]
-                
-                # Get paginated results
-                offset = (page - 1) * limit
-                cursor.execute(f"""
-                    SELECT * FROM epoch_metrics {where_clause}
-                    ORDER BY cycle, epoch
-                    LIMIT ? OFFSET ?
-                """, params + [limit, offset])
-                
-                metrics = [dict(row) for row in cursor.fetchall()]
-                return metrics, total_count
-                
-        except Exception as e:
-            logger.error(f"Failed to get epoch metrics: {e}")
-            return [], 0
+        offset = (page - 1) * limit
+        
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get total count
+            cursor.execute("SELECT COUNT(*) FROM experiments")
+            total = cursor.fetchone()[0]
+            
+            # Get page
+            cursor.execute("""
+                SELECT experiment_id, experiment_name, phase, current_cycle, 
+                       is_active, created_at, updated_at
+                FROM experiments
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+            """, (limit, offset))
+            
+            experiments = []
+            for row in cursor.fetchall():
+                exp = dict(row)
+                if exp.get("created_at"):
+                    exp["created_at"] = datetime.fromisoformat(exp["created_at"])
+                experiments.append(exp)
+            
+            return experiments, total
     
-    # Cycle summary operations
+    # ═══════════════════════════════════════════════════════════════════════
+    # Epoch Metrics CRUD
+    # ═══════════════════════════════════════════════════════════════════════
     
-    def insert_cycle_summary(self, experiment_id: str, cycle: int, 
-                           summary: Dict[str, Any]) -> bool:
+    def insert_epoch_metrics(
+        self,
+        experiment_id: str,
+        cycle: int,
+        metrics: EpochMetrics
+    ) -> None:
         """
-        Insert cycle summary data.
+        Insert epoch metrics.
         
         Args:
-            experiment_id: Experiment identifier
+            experiment_id: Experiment ID
             cycle: Cycle number
-            summary: Dictionary with cycle summary data
+            metrics: Epoch metrics to insert
+        """
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO epochs
+                (experiment_id, cycle, epoch, train_loss, train_accuracy, 
+                 val_loss, val_accuracy, learning_rate, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                experiment_id, cycle, metrics.epoch,
+                metrics.train_loss, metrics.train_accuracy,
+                metrics.val_loss, metrics.val_accuracy,
+                metrics.learning_rate,
+                metrics.timestamp.isoformat() if metrics.timestamp else None
+            ))
+    
+    def get_epoch_metrics(
+        self,
+        experiment_id: str,
+        cycle: int
+    ) -> List[EpochMetrics]:
+        """
+        Get all epoch metrics for a cycle.
+        
+        Args:
+            experiment_id: Experiment ID
+            cycle: Cycle number
             
         Returns:
-            True if insertion successful
+            List of EpochMetrics
         """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT OR REPLACE INTO cycle_summaries (
-                        experiment_id, cycle, labeled_count, unlabeled_count,
-                        best_val_acc, test_acc, test_f1, cycle_duration
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    experiment_id, cycle,
-                    summary.get('labeled_count'),
-                    summary.get('unlabeled_count'),
-                    summary.get('best_val_acc'),
-                    summary.get('test_acc'),
-                    summary.get('test_f1'),
-                    summary.get('cycle_duration')
-                ))
-                
-                conn.commit()
-                return True
-                
-        except Exception as e:
-            logger.error(f"Failed to insert cycle summary: {e}")
-            return False
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM epochs
+                WHERE experiment_id = ? AND cycle = ?
+                ORDER BY epoch
+            """, (experiment_id, cycle))
+            
+            return [
+                EpochMetrics(
+                    epoch=row["epoch"],
+                    train_loss=row["train_loss"],
+                    train_accuracy=row["train_accuracy"],
+                    val_loss=row["val_loss"],
+                    val_accuracy=row["val_accuracy"],
+                    learning_rate=row["learning_rate"],
+                    timestamp=datetime.fromisoformat(row["timestamp"]) if row["timestamp"] else None
+                )
+                for row in cursor.fetchall()
+            ]
     
-    def get_cycle_summaries(self, experiment_id: str) -> List[Dict[str, Any]]:
+    def get_epoch_metrics_paginated(
+        self,
+        experiment_id: str,
+        cycle: int,
+        page: int = 1,
+        limit: int = 50
+    ) -> Tuple[List[EpochMetrics], int]:
+        """
+        Get epoch metrics with pagination.
+        
+        Args:
+            experiment_id: Experiment ID
+            cycle: Cycle number
+            page: Page number (1-indexed)
+            limit: Items per page
+            
+        Returns:
+            Tuple of (metrics list, total count)
+        """
+        offset = (page - 1) * limit
+        
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get total count
+            cursor.execute("""
+                SELECT COUNT(*) FROM epochs
+                WHERE experiment_id = ? AND cycle = ?
+            """, (experiment_id, cycle))
+            total = cursor.fetchone()[0]
+            
+            # Get page
+            cursor.execute("""
+                SELECT * FROM epochs
+                WHERE experiment_id = ? AND cycle = ?
+                ORDER BY epoch
+                LIMIT ? OFFSET ?
+            """, (experiment_id, cycle, limit, offset))
+            
+            metrics = [
+                EpochMetrics(
+                    epoch=row["epoch"],
+                    train_loss=row["train_loss"],
+                    train_accuracy=row["train_accuracy"],
+                    val_loss=row["val_loss"],
+                    val_accuracy=row["val_accuracy"],
+                    learning_rate=row["learning_rate"],
+                    timestamp=datetime.fromisoformat(row["timestamp"]) if row["timestamp"] else None
+                )
+                for row in cursor.fetchall()
+            ]
+            
+            return metrics, total
+    
+    # ═══════════════════════════════════════════════════════════════════════
+    # Cycle Summary CRUD
+    # ═══════════════════════════════════════════════════════════════════════
+    
+    def insert_cycle_summary(
+        self,
+        experiment_id: str,
+        summary: CycleSummary
+    ) -> None:
+        """
+        Insert cycle summary.
+        
+        Args:
+            experiment_id: Experiment ID
+            summary: Cycle summary to insert
+        """
+        per_class_json = json.dumps(summary.per_class_metrics) if summary.per_class_metrics else None
+        
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO cycles
+                (experiment_id, cycle, labeled_count, unlabeled_count, epochs_trained,
+                 best_val_accuracy, best_epoch, test_accuracy, test_f1, 
+                 test_precision, test_recall, per_class_metrics_json,
+                 annotation_accuracy, started_at, completed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                experiment_id, summary.cycle,
+                summary.labeled_count, summary.unlabeled_count,
+                summary.epochs_trained, summary.best_val_accuracy,
+                summary.best_epoch, summary.test_accuracy, summary.test_f1,
+                summary.test_precision, summary.test_recall,
+                per_class_json, summary.annotation_accuracy,
+                summary.started_at.isoformat() if summary.started_at else None,
+                summary.completed_at.isoformat() if summary.completed_at else None
+            ))
+            
+        logger.info(f"Inserted cycle summary: {experiment_id} cycle {summary.cycle}")
+    
+    def get_cycle_summaries(
+        self,
+        experiment_id: str
+    ) -> List[CycleSummary]:
         """
         Get all cycle summaries for an experiment.
         
         Args:
-            experiment_id: Experiment identifier
+            experiment_id: Experiment ID
             
         Returns:
-            List of cycle summary dictionaries
+            List of CycleSummary
         """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT * FROM cycle_summaries 
-                    WHERE experiment_id = ? 
-                    ORDER BY cycle
-                """, (experiment_id,))
-                
-                return [dict(row) for row in cursor.fetchall()]
-                
-        except Exception as e:
-            logger.error(f"Failed to get cycle summaries: {e}")
-            return []
-    
-    # Pool items operations
-    
-    def insert_pool_items(self, experiment_id: str, items: List[Dict[str, Any]]) -> bool:
-        """
-        Insert multiple pool items.
-        
-        Args:
-            experiment_id: Experiment identifier
-            items: List of pool item dictionaries
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM cycles
+                WHERE experiment_id = ?
+                ORDER BY cycle
+            """, (experiment_id,))
             
-        Returns:
-            True if insertion successful
-        """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
+            summaries = []
+            for row in cursor.fetchall():
+                per_class = None
+                if row["per_class_metrics_json"]:
+                    per_class = json.loads(row["per_class_metrics_json"])
                 
-                # Clear existing items for this experiment
-                cursor.execute("DELETE FROM pool_items WHERE experiment_id = ?", (experiment_id,))
-                
-                # Insert new items
-                for item in items:
-                    cursor.execute("""
-                        INSERT INTO pool_items (
-                            experiment_id, image_path, pool_type, class_idx,
-                            true_label, predicted_label, confidence, uncertainty
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        experiment_id,
-                        item.get('image_path'),
-                        item.get('pool_type'),
-                        item.get('class_idx'),
-                        item.get('true_label'),
-                        item.get('predicted_label'),
-                        item.get('confidence'),
-                        item.get('uncertainty')
-                    ))
-                
-                conn.commit()
-                return True
-                
-        except Exception as e:
-            logger.error(f"Failed to insert pool items: {e}")
-            return False
-    
-    def get_pool_items_paginated(self, experiment_id: str, pool_type: Optional[str] = None,
-                               page: int = 1, limit: int = 50) -> Tuple[List[Dict[str, Any]], int]:
-        """
-        Get paginated pool items.
-        
-        Args:
-            experiment_id: Experiment identifier
-            pool_type: Filter by pool type ('labeled', 'unlabeled', 'test')
-            page: Page number (1-based)
-            limit: Items per page
-            
-        Returns:
-            Tuple of (items_list, total_count)
-        """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Build query with optional pool_type filter
-                where_clause = "WHERE experiment_id = ?"
-                params = [experiment_id]
-                
-                if pool_type:
-                    where_clause += " AND pool_type = ?"
-                    params.append(pool_type)
-                
-                # Get total count
-                cursor.execute(f"SELECT COUNT(*) FROM pool_items {where_clause}", params)
-                total_count = cursor.fetchone()[0]
-                
-                # Get paginated results
-                offset = (page - 1) * limit
-                cursor.execute(f"""
-                    SELECT * FROM pool_items {where_clause}
-                    ORDER BY updated_at DESC
-                    LIMIT ? OFFSET ?
-                """, params + [limit, offset])
-                
-                items = [dict(row) for row in cursor.fetchall()]
-                return items, total_count
-                
-        except Exception as e:
-            logger.error(f"Failed to get pool items: {e}")
-            return [], 0
-    
-    def get_pool_count(self, experiment_id: str, pool_type: Optional[str] = None) -> int:
-        """
-        Get count of pool items.
-        
-        Args:
-            experiment_id: Experiment identifier
-            pool_type: Filter by pool type (optional)
-            
-        Returns:
-            Count of items
-        """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                
-                if pool_type:
-                    cursor.execute("""
-                        SELECT COUNT(*) FROM pool_items 
-                        WHERE experiment_id = ? AND pool_type = ?
-                    """, (experiment_id, pool_type))
-                else:
-                    cursor.execute("""
-                        SELECT COUNT(*) FROM pool_items 
-                        WHERE experiment_id = ?
-                    """, (experiment_id,))
-                
-                return cursor.fetchone()[0]
-                
-        except Exception as e:
-            logger.error(f"Failed to get pool count: {e}")
-            return 0
-    
-    # Queried images operations
-    
-    def insert_queried_images(self, experiment_id: str, cycle: int, 
-                            images: List[Dict[str, Any]]) -> bool:
-        """
-        Insert queried images for a cycle.
-        
-        Args:
-            experiment_id: Experiment identifier
-            cycle: Cycle number
-            images: List of queried image dictionaries
-            
-        Returns:
-            True if insertion successful
-        """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                
-                for image in images:
-                    cursor.execute("""
-                        INSERT INTO queried_images (
-                            experiment_id, cycle, image_path, predictions_json,
-                            uncertainty_score, query_strategy
-                        ) VALUES (?, ?, ?, ?, ?, ?)
-                    """, (
-                        experiment_id, cycle,
-                        image.get('image_path'),
-                        json.dumps(image.get('predictions', [])),
-                        image.get('uncertainty_score'),
-                        image.get('query_strategy')
-                    ))
-                
-                conn.commit()
-                return True
-                
-        except Exception as e:
-            logger.error(f"Failed to insert queried images: {e}")
-            return False
-    
-    def update_queried_image_annotations(self, experiment_id: str, cycle: int,
-                                       image_path: str, annotations: Dict[str, Any]) -> bool:
-        """
-        Update annotations for a queried image.
-        
-        Args:
-            experiment_id: Experiment identifier
-            cycle: Cycle number
-            image_path: Path to the image
-            annotations: Annotation data
-            
-        Returns:
-            True if update successful
-        """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE queried_images 
-                    SET annotations_json = ?, annotated_at = CURRENT_TIMESTAMP
-                    WHERE experiment_id = ? AND cycle = ? AND image_path = ?
-                """, (
-                    json.dumps(annotations),
-                    experiment_id, cycle, image_path
+                summaries.append(CycleSummary(
+                    cycle=row["cycle"],
+                    labeled_count=row["labeled_count"],
+                    unlabeled_count=row["unlabeled_count"],
+                    epochs_trained=row["epochs_trained"],
+                    best_val_accuracy=row["best_val_accuracy"],
+                    best_epoch=row["best_epoch"],
+                    test_accuracy=row["test_accuracy"],
+                    test_f1=row["test_f1"],
+                    test_precision=row["test_precision"] or 0.0,
+                    test_recall=row["test_recall"] or 0.0,
+                    per_class_metrics=per_class,
+                    annotation_accuracy=row["annotation_accuracy"],
+                    started_at=datetime.fromisoformat(row["started_at"]) if row["started_at"] else None,
+                    completed_at=datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
                 ))
-                
-                conn.commit()
-                return cursor.rowcount > 0
-                
-        except Exception as e:
-            logger.error(f"Failed to update queried image annotations: {e}")
-            return False
+            
+            return summaries
     
-    # Utility methods
-    
-    def get_experiments_paginated(self, page: int = 1, limit: int = 20) -> Tuple[List[Dict[str, Any]], int]:
+    def get_cycle_summary(
+        self,
+        experiment_id: str,
+        cycle: int
+    ) -> Optional[CycleSummary]:
         """
-        Get paginated list of all experiments.
+        Get specific cycle summary.
         
         Args:
-            page: Page number (1-based)
-            limit: Items per page
+            experiment_id: Experiment ID
+            cycle: Cycle number
             
         Returns:
-            Tuple of (experiments_list, total_count)
+            CycleSummary or None
         """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Get total count
-                cursor.execute("SELECT COUNT(*) FROM experiments")
-                total_count = cursor.fetchone()[0]
-                
-                # Get paginated results
-                offset = (page - 1) * limit
-                cursor.execute("""
-                    SELECT id, name, phase, current_cycle, total_cycles, 
-                           created_at, updated_at, is_active
-                    FROM experiments 
-                    ORDER BY updated_at DESC
-                    LIMIT ? OFFSET ?
-                """, (limit, offset))
-                
-                experiments = [dict(row) for row in cursor.fetchall()]
-                return experiments, total_count
-                
-        except Exception as e:
-            logger.error(f"Failed to get experiments: {e}")
-            return [], 0
+        summaries = self.get_cycle_summaries(experiment_id)
+        for s in summaries:
+            if s.cycle == cycle:
+                return s
+        return None
     
-    def cleanup_old_experiments(self, keep_days: int = 30) -> int:
+    # ═══════════════════════════════════════════════════════════════════════
+    # Utility Methods
+    # ═══════════════════════════════════════════════════════════════════════
+    
+    def delete_experiment(self, experiment_id: str) -> None:
         """
-        Clean up old experiment data.
+        Delete experiment and all related data.
         
         Args:
-            keep_days: Number of days to keep data
-            
-        Returns:
-            Number of experiments cleaned up
+            experiment_id: Experiment to delete
         """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Get experiments older than keep_days
-                cursor.execute("""
-                    SELECT id FROM experiments 
-                    WHERE is_active = 0 
-                    AND datetime(updated_at) < datetime('now', '-{} days')
-                """.format(keep_days))
-                
-                old_experiments = [row[0] for row in cursor.fetchall()]
-                
-                if not old_experiments:
-                    return 0
-                
-                # Delete related data
-                placeholders = ','.join(['?'] * len(old_experiments))
-                
-                tables = ['queried_images', 'pool_items', 'epoch_metrics', 
-                         'cycle_summaries', 'experiments']
-                
-                for table in tables:
-                    cursor.execute(f"""
-                        DELETE FROM {table} 
-                        WHERE experiment_id IN ({placeholders})
-                    """, old_experiments)
-                
-                conn.commit()
-                logger.info(f"Cleaned up {len(old_experiments)} old experiments")
-                return len(old_experiments)
-                
-        except Exception as e:
-            logger.error(f"Failed to cleanup old experiments: {e}")
-            return 0
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM epochs WHERE experiment_id = ?", (experiment_id,))
+            cursor.execute("DELETE FROM cycles WHERE experiment_id = ?", (experiment_id,))
+            cursor.execute("DELETE FROM experiments WHERE experiment_id = ?", (experiment_id,))
+            
+        logger.info(f"Deleted experiment: {experiment_id}")
+    
+    def clear_all(self) -> None:
+        """
+        Clear all data from database.
+        
+        Use with caution - for testing only.
+        """
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM epochs")
+            cursor.execute("DELETE FROM cycles")
+            cursor.execute("DELETE FROM experiments")
+            
+        logger.warning("Cleared all database data")
+    
+    def get_statistics(self) -> Dict[str, int]:
+        """
+        Get database statistics.
+        
+        Returns:
+            Dict with counts of experiments, cycles, epochs
+        """
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT COUNT(*) FROM experiments")
+            experiments = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM cycles")
+            cycles = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM epochs")
+            epochs = cursor.fetchone()[0]
+            
+            return {
+                "experiments": experiments,
+                "cycles": cycles,
+                "epochs": epochs
+            }

@@ -1,226 +1,287 @@
-"""Event system for Active Learning Dashboard MVC architecture.
+"""
+Event System for Active Learning Dashboard.
 
-This module defines the event-driven communication system between View, Controller, and Service layers.
-Events flow in three directions:
-- VIEW → CONTROLLER: User actions (button clicks, form submissions)
-- CONTROLLER → SERVICE: Commands to background processes
-- SERVICE → CONTROLLER: Status updates and results from background processes
+This module defines the event-driven communication protocol between
+View, Controller, and Service layers.
+
+Event Flow:
+    VIEW → CONTROLLER: User actions (INITIALIZE, START_CYCLE, etc.)
+    CONTROLLER → SERVICE: Commands (CMD_START_CYCLE, CMD_PAUSE, etc.)
+    SERVICE → CONTROLLER: Progress/completion (EPOCH_COMPLETE, QUERY_READY, etc.)
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import Enum, auto
 from typing import Any, Dict, Optional
 
 
 class EventType(Enum):
-    """Event types for the Active Learning Dashboard.
+    """
+    All event types in the system.
     
-    Event flow directions:
-    - VIEW → CONTROLLER: User interface events
-    - CONTROLLER → SERVICE: Commands to service processes
-    - SERVICE → CONTROLLER: Status updates from service processes
+    Naming convention:
+    - No prefix: View → Controller events (user actions)
+    - CMD_*: Controller → Service commands
+    - SERVICE_*: Service → Controller notifications
     """
     
-    # VIEW → CONTROLLER Events (User Actions)
-    INITIALIZE_EXPERIMENT = "initialize_experiment"
-    START_CYCLE = "start_cycle"
-    PAUSE_TRAINING = "pause_training"
-    RESUME_TRAINING = "resume_training"
-    STOP_EXPERIMENT = "stop_experiment"
-    SUBMIT_ANNOTATIONS = "submit_annotations"
+    # ═══════════════════════════════════════════════════════════════════
+    # VIEW → CONTROLLER EVENTS (User Actions)
+    # ═══════════════════════════════════════════════════════════════════
     
-    # CONTROLLER → SERVICE Commands
-    CMD_START_CYCLE = "cmd_start_cycle"
-    CMD_PAUSE = "cmd_pause"
-    CMD_RESUME = "cmd_resume"
-    CMD_STOP = "cmd_stop"
-    CMD_ANNOTATIONS = "cmd_annotations"
-    CMD_SHUTDOWN = "cmd_shutdown"
+    # Experiment lifecycle
+    INITIALIZE_EXPERIMENT = auto()  # User configures and starts new experiment
+    LOAD_EXPERIMENT = auto()        # User loads existing experiment
     
-    # SERVICE → CONTROLLER Events (Status Updates)
-    SERVICE_READY = "service_ready"
-    EPOCH_COMPLETE = "epoch_complete"
-    CYCLE_COMPLETE = "cycle_complete"
-    QUERY_READY = "query_ready"
-    SERVICE_ERROR = "service_error"
+    # Training control
+    START_CYCLE = auto()            # User clicks "Start Cycle"
+    PAUSE_TRAINING = auto()         # User clicks "Pause"
+    RESUME_TRAINING = auto()        # User clicks "Resume"
+    STOP_EXPERIMENT = auto()        # User clicks "Stop"
+    
+    # Annotation
+    SUBMIT_ANNOTATIONS = auto()     # User submits annotation batch
+    
+    # Data requests (synchronous)
+    REQUEST_STATUS = auto()         # Request current status
+    REQUEST_METRICS = auto()        # Request training metrics
+    REQUEST_HISTORY = auto()        # Request historical data
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # CONTROLLER → SERVICE COMMANDS
+    # ═══════════════════════════════════════════════════════════════════
+    
+    CMD_START_CYCLE = auto()        # Begin training cycle
+    CMD_PAUSE = auto()              # Pause training
+    CMD_RESUME = auto()             # Resume training
+    CMD_STOP = auto()               # Stop experiment
+    CMD_ANNOTATIONS = auto()        # Process submitted annotations
+    CMD_SHUTDOWN = auto()           # Graceful service shutdown
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # SERVICE → CONTROLLER EVENTS (Notifications)
+    # ═══════════════════════════════════════════════════════════════════
+    
+    SERVICE_READY = auto()          # Service initialized and ready
+    SERVICE_ERROR = auto()          # Service encountered error
+    
+    # Training progress
+    EPOCH_COMPLETE = auto()         # Single epoch finished
+    TRAINING_COMPLETE = auto()      # All epochs in cycle finished
+    
+    # Evaluation
+    EVALUATION_COMPLETE = auto()    # Test evaluation finished
+    
+    # Active Learning
+    QUERY_READY = auto()            # Queried samples ready for annotation
+    CYCLE_COMPLETE = auto()         # Full AL cycle completed
+    EXPERIMENT_COMPLETE = auto()    # All cycles completed
 
 
 @dataclass
 class Event:
-    """Event data structure for inter-component communication.
+    """
+    Immutable event object for inter-layer communication.
     
     Attributes:
-        type: The type of event (from EventType enum)
-        payload: Event-specific data (dict, can be empty)
+        type: The event type
+        payload: Event-specific data (optional)
         timestamp: When the event was created
-        source: Component that created the event (for debugging)
+        source: Origin of the event (for debugging)
+    
+    Usage:
+        # Create event
+        event = Event(EventType.START_CYCLE)
+        
+        # Create event with data
+        event = Event(
+            EventType.EPOCH_COMPLETE,
+            payload={"epoch": 5, "train_loss": 0.123, "val_acc": 0.95}
+        )
     """
     
     type: EventType
-    payload: Dict[str, Any]
-    timestamp: datetime
-    source: Optional[str] = None
+    payload: Dict[str, Any] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=datetime.now)
+    source: str = "unknown"
     
     def __post_init__(self):
-        """Set timestamp if not provided."""
-        if not hasattr(self, 'timestamp') or self.timestamp is None:
-            self.timestamp = datetime.now()
+        """Validate event after creation."""
+        if not isinstance(self.type, EventType):
+            raise ValueError(f"Invalid event type: {self.type}")
+        if self.payload is None:
+            self.payload = {}
+    
+    def __repr__(self) -> str:
+        payload_preview = str(self.payload)[:50] + "..." if len(str(self.payload)) > 50 else str(self.payload)
+        return f"Event({self.type.name}, payload={payload_preview}, source={self.source})"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize event for Pipe transmission."""
+        return {
+            "type": self.type.value,
+            "type_name": self.type.name,
+            "payload": self.payload,
+            "timestamp": self.timestamp.isoformat(),
+            "source": self.source
+        }
     
     @classmethod
-    def create(cls, event_type: EventType, payload: Optional[Dict[str, Any]] = None, source: Optional[str] = None) -> 'Event':
-        """Convenience method to create an event.
-        
-        Args:
-            event_type: Type of event
-            payload: Event data (optional)
-            source: Source component (optional)
-            
-        Returns:
-            New Event instance
-        """
+    def from_dict(cls, data: Dict[str, Any]) -> "Event":
+        """Deserialize event from Pipe transmission."""
         return cls(
-            type=event_type,
-            payload=payload or {},
-            timestamp=datetime.now(),
-            source=source
+            type=EventType(data["type"]),
+            payload=data.get("payload", {}),
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            source=data.get("source", "unknown")
         )
-    
-    def __str__(self) -> str:
-        """String representation for logging."""
-        source_str = f" from {self.source}" if self.source else ""
-        return f"Event({self.type.value}{source_str} at {self.timestamp.strftime('%H:%M:%S.%f')[:-3]})"
 
 
-# Event payload schemas for documentation and validation
+# ═══════════════════════════════════════════════════════════════════════════
+# Event Payload Schemas (for documentation and validation)
+# ═══════════════════════════════════════════════════════════════════════════
 
-class EventPayloads:
-    """Documentation of expected payload structures for each event type."""
-    
-    # VIEW → CONTROLLER Event Payloads
-    INITIALIZE_EXPERIMENT = {
-        "config": "Dict[str, Any]",  # Experiment configuration
-        "description": "User-submitted experiment configuration"
-    }
-    
-    START_CYCLE = {
-        "description": "Start a new active learning cycle"
-    }
-    
-    PAUSE_TRAINING = {
-        "description": "Pause current training"
-    }
-    
-    RESUME_TRAINING = {
-        "description": "Resume paused training"
-    }
-    
-    STOP_EXPERIMENT = {
-        "description": "Stop current experiment"
-    }
-    
-    SUBMIT_ANNOTATIONS = {
-        "annotations": "List[Dict[str, Any]]",  # User annotations for queried images
-        "description": "User-provided annotations for queried samples"
-    }
-    
-    # CONTROLLER → SERVICE Command Payloads
-    CMD_START_CYCLE = {
-        "cycle_number": "int",  # Current cycle number
-        "description": "Command to start training cycle"
-    }
-    
-    CMD_PAUSE = {
-        "description": "Command to pause training"
-    }
-    
-    CMD_RESUME = {
-        "description": "Command to resume training"
-    }
-    
-    CMD_STOP = {
-        "description": "Command to stop training"
-    }
-    
-    CMD_ANNOTATIONS = {
-        "annotations": "List[Dict[str, Any]]",  # Processed annotations
-        "description": "Annotations to incorporate into training"
-    }
-    
-    CMD_SHUTDOWN = {
-        "description": "Command to gracefully shutdown service"
-    }
-    
-    # SERVICE → CONTROLLER Event Payloads
-    SERVICE_READY = {
-        "service_id": "str",  # Service process identifier
-        "description": "Service is ready to receive commands"
-    }
-    
-    EPOCH_COMPLETE = {
-        "epoch": "int",  # Completed epoch number
-        "cycle": "int",  # Current cycle number
-        "metrics": "Dict[str, float]",  # Training metrics (loss, accuracy, etc.)
-        "description": "Training epoch completed with metrics"
-    }
-    
-    CYCLE_COMPLETE = {
-        "cycle": "int",  # Completed cycle number
-        "results": "Dict[str, Any]",  # Cycle results and statistics
-        "description": "Active learning cycle completed"
-    }
-    
-    QUERY_READY = {
-        "cycle": "int",  # Current cycle number
-        "queried_images": "List[Dict[str, Any]]",  # Images selected for annotation
-        "description": "Query selection completed, awaiting user annotations"
-    }
-    
-    SERVICE_ERROR = {
-        "error_type": "str",  # Type of error
-        "message": "str",  # Error message
-        "traceback": "Optional[str]",  # Stack trace if available
-        "description": "Service encountered an error"
+"""
+PAYLOAD SCHEMAS BY EVENT TYPE:
+
+INITIALIZE_EXPERIMENT:
+    {
+        "experiment_name": str,
+        "config": {
+            "model_name": str,
+            "sampling_strategy": str,
+            "num_cycles": int,
+            "epochs_per_cycle": int,
+            "batch_size_al": int,
+            "initial_pool_size": int,
+            "data_dir": str,
+            ...
+        }
     }
 
+SUBMIT_ANNOTATIONS:
+    {
+        "annotations": [
+            {"image_id": int, "label": int},
+            ...
+        ]
+    }
 
-def validate_event_payload(event: Event) -> bool:
-    """Validate that an event has the expected payload structure.
+EPOCH_COMPLETE:
+    {
+        "epoch": int,
+        "train_loss": float,
+        "train_accuracy": float,
+        "val_loss": float,
+        "val_accuracy": float,
+        "learning_rate": float
+    }
+
+QUERY_READY:
+    {
+        "queried_images": [
+            {
+                "image_id": int,
+                "image_path": str,
+                "predicted_class": str,
+                "confidence": float,
+                "uncertainty_score": float
+            },
+            ...
+        ]
+    }
+
+CYCLE_COMPLETE:
+    {
+        "cycle": int,
+        "labeled_count": int,
+        "unlabeled_count": int,
+        "test_accuracy": float,
+        "test_f1": float,
+        "best_val_accuracy": float
+    }
+
+SERVICE_ERROR:
+    {
+        "message": str,
+        "traceback": str (optional),
+        "recoverable": bool
+    }
+"""
+
+
+def create_event(
+    event_type: EventType,
+    payload: Optional[Dict[str, Any]] = None,
+    source: str = "unknown"
+) -> Event:
+    """
+    Factory function for creating events.
     
     Args:
-        event: Event to validate
-        
+        event_type: The type of event
+        payload: Event-specific data
+        source: Origin identifier
+    
     Returns:
-        True if payload is valid, False otherwise
-        
-    Note:
-        This is a basic validation. In production, you might want
-        to use a schema validation library like Pydantic or Cerberus.
+        New Event instance
     """
-    expected_payload = getattr(EventPayloads, event.type.name, None)
-    if expected_payload is None:
-        return True  # No validation defined
-    
-    # Basic validation - check if required keys exist
-    # This is simplified; real validation would check types too
-    if not isinstance(event.payload, dict):
-        return False
-    
-    return True  # Simplified validation for now
+    return Event(
+        type=event_type,
+        payload=payload or {},
+        source=source
+    )
 
 
-# Convenience functions for creating common events
-
-def create_view_event(event_type: EventType, payload: Optional[Dict[str, Any]] = None) -> Event:
-    """Create an event from the View layer."""
-    return Event.create(event_type, payload, source="View")
-
-
-def create_controller_event(event_type: EventType, payload: Optional[Dict[str, Any]] = None) -> Event:
-    """Create an event from the Controller layer."""
-    return Event.create(event_type, payload, source="Controller")
+# Convenience functions for common events
+def start_cycle_event(source: str = "view") -> Event:
+    """Create START_CYCLE event."""
+    return create_event(EventType.START_CYCLE, source=source)
 
 
-def create_service_event(event_type: EventType, payload: Optional[Dict[str, Any]] = None) -> Event:
-    """Create an event from the Service layer."""
-    return Event.create(event_type, payload, source="Service")
+def pause_event(source: str = "view") -> Event:
+    """Create PAUSE_TRAINING event."""
+    return create_event(EventType.PAUSE_TRAINING, source=source)
+
+
+def epoch_complete_event(
+    epoch: int,
+    train_loss: float,
+    train_accuracy: float,
+    val_loss: float,
+    val_accuracy: float,
+    learning_rate: float,
+    source: str = "service"
+) -> Event:
+    """Create EPOCH_COMPLETE event with metrics."""
+    return create_event(
+        EventType.EPOCH_COMPLETE,
+        payload={
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "train_accuracy": train_accuracy,
+            "val_loss": val_loss,
+            "val_accuracy": val_accuracy,
+            "learning_rate": learning_rate
+        },
+        source=source
+    )
+
+
+def error_event(
+    message: str,
+    traceback: Optional[str] = None,
+    recoverable: bool = False,
+    source: str = "service"
+) -> Event:
+    """Create SERVICE_ERROR event."""
+    return create_event(
+        EventType.SERVICE_ERROR,
+        payload={
+            "message": message,
+            "traceback": traceback,
+            "recoverable": recoverable
+        },
+        source=source
+    )

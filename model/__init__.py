@@ -1,32 +1,47 @@
 """
-Model layer for the Active Learning Dashboard.
+Model Layer - Data Storage and State Management.
 
-This package provides the data structures and persistence layer for the
-hybrid WorldState/SQLite architecture.
+This package provides:
+- WorldState: In-memory current experiment state (~1μs access)
+- DatabaseManager: SQLite persistence for historical data (~50ms access)
+- Schemas: Data structures used throughout the application
+
+Usage:
+    from model import WorldState, DatabaseManager
+    from model.schemas import ExperimentPhase, EpochMetrics
+    
+    # Create instances
+    world_state = WorldState()
+    db = DatabaseManager("experiments.db")
 """
 
 from .world_state import WorldState
 from .database import DatabaseManager
 from .schemas import (
+    ExperimentPhase,
     EpochMetrics,
     CycleSummary,
+    QueriedImage,
     ExperimentConfig,
+    DatasetInfo,
     ValidationResult,
-    serialize_to_json,
-    deserialize_from_json,
-    validate_schema_dict
+    TrainingProgress,
+    ExperimentStatus
 )
 
-__version__ = "1.0.0"
-
 __all__ = [
-    'WorldState',
-    'DatabaseManager',
-    'EpochMetrics',
-    'CycleSummary',
-    'ExperimentConfig',
-    'ValidationResult',
-    'serialize_to_json',
-    'deserialize_from_json',
-    'validate_schema_dict'
+    # Core classes
+    "WorldState",
+    "DatabaseManager",
+    
+    # Schemas
+    "ExperimentPhase",
+    "EpochMetrics",
+    "CycleSummary",
+    "QueriedImage",
+    "ExperimentConfig",
+    "DatasetInfo",
+    "ValidationResult",
+    "TrainingProgress",
+    "ExperimentStatus"
 ]

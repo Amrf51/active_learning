@@ -1,301 +1,462 @@
 """
-WorldState: In-memory experiment state for fast UI access.
+WorldState - In-Memory Experiment State.
 
-This module provides the WorldState dataclass that maintains current experiment
-state in memory for fast access (~1ms). It's designed to be thread-safe for
-updates from the service listener thread while providing immediate access for
-the UI components.
+This module provides the WorldState class which holds the current experiment
+state in memory for microsecond-level access. This replaces the JSON file
+approach that required ~500ms reads.
+
+Key Design Decisions:
+1. Pure data container - no business logic
+2. Thread-safe with simple Lock (for listener thread updates)
+3. Only holds CURRENT state - historical data goes to SQLite
+4. Lightweight - no Pydantic validation overhead
+
+Usage:
+    world_state = WorldState()
+    world_state.phase = ExperimentPhase.TRAINING
+    world_state.current_epoch = 5
+    
+    # Thread-safe update from listener
+    with world_state.lock:
+        world_state.current_metrics = new_metrics
+        world_state.pending_updates = True
 """
 
 from dataclasses import dataclass, field
-from threading import Lock
-from typing import Dict, List, Optional, Any
 from datetime import datetime
-import uuid
+from threading import Lock
+from typing import Any, Dict, List, Optional
+import logging
+
+from .schemas import (
+    ExperimentPhase,
+    ExperimentConfig,
+    EpochMetrics,
+    CycleSummary,
+    QueriedImage,
+    DatasetInfo
+)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class WorldState:
     """
-    In-memory experiment state for fast UI access.
+    In-memory representation of current experiment state.
     
-    This class maintains the current experiment state in memory to provide
-    fast access for UI components. It's synchronized with SQLite for persistence
-    but optimized for immediate read access.
+    This is the SINGLE SOURCE OF TRUTH for current state.
+    Historical data is stored in SQLite.
     
     Thread Safety:
-    - Uses a Lock to ensure thread-safe updates from service listener thread
-    - All state modifications should acquire the lock
-    - Read operations are atomic for basic types
+        The listener thread (receiving events from Service) and the main
+        Streamlit thread both access WorldState. Use the lock for updates:
+        
+        with world_state.lock:
+            world_state.current_metrics = new_metrics
     
-    State Categories:
-    - Identity: experiment_id, experiment_name
-    - Configuration: config dict
-    - Phase: phase, error_message  
-    - Progress: current_cycle, total_cycles, current_epoch, epochs_per_cycle
-    - Metrics: current_metrics, epoch_history (current cycle only)
-    - Query: queried_images (current batch only)
-    - UI: pending_updates flag
+    Attributes:
+        # Identity
+        experiment_id: Unique identifier
+        experiment_name: Human-readable name
+        created_at: When experiment was created
+        
+        # Phase & Status
+        phase: Current experiment phase
+        error_message: Error details if phase is ERROR
+        
+        # Progress
+        current_cycle: Current AL cycle (1-indexed)
+        total_cycles: Total cycles to run
+        current_epoch: Current epoch within cycle (1-indexed)
+        epochs_per_cycle: Epochs per cycle from config
+        
+        # Pool Sizes
+        labeled_count: Current labeled pool size
+        unlabeled_count: Current unlabeled pool size
+        
+        # Current Cycle Data (reset each cycle)
+        current_metrics: Latest epoch metrics
+        epoch_history: All epochs in current cycle
+        
+        # Query Data
+        queried_images: Images awaiting annotation
+        
+        # Configuration
+        config: Experiment configuration (immutable)
+        dataset_info: Dataset statistics
+        
+        # UI Synchronization
+        pending_updates: Flag for UI to check for new data
     """
     
+    # ═══════════════════════════════════════════════════════════════════
     # Identity
+    # ═══════════════════════════════════════════════════════════════════
     experiment_id: Optional[str] = None
     experiment_name: Optional[str] = None
+    created_at: Optional[datetime] = None
     
-    # Configuration
-    config: Dict[str, Any] = field(default_factory=dict)
-    
-    # Phase and Status
-    phase: str = "IDLE"  # IDLE, INITIALIZING, TRAINING, AWAITING_ANNOTATION, ERROR
+    # ═══════════════════════════════════════════════════════════════════
+    # Phase & Status
+    # ═══════════════════════════════════════════════════════════════════
+    phase: ExperimentPhase = ExperimentPhase.IDLE
     error_message: Optional[str] = None
     
-    # Progress Tracking
+    # ═══════════════════════════════════════════════════════════════════
+    # Progress
+    # ═══════════════════════════════════════════════════════════════════
     current_cycle: int = 0
     total_cycles: int = 0
     current_epoch: int = 0
     epochs_per_cycle: int = 0
     
-    # Current Metrics (for current cycle only)
-    current_metrics: Dict[str, Any] = field(default_factory=dict)
-    epoch_history: List[Dict[str, Any]] = field(default_factory=list)
+    # ═══════════════════════════════════════════════════════════════════
+    # Pool Sizes
+    # ═══════════════════════════════════════════════════════════════════
+    labeled_count: int = 0
+    unlabeled_count: int = 0
     
-    # Query State (current batch only)
-    queried_images: List[Dict[str, Any]] = field(default_factory=list)
+    # ═══════════════════════════════════════════════════════════════════
+    # Current Cycle Data
+    # ═══════════════════════════════════════════════════════════════════
+    current_metrics: Optional[EpochMetrics] = None
+    epoch_history: List[EpochMetrics] = field(default_factory=list)
     
-    # UI State
+    # ═══════════════════════════════════════════════════════════════════
+    # Query Data
+    # ═══════════════════════════════════════════════════════════════════
+    queried_images: List[QueriedImage] = field(default_factory=list)
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # Configuration
+    # ═══════════════════════════════════════════════════════════════════
+    config: Optional[ExperimentConfig] = None
+    dataset_info: Optional[DatasetInfo] = None
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # UI Synchronization
+    # ═══════════════════════════════════════════════════════════════════
     pending_updates: bool = False
     
-    # Thread safety
-    _lock: Lock = field(default_factory=Lock, init=False, repr=False)
+    # ═══════════════════════════════════════════════════════════════════
+    # Thread Safety
+    # ═══════════════════════════════════════════════════════════════════
+    _lock: Lock = field(default_factory=Lock, repr=False)
     
-    def __post_init__(self):
-        """Initialize the lock after dataclass creation."""
-        if not hasattr(self, '_lock'):
-            self._lock = Lock()
+    @property
+    def lock(self) -> Lock:
+        """Get the thread lock for safe updates."""
+        return self._lock
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # Initialization Methods
+    # ═══════════════════════════════════════════════════════════════════
+    
+    def initialize(
+        self,
+        experiment_id: str,
+        experiment_name: str,
+        config: ExperimentConfig,
+        dataset_info: Optional[DatasetInfo] = None
+    ) -> None:
+        """
+        Initialize WorldState for a new experiment.
+        
+        Args:
+            experiment_id: Unique identifier
+            experiment_name: Human-readable name
+            config: Experiment configuration
+            dataset_info: Optional dataset statistics
+        """
+        with self._lock:
+            self.experiment_id = experiment_id
+            self.experiment_name = experiment_name
+            self.created_at = datetime.now()
+            self.config = config
+            self.dataset_info = dataset_info
+            
+            # Set from config
+            self.total_cycles = config.num_cycles
+            self.epochs_per_cycle = config.epochs_per_cycle
+            
+            # Reset progress
+            self.phase = ExperimentPhase.IDLE
+            self.error_message = None
+            self.current_cycle = 0
+            self.current_epoch = 0
+            self.labeled_count = config.initial_pool_size
+            self.unlabeled_count = 0  # Will be set when data loads
+            
+            # Clear cycle data
+            self.current_metrics = None
+            self.epoch_history = []
+            self.queried_images = []
+            
+            self.pending_updates = True
+            
+        logger.info(f"WorldState initialized: {experiment_id}")
     
     def reset(self) -> None:
         """
-        Reset WorldState for a new experiment.
+        Reset WorldState to initial empty state.
         
-        Clears all experiment-specific state while preserving the lock.
-        Should be called when starting a new experiment.
+        Called when starting a new experiment or on error recovery.
         """
         with self._lock:
             self.experiment_id = None
             self.experiment_name = None
-            self.config = {}
-            self.phase = "IDLE"
+            self.created_at = None
+            self.config = None
+            self.dataset_info = None
+            
+            self.phase = ExperimentPhase.IDLE
             self.error_message = None
+            
             self.current_cycle = 0
             self.total_cycles = 0
             self.current_epoch = 0
             self.epochs_per_cycle = 0
-            self.current_metrics = {}
+            
+            self.labeled_count = 0
+            self.unlabeled_count = 0
+            
+            self.current_metrics = None
             self.epoch_history = []
             self.queried_images = []
+            
             self.pending_updates = False
+            
+        logger.info("WorldState reset to empty")
     
     def restore_from_db(self, experiment_data: Dict[str, Any]) -> None:
         """
-        Restore WorldState from database experiment data.
+        Restore WorldState from database record.
         
-        Used during application startup to restore the state of an active
-        experiment from the SQLite database.
-        
-        Args:
-            experiment_data: Dictionary containing experiment data from database
-                Expected keys: id, name, config_json, phase, current_cycle, etc.
-        """
-        with self._lock:
-            self.experiment_id = experiment_data.get('id')
-            self.experiment_name = experiment_data.get('name')
-            self.config = experiment_data.get('config', {})
-            self.phase = experiment_data.get('phase', 'IDLE')
-            self.error_message = experiment_data.get('error_message')
-            self.current_cycle = experiment_data.get('current_cycle', 0)
-            self.total_cycles = experiment_data.get('total_cycles', 0)
-            self.current_epoch = experiment_data.get('current_epoch', 0)
-            self.epochs_per_cycle = experiment_data.get('epochs_per_cycle', 0)
-            
-            # Reset transient state (not persisted)
-            self.current_metrics = {}
-            self.epoch_history = []
-            self.queried_images = []
-            self.pending_updates = False
-    
-    def initialize_experiment(self, experiment_name: str, config: Dict[str, Any]) -> str:
-        """
-        Initialize a new experiment.
+        Called on session recovery when loading an existing experiment.
         
         Args:
-            experiment_name: Name of the experiment
-            config: Experiment configuration dictionary
-            
-        Returns:
-            experiment_id: Generated unique experiment ID
+            experiment_data: Dict from DatabaseManager.get_active_experiment()
         """
         with self._lock:
-            self.experiment_id = str(uuid.uuid4())
-            self.experiment_name = experiment_name
-            self.config = config.copy()
-            self.phase = "INITIALIZING"
-            self.error_message = None
-            self.current_cycle = 0
-            self.total_cycles = config.get('total_cycles', 10)
+            self.experiment_id = experiment_data["experiment_id"]
+            self.experiment_name = experiment_data["experiment_name"]
+            self.created_at = experiment_data.get("created_at")
+            
+            if experiment_data.get("config"):
+                self.config = ExperimentConfig.from_dict(experiment_data["config"])
+                self.total_cycles = self.config.num_cycles
+                self.epochs_per_cycle = self.config.epochs_per_cycle
+            
+            self.phase = ExperimentPhase(experiment_data.get("phase", "IDLE"))
+            self.current_cycle = experiment_data.get("current_cycle", 0)
+            self.labeled_count = experiment_data.get("labeled_count", 0)
+            self.unlabeled_count = experiment_data.get("unlabeled_count", 0)
+            
+            # Clear transient data - will be populated if needed
             self.current_epoch = 0
-            self.epochs_per_cycle = config.get('epochs_per_cycle', 5)
-            self.current_metrics = {}
+            self.current_metrics = None
             self.epoch_history = []
             self.queried_images = []
+            
             self.pending_updates = True
             
-            return self.experiment_id
+        logger.info(f"WorldState restored from DB: {self.experiment_id}")
     
-    def set_phase(self, phase: str, error_message: Optional[str] = None) -> None:
+    # ═══════════════════════════════════════════════════════════════════
+    # State Update Methods
+    # ═══════════════════════════════════════════════════════════════════
+    
+    def set_phase(self, phase: ExperimentPhase, error_message: Optional[str] = None) -> None:
         """
         Update the experiment phase.
         
         Args:
-            phase: New phase (IDLE, INITIALIZING, TRAINING, AWAITING_ANNOTATION, ERROR)
-            error_message: Optional error message if phase is ERROR
+            phase: New phase
+            error_message: Error details if phase is ERROR
         """
         with self._lock:
+            old_phase = self.phase
             self.phase = phase
-            self.error_message = error_message
+            if error_message:
+                self.error_message = error_message
+            elif phase != ExperimentPhase.ERROR:
+                self.error_message = None
             self.pending_updates = True
+            
+        logger.info(f"Phase changed: {old_phase.value} → {phase.value}")
     
-    def update_training_progress(self, current_epoch: int, metrics: Dict[str, Any]) -> None:
+    def set_error(self, message: str) -> None:
         """
-        Update training progress and metrics.
+        Set error state with message.
         
         Args:
-            current_epoch: Current epoch number
-            metrics: Training metrics for this epoch
+            message: Error description
         """
-        with self._lock:
-            self.current_epoch = current_epoch
-            self.current_metrics = metrics.copy()
-            
-            # Add to epoch history for current cycle
-            epoch_data = {
-                'epoch': current_epoch,
-                'timestamp': datetime.now().isoformat(),
-                **metrics
-            }
-            self.epoch_history.append(epoch_data)
-            
-            self.pending_updates = True
+        self.set_phase(ExperimentPhase.ERROR, error_message=message)
     
-    def start_new_cycle(self, cycle_number: int) -> None:
+    def start_cycle(self, cycle: int, labeled_count: int, unlabeled_count: int) -> None:
         """
-        Start a new active learning cycle.
+        Start a new AL cycle.
         
         Args:
-            cycle_number: The cycle number being started
+            cycle: Cycle number (1-indexed)
+            labeled_count: Current labeled pool size
+            unlabeled_count: Current unlabeled pool size
         """
         with self._lock:
-            self.current_cycle = cycle_number
+            self.current_cycle = cycle
             self.current_epoch = 0
-            self.current_metrics = {}
-            self.epoch_history = []  # Reset for new cycle
+            self.labeled_count = labeled_count
+            self.unlabeled_count = unlabeled_count
+            self.current_metrics = None
+            self.epoch_history = []
             self.queried_images = []
-            self.phase = "TRAINING"
             self.pending_updates = True
-    
-    def set_queried_images(self, images: List[Dict[str, Any]]) -> None:
-        """
-        Set the queried images for annotation.
-        
-        Args:
-            images: List of queried image data
-        """
-        with self._lock:
-            self.queried_images = images.copy()
-            self.phase = "AWAITING_ANNOTATION"
-            self.pending_updates = True
-    
-    def complete_cycle(self, cycle_results: Dict[str, Any]) -> None:
-        """
-        Complete the current cycle.
-        
-        Args:
-            cycle_results: Results summary for the completed cycle
-        """
-        with self._lock:
-            # Update any final metrics from cycle results
-            if 'final_metrics' in cycle_results:
-                self.current_metrics.update(cycle_results['final_metrics'])
             
-            # Clear transient state
-            self.queried_images = []
-            self.phase = "IDLE"
+        logger.info(f"Started cycle {cycle}: labeled={labeled_count}, unlabeled={unlabeled_count}")
+    
+    def update_epoch(self, metrics: EpochMetrics) -> None:
+        """
+        Update with new epoch metrics.
+        
+        Called by listener thread when EPOCH_COMPLETE event arrives.
+        
+        Args:
+            metrics: Metrics for completed epoch
+        """
+        with self._lock:
+            self.current_epoch = metrics.epoch
+            self.current_metrics = metrics
+            self.epoch_history.append(metrics)
             self.pending_updates = True
+            
+        logger.debug(f"Epoch {metrics.epoch} complete: loss={metrics.train_loss:.4f}, acc={metrics.val_accuracy:.4f}")
     
-    def get_status(self) -> Dict[str, Any]:
+    def set_queried_images(self, images: List[QueriedImage]) -> None:
         """
-        Get current experiment status.
+        Set images awaiting annotation.
         
-        Returns:
-            Dictionary with phase, cycle info, and error message
-        """
-        # No lock needed for read-only access to atomic fields
-        return {
-            'experiment_id': self.experiment_id,
-            'experiment_name': self.experiment_name,
-            'phase': self.phase,
-            'error_message': self.error_message,
-            'current_cycle': self.current_cycle,
-            'total_cycles': self.total_cycles,
-            'progress_percentage': (self.current_cycle / max(self.total_cycles, 1)) * 100
-        }
-    
-    def get_training_progress(self) -> Dict[str, Any]:
-        """
-        Get current training progress.
-        
-        Returns:
-            Dictionary with epoch info, metrics, and history
-        """
-        # Create a snapshot under lock to ensure consistency
-        with self._lock:
-            return {
-                'current_epoch': self.current_epoch,
-                'epochs_per_cycle': self.epochs_per_cycle,
-                'current_metrics': self.current_metrics.copy(),
-                'epoch_history': self.epoch_history.copy(),
-                'progress_percentage': (self.current_epoch / max(self.epochs_per_cycle, 1)) * 100
-            }
-    
-    def get_queried_images(self) -> List[Dict[str, Any]]:
-        """
-        Get current queried images for annotation.
-        
-        Returns:
-            List of queried image data
+        Args:
+            images: List of queried images
         """
         with self._lock:
-            return self.queried_images.copy()
+            self.queried_images = images
+            self.pending_updates = True
+            
+        logger.info(f"Set {len(images)} queried images")
+    
+    def finalize_cycle(self, labeled_count: int, unlabeled_count: int) -> None:
+        """
+        Finalize current cycle after annotations.
+        
+        Args:
+            labeled_count: Updated labeled pool size
+            unlabeled_count: Updated unlabeled pool size
+        """
+        with self._lock:
+            self.labeled_count = labeled_count
+            self.unlabeled_count = unlabeled_count
+            self.queried_images = []
+            self.pending_updates = True
+            
+        logger.info(f"Cycle {self.current_cycle} finalized: labeled={labeled_count}")
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # UI Synchronization
+    # ═══════════════════════════════════════════════════════════════════
     
     def has_pending_updates(self) -> bool:
-        """
-        Check if there are pending UI updates.
-        
-        Returns:
-            True if UI should refresh
-        """
+        """Check if there are pending updates for UI."""
         return self.pending_updates
     
     def clear_pending_updates(self) -> None:
-        """Clear the pending updates flag."""
+        """Clear the pending updates flag after UI refresh."""
         with self._lock:
             self.pending_updates = False
     
-    def set_pending_updates(self, value: bool = True) -> None:
-        """
-        Set the pending updates flag.
-        
-        Args:
-            value: Whether there are pending updates
-        """
+    def mark_updated(self) -> None:
+        """Mark that state has been updated (triggers UI refresh)."""
         with self._lock:
-            self.pending_updates = value
+            self.pending_updates = True
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # Computed Properties
+    # ═══════════════════════════════════════════════════════════════════
+    
+    @property
+    def is_initialized(self) -> bool:
+        """Check if an experiment is loaded."""
+        return self.experiment_id is not None
+    
+    @property
+    def is_running(self) -> bool:
+        """Check if experiment is actively running."""
+        active_phases = {
+            ExperimentPhase.INITIALIZING,
+            ExperimentPhase.PREPARING,
+            ExperimentPhase.TRAINING,
+            ExperimentPhase.VALIDATING,
+            ExperimentPhase.EVALUATING,
+            ExperimentPhase.QUERYING
+        }
+        return self.phase in active_phases
+    
+    @property
+    def is_complete(self) -> bool:
+        """Check if experiment is complete."""
+        return self.phase == ExperimentPhase.COMPLETED
+    
+    @property
+    def has_error(self) -> bool:
+        """Check if experiment is in error state."""
+        return self.phase == ExperimentPhase.ERROR
+    
+    @property
+    def progress_percentage(self) -> float:
+        """
+        Calculate overall progress percentage.
+        
+        Returns:
+            Progress from 0.0 to 100.0
+        """
+        if self.total_cycles == 0:
+            return 0.0
+        
+        # Base progress from completed cycles
+        cycle_progress = (self.current_cycle - 1) / self.total_cycles if self.current_cycle > 0 else 0
+        
+        # Add progress within current cycle
+        if self.epochs_per_cycle > 0 and self.current_cycle > 0:
+            epoch_progress = self.current_epoch / self.epochs_per_cycle
+            cycle_contribution = epoch_progress / self.total_cycles
+            return (cycle_progress + cycle_contribution) * 100
+        
+        return cycle_progress * 100
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Serialize WorldState to dictionary.
+        
+        Used for debugging and logging.
+        """
+        return {
+            "experiment_id": self.experiment_id,
+            "experiment_name": self.experiment_name,
+            "phase": self.phase.value,
+            "current_cycle": self.current_cycle,
+            "total_cycles": self.total_cycles,
+            "current_epoch": self.current_epoch,
+            "epochs_per_cycle": self.epochs_per_cycle,
+            "labeled_count": self.labeled_count,
+            "unlabeled_count": self.unlabeled_count,
+            "pending_updates": self.pending_updates,
+            "error_message": self.error_message
+        }
+    
+    def __repr__(self) -> str:
+        return (
+            f"WorldState(id={self.experiment_id}, phase={self.phase.value}, "
+            f"cycle={self.current_cycle}/{self.total_cycles}, "
+            f"epoch={self.current_epoch}/{self.epochs_per_cycle})"
+        )
