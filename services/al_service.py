@@ -188,6 +188,40 @@ class ActiveLearningService:
         """
         logger.info("Initializing backend components...")
         
+        # Check for forced mock mode (useful for testing)
+        if self.config.get("mock_mode", False):
+            logger.info("Mock mode enabled via config")
+            self._mock_mode = True
+            return
+        
+        # Check if backend modules exist before trying to import torch
+        # This prevents hanging on CUDA initialization when backend isn't ready
+        import importlib.util
+        
+        backend_modules = [
+            "backend.trainer",
+            "backend.data_manager", 
+            "backend.active_loop",
+            "backend.dataloader",
+            "backend.models",
+            "backend.strategies",
+            "backend.config"
+        ]
+        
+        # Quick check if backend package exists
+        backend_available = True
+        for module_name in backend_modules:
+            spec = importlib.util.find_spec(module_name)
+            if spec is None:
+                logger.warning(f"Backend module not found: {module_name}")
+                backend_available = False
+                break
+        
+        if not backend_available:
+            logger.info("Backend modules not available - running in mock mode")
+            self._mock_mode = True
+            return
+        
         # Import backend modules
         # These imports are done here to avoid importing torch in main process
         try:
@@ -201,6 +235,11 @@ class ActiveLearningService:
             from backend.config import Config
         except ImportError as e:
             logger.warning(f"Backend import failed: {e}")
+            logger.info("Running in mock mode for testing")
+            self._mock_mode = True
+            return
+        except Exception as e:
+            logger.warning(f"Backend initialization error: {e}")
             logger.info("Running in mock mode for testing")
             self._mock_mode = True
             return

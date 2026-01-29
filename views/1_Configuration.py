@@ -1,5 +1,5 @@
 """
-Configuration Page - Set up new Active Learning experiments
+Configuration Page - Set up new Active Learning experiments (MVC Architecture)
 
 This page allows users to:
 - Select dataset from available datasets in ./data/raw/
@@ -9,7 +9,13 @@ This page allows users to:
 - Choose sampling strategy (Random, Uncertainty, Entropy, Margin)
 - Configure training parameters (cycles, pool size, batch size, epochs)
 - Set reset mode (pretrained, head_only, none)
-- Initialize new experiments
+- Initialize new experiments via Controller (MVC Architecture)
+
+Key Changes from Old Version:
+- Uses Controller.dispatch() instead of StateManager
+- Service auto-spawns (no manual worker command needed)
+- Event-driven experiment initialization
+- Reads from in-memory WorldState instead of JSON files
 """
 
 import streamlit as st
@@ -24,7 +30,12 @@ import pandas as pd
 src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
-from state import ExperimentManager, StateManager, ExperimentConfig, DatasetInfo, ExperimentState, ExperimentPhase
+# NEW: MVC imports
+from views.controller_factory import get_controller, update_session_heartbeat
+from controller.events import Event, EventType
+from model.schemas import DatasetInfo
+
+# Keep existing Config import (we still use it)
 from config import ConfigManager, Config
 
 logger = logging.getLogger(__name__)
@@ -39,6 +50,10 @@ st.set_page_config(
     page_icon="⚙️",
     layout="wide"
 )
+
+# NEW: Update session heartbeat
+update_session_heartbeat()
+
 
 # Custom CSS
 st.markdown("""
@@ -214,11 +229,14 @@ def compute_split_sizes(total_images: int, val_split: float, test_split: float) 
 # Session State Initialization
 # =============================================================================
 
+
+# =============================================================================
+# Session State Initialization (MODIFIED for MVC)
+# =============================================================================
+
 def initialize_session_state():
-    """Initialize session state for configuration."""
-    if "experiment_manager" not in st.session_state:
-        experiments_dir = Path("experiments")
-        st.session_state.experiment_manager = ExperimentManager(experiments_dir)
+    """Initialize session state for configuration (MVC version)."""
+    # REMOVED: experiment_manager (Controller handles this now)
     
     if "config_manager" not in st.session_state:
         st.session_state.config_manager = ConfigManager()
@@ -236,7 +254,7 @@ def initialize_session_state():
             "learning_rate": 0.001,
             "reset_mode": "pretrained",
             "seed": 42,
-            # New dataset-related fields
+            # Dataset-related fields
             "data_base_path": DEFAULT_DATA_BASE_PATH,
             "selected_dataset": None,
             "val_split": 0.15,
@@ -252,14 +270,12 @@ def initialize_session_state():
     if "available_datasets" not in st.session_state:
         st.session_state.available_datasets = []
 
-
-# =============================================================================
 # Dataset Selection UI
 # =============================================================================
 
 def display_dataset_selection():
     """Display dataset selection and scanning interface."""
-    st.subheader("📁 Dataset Configuration")
+    st.subheader("ðŸ“ Dataset Configuration")
     
     form_data = st.session_state.config_form_data
     
@@ -271,17 +287,17 @@ def display_dataset_selection():
     st.session_state.available_datasets = available_datasets
     
     if not available_datasets:
-        st.error(f"❌ No datasets found in `{form_data['data_base_path']}`")
+        st.error(f"âŒ No datasets found in `{form_data['data_base_path']}`")
         st.info("Please ensure your datasets are organized in ImageFolder structure:")
         st.code("""
 ./data/raw/
-├── kaggle-vehicle/
-│   ├── bus/
-│   ├── car/
-│   └── ...
-├── stanford/
-│   ├── class1/
-│   └── ...
+â”œâ”€â”€ kaggle-vehicle/
+â”‚   â”œâ”€â”€ bus/
+â”‚   â”œâ”€â”€ car/
+â”‚   â””â”€â”€ ...
+â”œâ”€â”€ stanford/
+â”‚   â”œâ”€â”€ class1/
+â”‚   â””â”€â”€ ...
         """)
         return
     
@@ -308,7 +324,7 @@ def display_dataset_selection():
     
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
-        scan_clicked = st.button("🔍 Scan Dataset", type="primary", use_container_width=True)
+        scan_clicked = st.button("ðŸ” Scan Dataset", type="primary", use_container_width=True)
     
     # Handle scan button
     if scan_clicked:
@@ -351,14 +367,14 @@ def scan_selected_dataset():
             st.session_state.dataset_info = dataset_info
             st.session_state.dataset_scanned = True
             
-            st.success(f"✅ Dataset scanned successfully!")
+            st.success(f"âœ… Dataset scanned successfully!")
             st.rerun()
             
     except ValueError as e:
-        st.error(f"❌ {str(e)}")
+        st.error(f"âŒ {str(e)}")
         st.session_state.dataset_scanned = False
     except Exception as e:
-        st.error(f"❌ Error scanning dataset: {str(e)}")
+        st.error(f"âŒ Error scanning dataset: {str(e)}")
         st.session_state.dataset_scanned = False
 
 
@@ -370,7 +386,7 @@ def display_dataset_overview():
         return
     
     st.markdown("---")
-    st.markdown("### 📊 Dataset Overview")
+    st.markdown("### ðŸ“Š Dataset Overview")
     
     # Metrics row
     col1, col2, col3, col4 = st.columns(4)
@@ -387,16 +403,16 @@ def display_dataset_overview():
         if counts:
             imbalance_ratio = max(counts) / min(counts) if min(counts) > 0 else float('inf')
             if imbalance_ratio > 2:
-                st.metric("Balance", f"⚠️ {imbalance_ratio:.1f}x")
+                st.metric("Balance", f"âš ï¸ {imbalance_ratio:.1f}x")
             else:
-                st.metric("Balance", f"✅ {imbalance_ratio:.1f}x")
+                st.metric("Balance", f"âœ… {imbalance_ratio:.1f}x")
     
     with col4:
         avg_per_class = dataset_info.total_images / dataset_info.num_classes if dataset_info.num_classes > 0 else 0
         st.metric("Avg/Class", f"{avg_per_class:.0f}")
     
     # Class list
-    with st.expander("📋 Classes Found", expanded=False):
+    with st.expander("ðŸ“‹ Classes Found", expanded=False):
         class_list = ", ".join(dataset_info.class_names)
         st.write(class_list)
     
@@ -416,19 +432,19 @@ def display_dataset_overview():
         st.info(f"Dataset has {dataset_info.num_classes} classes. Distribution chart hidden for readability.")
         
         # Show top/bottom classes instead
-        with st.expander("📊 Top/Bottom Classes by Count"):
+        with st.expander("ðŸ“Š Top/Bottom Classes by Count"):
             sorted_classes = sorted(dataset_info.class_counts.items(), key=lambda x: x[1], reverse=True)
             
             col1, col2 = st.columns(2)
             with col1:
                 st.write("**Top 5 Classes:**")
                 for name, count in sorted_classes[:5]:
-                    st.write(f"• {name}: {count}")
+                    st.write(f"â€¢ {name}: {count}")
             
             with col2:
                 st.write("**Bottom 5 Classes:**")
                 for name, count in sorted_classes[-5:]:
-                    st.write(f"• {name}: {count}")
+                    st.write(f"â€¢ {name}: {count}")
 
 
 def display_split_configuration():
@@ -440,7 +456,7 @@ def display_split_configuration():
         return
     
     st.markdown("---")
-    st.markdown("### ⚙️ Data Splits")
+    st.markdown("### âš™ï¸ Data Splits")
     st.markdown("Configure how the dataset is split into training, validation, and test sets.")
     
     col1, col2, col3 = st.columns(3)
@@ -487,20 +503,20 @@ def display_split_configuration():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.info(f"🎯 **Training Pool**\n\n{splits['train_samples']:,} images\n\n*Used for Active Learning*")
+        st.info(f"ðŸŽ¯ **Training Pool**\n\n{splits['train_samples']:,} images\n\n*Used for Active Learning*")
     
     with col2:
-        st.info(f"📊 **Validation**\n\n{splits['val_samples']:,} images\n\n*Fixed throughout AL*")
+        st.info(f"ðŸ“Š **Validation**\n\n{splits['val_samples']:,} images\n\n*Fixed throughout AL*")
     
     with col3:
-        st.info(f"🧪 **Test**\n\n{splits['test_samples']:,} images\n\n*Final evaluation*")
+        st.info(f"ðŸ§ª **Test**\n\n{splits['test_samples']:,} images\n\n*Final evaluation*")
     
     # Warning if splits are too small
     if splits["val_samples"] < 20:
-        st.warning("⚠️ Validation set is very small. Consider reducing the validation split.")
+        st.warning("âš ï¸ Validation set is very small. Consider reducing the validation split.")
     
     if splits["test_samples"] < 20:
-        st.warning("⚠️ Test set is very small. Consider reducing the test split.")
+        st.warning("âš ï¸ Test set is very small. Consider reducing the test split.")
 
 
 def display_al_pool_preview():
@@ -512,7 +528,7 @@ def display_al_pool_preview():
         return
     
     st.markdown("---")
-    st.markdown("### 🎯 Active Learning Pool Preview")
+    st.markdown("### ðŸŽ¯ Active Learning Pool Preview")
     
     train_samples = dataset_info.train_samples
     initial_pool = form_data["initial_pool_size"]
@@ -530,18 +546,18 @@ def display_al_pool_preview():
     
     with col1:
         st.markdown("**Starting State:**")
-        st.write(f"• Training pool: {train_samples:,} images")
-        st.write(f"• Initial labeled: {initial_pool:,} images")
-        st.write(f"• Unlabeled pool: {unlabeled_pool:,} images")
+        st.write(f"â€¢ Training pool: {train_samples:,} images")
+        st.write(f"â€¢ Initial labeled: {initial_pool:,} images")
+        st.write(f"â€¢ Unlabeled pool: {unlabeled_pool:,} images")
     
     with col2:
         st.markdown("**After {0} Cycles:**".format(num_cycles))
-        st.write(f"• Total labeled: {final_labeled:,} images ({100*final_labeled/train_samples:.1f}%)")
-        st.write(f"• Remaining unlabeled: {max(0, final_unlabeled):,} images")
-        st.write(f"• Total annotations: {total_queries:,} images")
+        st.write(f"â€¢ Total labeled: {final_labeled:,} images ({100*final_labeled/train_samples:.1f}%)")
+        st.write(f"â€¢ Remaining unlabeled: {max(0, final_unlabeled):,} images")
+        st.write(f"â€¢ Total annotations: {total_queries:,} images")
     
     # Projection visualization
-    st.markdown("#### 📈 Labeling Progression")
+    st.markdown("#### ðŸ“ˆ Labeling Progression")
     
     progression_data = []
     current_labeled = initial_pool
@@ -561,15 +577,15 @@ def display_al_pool_preview():
     
     # Warnings
     if initial_pool > train_samples:
-        st.error(f"❌ Initial pool size ({initial_pool}) exceeds training samples ({train_samples})")
+        st.error(f"âŒ Initial pool size ({initial_pool}) exceeds training samples ({train_samples})")
     elif initial_pool > train_samples * 0.5:
-        st.warning(f"⚠️ Initial pool is {100*initial_pool/train_samples:.0f}% of training data. Consider a smaller initial pool for AL to be effective.")
+        st.warning(f"âš ï¸ Initial pool is {100*initial_pool/train_samples:.0f}% of training data. Consider a smaller initial pool for AL to be effective.")
     
     if total_queries > unlabeled_pool:
-        st.warning(f"⚠️ Total queries ({total_queries}) exceed available unlabeled samples ({unlabeled_pool}). Some cycles may query fewer samples.")
+        st.warning(f"âš ï¸ Total queries ({total_queries}) exceed available unlabeled samples ({unlabeled_pool}). Some cycles may query fewer samples.")
     
     if final_labeled >= train_samples:
-        st.info(f"ℹ️ All training samples will be labeled by cycle {num_cycles}.")
+        st.info(f"â„¹ï¸ All training samples will be labeled by cycle {num_cycles}.")
 
 
 # =============================================================================
@@ -578,14 +594,14 @@ def display_al_pool_preview():
 
 def display_template_management():
     """Display template management section."""
-    with st.expander("📋 Configuration Templates", expanded=False):
+    with st.expander("ðŸ“‹ Configuration Templates", expanded=False):
         col1, col2 = st.columns([2, 1])
         
         with col1:
             st.markdown("Load from existing templates or save current configuration as a template.")
         
         with col2:
-            if st.button("🔄 Refresh Templates"):
+            if st.button("ðŸ”„ Refresh Templates"):
                 st.rerun()
         
         # Get available templates
@@ -594,7 +610,7 @@ def display_template_management():
         if templates:
             template_options = {}
             for template in templates:
-                status = "🔄 AL" if template["has_active_learning"] else "📊 Standard"
+                status = "ðŸ”„ AL" if template["has_active_learning"] else "ðŸ“Š Standard"
                 legacy = " (Legacy)" if template["is_legacy"] else ""
                 label = f"{status} {template['name']}{legacy}"
                 template_options[label] = template
@@ -614,18 +630,18 @@ def display_template_management():
                     st.markdown(f"**Description:** {template['description']}")
                 
                 with col2:
-                    if st.button("📥 Load Template", key="load_template"):
+                    if st.button("ðŸ“¥ Load Template", key="load_template"):
                         load_template_config(template['name'])
                 
                 with col3:
-                    if st.button("👁️ Preview", key="preview_template"):
+                    if st.button("ðŸ‘ï¸ Preview", key="preview_template"):
                         preview_template_config(template['name'])
         else:
             st.info("No templates found. Create your first template by configuring an experiment and saving it.")
         
         # Save current config as template
         st.markdown("---")
-        st.markdown("**💾 Save Current Configuration**")
+        st.markdown("**ðŸ’¾ Save Current Configuration**")
         
         col1, col2 = st.columns([3, 1])
         
@@ -638,7 +654,7 @@ def display_template_management():
         
         with col2:
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("💾 Save Template", disabled=not template_name.strip()):
+            if st.button("ðŸ’¾ Save Template", disabled=not template_name.strip()):
                 save_current_config_as_template(template_name.strip(), "")
 
 
@@ -660,11 +676,11 @@ def load_template_config(template_name: str):
             "seed": config.training.seed
         })
         
-        st.success(f"✅ Loaded template: {template_name}")
+        st.success(f"âœ… Loaded template: {template_name}")
         st.rerun()
         
     except Exception as e:
-        st.error(f"❌ Failed to load template: {e}")
+        st.error(f"âŒ Failed to load template: {e}")
 
 
 def preview_template_config(template_name: str):
@@ -673,11 +689,11 @@ def preview_template_config(template_name: str):
         config = Config.from_template(template_name)
         config_dict = config.to_dict()
         
-        st.markdown(f"### 👁️ Template Preview: {template_name}")
+        st.markdown(f"### ðŸ‘ï¸ Template Preview: {template_name}")
         st.json(config_dict)
         
     except Exception as e:
-        st.error(f"❌ Failed to preview template: {e}")
+        st.error(f"âŒ Failed to preview template: {e}")
 
 
 def save_current_config_as_template(template_name: str, description: str):
@@ -686,11 +702,11 @@ def save_current_config_as_template(template_name: str, description: str):
         config = create_config_from_form_data()
         template_path = config.save_as_template(template_name, description)
         
-        st.success(f"✅ Saved template: {template_name}")
+        st.success(f"âœ… Saved template: {template_name}")
         st.rerun()
         
     except Exception as e:
-        st.error(f"❌ Failed to save template: {e}")
+        st.error(f"âŒ Failed to save template: {e}")
 
 
 # =============================================================================
@@ -700,7 +716,7 @@ def save_current_config_as_template(template_name: str, description: str):
 def display_model_selection():
     """Display model architecture selection."""
     st.markdown('<div class="config-section">', unsafe_allow_html=True)
-    st.subheader("🏗️ Model Architecture")
+    st.subheader("ðŸ—ï¸ Model Architecture")
     
     model_options = {
         "resnet18": "ResNet-18 (11.7M params) - Fast training, good for small datasets",
@@ -720,11 +736,11 @@ def display_model_selection():
     st.session_state.config_form_data["model_name"] = selected_model
     
     if selected_model == "resnet18":
-        st.info("✅ **Recommended for beginners** - Fast training with good performance")
+        st.info("âœ… **Recommended for beginners** - Fast training with good performance")
     elif selected_model == "resnet50":
-        st.info("🎯 **Best accuracy** - Slower training but higher performance potential")
+        st.info("ðŸŽ¯ **Best accuracy** - Slower training but higher performance potential")
     else:
-        st.info("⚡ **Most efficient** - Great for resource-constrained environments")
+        st.info("âš¡ **Most efficient** - Great for resource-constrained environments")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -732,7 +748,7 @@ def display_model_selection():
 def display_sampling_strategy():
     """Display sampling strategy selection."""
     st.markdown('<div class="config-section">', unsafe_allow_html=True)
-    st.subheader("🎯 Active Learning Strategy")
+    st.subheader("ðŸŽ¯ Active Learning Strategy")
     
     strategy_options = {
         "uncertainty": "Uncertainty Sampling - Select samples with lowest confidence",
@@ -758,7 +774,7 @@ def display_sampling_strategy():
         "random": "Random baseline - useful for comparison with AL strategies"
     }
     
-    st.info(f"📝 **How it works:** {strategy_explanations[selected_strategy]}")
+    st.info(f"ðŸ“ **How it works:** {strategy_explanations[selected_strategy]}")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -766,7 +782,7 @@ def display_sampling_strategy():
 def display_training_parameters():
     """Display training parameter configuration."""
     st.markdown('<div class="config-section">', unsafe_allow_html=True)
-    st.subheader("🔧 Training Parameters")
+    st.subheader("ðŸ”§ Training Parameters")
     
     col1, col2 = st.columns(2)
     
@@ -825,7 +841,7 @@ def display_training_parameters():
 def display_reset_mode():
     """Display reset mode selection."""
     st.markdown('<div class="config-section">', unsafe_allow_html=True)
-    st.subheader("🔄 Model Reset Mode")
+    st.subheader("ðŸ”„ Model Reset Mode")
     
     reset_options = {
         "pretrained": "Pretrained - Reset to ImageNet weights each cycle (recommended)",
@@ -849,14 +865,14 @@ def display_reset_mode():
         "none": "Continues from previous weights - may lead to overfitting"
     }
     
-    st.info(f"📝 **Effect:** {reset_explanations[selected_reset]}")
+    st.info(f"ðŸ“ **Effect:** {reset_explanations[selected_reset]}")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
 
 def display_advanced_settings():
     """Display advanced configuration options."""
-    with st.expander("🔬 Advanced Settings", expanded=False):
+    with st.expander("ðŸ”¬ Advanced Settings", expanded=False):
         col1, col2 = st.columns(2)
         
         with col1:
@@ -870,10 +886,10 @@ def display_advanced_settings():
         
         with col2:
             st.write("**Additional Options:**")
-            st.write("• Early stopping: Enabled (patience=5)")
-            st.write("• Data augmentation: Enabled")
-            st.write("• Optimizer: Adam")
-            st.write("• Weight decay: 1e-4")
+            st.write("â€¢ Early stopping: Enabled (patience=5)")
+            st.write("â€¢ Data augmentation: Enabled")
+            st.write("â€¢ Optimizer: Adam")
+            st.write("â€¢ Weight decay: 1e-4")
 
 
 # =============================================================================
@@ -1000,9 +1016,22 @@ def create_experiment_config() -> ExperimentConfig:
     )
 
 
+
 def initialize_experiment():
-    """Initialize a new experiment with the current configuration."""
+    """
+    Initialize a new experiment via Controller (MVC version).
+    
+    Key Changes from Old Version:
+    - Uses Controller.dispatch(INITIALIZE_EXPERIMENT) instead of StateManager
+    - Service auto-spawns (no manual worker command)
+    - Config saved by Controller, not by this page
+    - Database handles experiment persistence
+    
+    Returns:
+        bool: True if experiment created successfully, False otherwise
+    """
     try:
+        # Validate configuration first
         errors, warnings = validate_configuration()
         
         if errors:
@@ -1016,52 +1045,72 @@ def initialize_experiment():
             for warning in warnings:
                 st.warning(f"• {warning}")
         
-        # Create experiment
+        # Create Config object from form data
+        config = create_config_from_form_data()
+        
+        # Get experiment name
         experiment_name = st.session_state.config_form_data["experiment_name"].strip()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        experiment_id = f"{experiment_name}_{timestamp}"
         
-        # Create experiment directory
-        exp_dir = st.session_state.experiment_manager.create_experiment(
-            experiment_name, experiment_id
-        )
+        if not experiment_name:
+            st.error("❌ Please provide an experiment name")
+            return False
         
-        # Create state manager and initialize state
-        state_manager = StateManager(exp_dir)
-        state = state_manager.initialize_state(experiment_id, experiment_name)
+        # Prepare dataset info for payload
+        dataset_info_dict = None
+        if st.session_state.dataset_info:
+            dataset_info_dict = {
+                "name": st.session_state.dataset_info.name,
+                "num_classes": st.session_state.dataset_info.num_classes,
+                "class_names": st.session_state.dataset_info.class_names,
+                "total_images": st.session_state.dataset_info.total_images,
+                "images_per_class": st.session_state.dataset_info.images_per_class,
+                "train_samples": st.session_state.dataset_info.train_samples,
+                "val_samples": st.session_state.dataset_info.val_samples,
+                "test_samples": st.session_state.dataset_info.test_samples
+            }
         
-        # Create and save configuration
-        config = create_experiment_config()
-        state.config = config
-        state.total_cycles = config.num_cycles
-        state.dataset_info = st.session_state.dataset_info
+        # Create event payload
+        payload = {
+            "experiment_name": experiment_name,
+            "config": config.to_dict(),  # Convert Config to dict for serialization
+            "dataset_info": dataset_info_dict
+        }
         
-        # Save updated state
-        state_manager.write_state(state)
+        # Get controller and dispatch initialization event
+        ctrl = get_controller()
         
-        # Also save the full Config object to the experiment directory
-        full_config = create_config_from_form_data()
-        full_config.save_to(str(exp_dir / "config.yaml"), include_metadata=True)
+        with st.spinner("🔄 Initializing experiment and starting service..."):
+            event = Event(EventType.INITIALIZE_EXPERIMENT, payload=payload)
+            success = ctrl.dispatch(event)
         
-        # Set as active experiment
-        st.session_state.experiment_manager.set_active(exp_dir)
-        
-        # Update session state
-        st.session_state.selected_experiment = experiment_id
-        st.session_state.state_manager = state_manager
-        
-        st.success(f"✅ Experiment **{experiment_id}** created successfully!")
-        st.info("🚀 You can now start the worker process and begin training in the **Active Learning** page.")
-        
-        # Display worker command
-        st.code(f"python run_worker.py --experiment-id {experiment_id}", language="bash")
-        
-        return True
+        if success:
+            st.success(f"✅ Experiment **{experiment_name}** created successfully!")
+            st.success("🚀 **Service process started automatically!**")
+            st.info("📊 Go to the **Active Learning** page to begin training.")
+            
+            # Show that no manual commands are needed!
+            st.markdown("""
+            <div class="success-box">
+            <h4>✨ No Manual Steps Required!</h4>
+            <p>The training service has been automatically started by the Controller.</p>
+            <p>You can immediately proceed to the <strong>Active Learning</strong> page to start training.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            return True
+        else:
+            # Get error from controller
+            status = ctrl.get_status()
+            error_msg = status.error_message if status.error_message else "Unknown error"
+            
+            st.error(f"❌ Failed to initialize experiment: {error_msg}")
+            return False
     
     except Exception as e:
         st.error(f"❌ Failed to create experiment: {str(e)}")
-        logger.error(f"Experiment creation failed: {e}")
+        logger.error(f"Experiment creation failed: {e}", exc_info=True)
         return False
+
 
 
 # =============================================================================
