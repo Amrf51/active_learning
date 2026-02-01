@@ -32,7 +32,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # NEW: MVC imports
-from views.controller_factory import get_controller, update_session_heartbeat
+from pages.controller_factory import get_controller, update_session_heartbeat
 from controller.events import Event, EventType
 from model.schemas import ExperimentPhase, EpochMetrics, QueriedImage
 

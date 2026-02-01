@@ -6,7 +6,7 @@ without importing complex dependencies. The factory ensures only one
 Controller instance exists per Streamlit session.
 
 Usage in Streamlit pages:
-    from views.controller_factory import get_controller
+    from pages.controller_factory import get_controller
     
     def my_page():
         ctrl = get_controller()
@@ -119,7 +119,7 @@ def initialize_controller_session() -> bool:
         bool: True if session acquired successfully, False if another session is active
     
     Example in dashboard.py:
-        >>> from views.controller_factory import initialize_controller_session
+        >>> from pages.controller_factory import initialize_controller_session
         >>> 
         >>> # Page configuration
         >>> st.set_page_config(...)
@@ -173,7 +173,7 @@ def update_session_heartbeat() -> None:
     rendering or in a periodic callback.
     
     Example in dashboard.py:
-        >>> from views.controller_factory import update_session_heartbeat
+        >>> from pages.controller_factory import update_session_heartbeat
         >>> 
         >>> def main():
         ...     update_session_heartbeat()  # Update at start of page
@@ -198,7 +198,7 @@ def cleanup_controller_session() -> None:
     need to be called manually or via a "Shutdown" button.
     
     Example:
-        >>> from views.controller_factory import cleanup_controller_session
+        >>> from pages.controller_factory import cleanup_controller_session
         >>> 
         >>> if st.button("🛑 Shutdown Dashboard"):
         ...     cleanup_controller_session()
@@ -237,7 +237,7 @@ def with_controller(func):
     Decorator to ensure controller is available before executing view function.
     
     Usage:
-        >>> from views.controller_factory import with_controller
+        >>> from pages.controller_factory import with_controller
         >>> 
         >>> @with_controller
         >>> def my_page():

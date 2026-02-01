@@ -24,7 +24,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # NEW: Import MVC controller factory
-from views.controller_factory import (
+from pages.controller_factory import (
     initialize_controller_session,
     get_controller,
     update_session_heartbeat
