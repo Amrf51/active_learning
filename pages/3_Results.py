@@ -23,7 +23,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 import logging
 import json
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
@@ -88,73 +88,95 @@ st.markdown("""
 
 def initialize_session_state():
     """Initialize session state for results page."""
-    if "experiment_manager" not in st.session_state:
-        experiments_dir = Path("experiments")
-        st.session_state.experiment_manager = ExperimentManager(experiments_dir)
-    
     if "selected_experiment" not in st.session_state:
         st.session_state.selected_experiment = None
-    
-    if "state_manager" not in st.session_state:
-        st.session_state.state_manager = None
-    
+
+    if "selected_experiment_data" not in st.session_state:
+        st.session_state.selected_experiment_data = None
+
     if "comparison_experiments" not in st.session_state:
         st.session_state.comparison_experiments = []
 
 
-def display_experiment_selector():
-    """Display experiment selection for results analysis."""
+def display_experiment_selector() -> Optional[Tuple[str, List[CycleSummary]]]:
+    """Display experiment selection for results analysis.
+
+    Returns:
+        Tuple of (experiment_id, cycle_summaries) or None if no experiment selected
+    """
     st.sidebar.header("📊 Results Analysis")
-    
-    # Get all experiments
-    experiments = st.session_state.experiment_manager.list_experiments()
-    
+
+    # Get controller to access database
+    ctrl = get_controller()
+    db_manager = ctrl._model_handler._db_manager
+
+    # Get all experiments from database
+    try:
+        experiments = db_manager.list_experiments()
+    except Exception as e:
+        st.sidebar.error(f"Failed to load experiments: {e}")
+        return None
+
     if not experiments:
         st.sidebar.info("No experiments found.")
         return None
-    
-    # Filter experiments that have results
+
+    # Filter experiments that have results (completed cycles)
     experiments_with_results = []
     for exp in experiments:
         try:
-            exp_dir = Path("experiments") / exp["experiment_id"]
-            state_manager = StateManager(exp_dir)
-            state = state_manager.read_state()
-            if state.cycle_results:  # Has completed cycles
-                experiments_with_results.append(exp)
-        except:
+            cycle_summaries = db_manager.get_cycle_summaries(exp["experiment_id"])
+            if cycle_summaries:  # Has completed cycles
+                experiments_with_results.append({
+                    "experiment_id": exp["experiment_id"],
+                    "experiment_name": exp.get("experiment_name", exp["experiment_id"]),
+                    "created_at": exp.get("created_at")
+                })
+        except Exception:
             continue
-    
+
     if not experiments_with_results:
         st.sidebar.warning("No experiments with results found.")
         return None
-    
+
     # Experiment selection
-    exp_options = ["None"] + [exp["experiment_id"] for exp in experiments_with_results]
-    
+    exp_options = ["None"] + [
+        f"{exp['experiment_name']} ({exp['experiment_id'][:8]}...)"
+        for exp in experiments_with_results
+    ]
+    exp_ids = ["None"] + [exp["experiment_id"] for exp in experiments_with_results]
+
     current_selection = st.session_state.selected_experiment
-    if current_selection not in exp_options:
+    if current_selection not in exp_ids:
         current_selection = "None"
-    
-    selected = st.sidebar.selectbox(
+
+    selected_idx = st.sidebar.selectbox(
         "Select Experiment",
-        exp_options,
-        index=exp_options.index(current_selection) if current_selection in exp_options else 0,
+        range(len(exp_options)),
+        format_func=lambda i: exp_options[i],
+        index=exp_ids.index(current_selection) if current_selection in exp_ids else 0,
         help="Choose an experiment to analyze"
     )
-    
-    if selected != "None" and selected != st.session_state.selected_experiment:
-        st.session_state.selected_experiment = selected
-        
-        # Initialize state manager for selected experiment
-        exp_dir = Path("experiments") / selected
-        st.session_state.state_manager = StateManager(exp_dir)
+
+    selected_id = exp_ids[selected_idx]
+
+    if selected_id != "None" and selected_id != st.session_state.selected_experiment:
+        st.session_state.selected_experiment = selected_id
         st.rerun()
-    
-    return selected if selected != "None" else None
+
+    if selected_id == "None":
+        return None
+
+    # Get cycle summaries for selected experiment
+    try:
+        cycle_summaries = db_manager.get_cycle_summaries(selected_id)
+        return (selected_id, cycle_summaries)
+    except Exception as e:
+        st.sidebar.error(f"Failed to load results: {e}")
+        return None
 
 
-def display_export_section(state: ExperimentState):
+def display_export_section(state):
     """Display export section with CSV download functionality."""
     st.markdown('<div class="export-section">', unsafe_allow_html=True)
     st.subheader("📥 Export Results")
@@ -171,8 +193,8 @@ def display_export_section(state: ExperimentState):
             'experiment_id': state.experiment_id,
             'experiment_name': state.experiment_name,
             'cycle': cycle_result.cycle,
-            'labeled_pool_size': cycle_result.labeled_pool_size,
-            'unlabeled_pool_size': cycle_result.unlabeled_pool_size,
+            'labeled_pool_size': cycle_result.labeled_count,
+            'unlabeled_pool_size': cycle_result.unlabeled_count,
             'epochs_trained': cycle_result.epochs_trained,
             'best_val_accuracy': cycle_result.best_val_accuracy,
             'best_epoch': cycle_result.best_epoch,
@@ -312,53 +334,77 @@ def display_export_section(state: ExperimentState):
 
 def main():
     """Main results page."""
+    # Update heartbeat to maintain session
+    update_session_heartbeat()
+
     initialize_session_state()
-    
+
     st.title("📊 Results & Analysis")
     st.markdown("Analyze and compare Active Learning experiment results.")
-    
-    # Experiment selection
-    selected_exp = display_experiment_selector()
-    
-    if not selected_exp or not st.session_state.state_manager:
+
+    # Experiment selection - returns (experiment_id, cycle_summaries) or None
+    result = display_experiment_selector()
+
+    if not result:
         st.info("👈 Select an experiment from the sidebar to view results.")
         return
-    
+
+    experiment_id, cycle_summaries = result
+
+    if not cycle_summaries:
+        st.warning("No completed cycles found for this experiment.")
+        return
+
     try:
-        state = st.session_state.state_manager.read_state()
-        
-        if not state.cycle_results:
-            st.warning("No completed cycles found for this experiment.")
-            return
-        
+        # Get full experiment details including config
+        ctrl = get_controller()
+        db_manager = ctrl._model_handler._db_manager
+        experiment_details = db_manager.get_experiment(experiment_id)
+
+        # Create a simple data structure to pass to display functions
+        # This mimics the old state object but uses CycleSummary list
+        class ExperimentData:
+            def __init__(self, exp_id: str, exp_name: str, cycles: List[CycleSummary], config):
+                self.experiment_id = exp_id
+                self.experiment_name = exp_name
+                self.cycle_results = cycles
+                self.config = config
+
+        experiment_data = ExperimentData(
+            experiment_id,
+            experiment_details.get("experiment_name", experiment_id) if experiment_details else experiment_id,
+            cycle_summaries,
+            experiment_details.get("config") if experiment_details else None
+        )
+
         # Create tabs for different result views
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "📈 Performance", 
-            "📋 Metrics Table", 
-            "🔄 Comparison", 
-            "🎯 Per-Class", 
+            "📈 Performance",
+            "📋 Metrics Table",
+            "🔄 Comparison",
+            "🎯 Per-Class",
             "🔥 Confusion Matrix"
         ])
-        
+
         with tab1:
-            display_performance_visualization(state)
-        
+            display_performance_visualization(experiment_data)
+
         with tab2:
-            display_metrics_table(state)
-        
+            display_metrics_table(experiment_data)
+
         with tab3:
             display_multi_experiment_comparison()
-        
+
         with tab4:
-            display_per_class_metrics(state)
-        
+            display_per_class_metrics(experiment_data)
+
         with tab5:
-            display_confusion_matrix(state)
-        
+            display_confusion_matrix(experiment_data)
+
         # Export section at the bottom
         st.markdown("---")
-        display_export_section(state)
-    
+        display_export_section(experiment_data)
+
     except Exception as e:
         st.error(f"❌ Error loading results: {str(e)}")
         logger.error(f"Results loading failed: {e}")
@@ -368,7 +414,7 @@ if __name__ == "__main__":
     main()
 
 
-def display_performance_visualization(state: ExperimentState):
+def display_performance_visualization(state):
     """Display performance over cycles visualization."""
     st.markdown('<div class="results-section">', unsafe_allow_html=True)
     st.subheader("📈 Performance Over Cycles")
@@ -387,7 +433,7 @@ def display_performance_visualization(state: ExperimentState):
     
     for cycle_result in state.cycle_results:
         cycles.append(cycle_result.cycle)
-        labeled_samples.append(cycle_result.labeled_pool_size)
+        labeled_samples.append(cycle_result.labeled_count)
         test_accuracies.append(cycle_result.test_accuracy)
         test_f1_scores.append(cycle_result.test_f1)
         val_accuracies.append(cycle_result.best_val_accuracy)
@@ -536,7 +582,7 @@ def display_performance_visualization(state: ExperimentState):
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-def display_metrics_table(state: ExperimentState):
+def display_metrics_table(state):
     """Display detailed cycle metrics table."""
     st.markdown('<div class="results-section">', unsafe_allow_html=True)
     st.subheader("📋 Detailed Cycle Metrics")
@@ -552,8 +598,8 @@ def display_metrics_table(state: ExperimentState):
     for cycle_result in state.cycle_results:
         row = {
             'Cycle': cycle_result.cycle,
-            'Labeled Pool': cycle_result.labeled_pool_size,
-            'Unlabeled Pool': cycle_result.unlabeled_pool_size,
+            'Labeled Pool': cycle_result.labeled_count,
+            'Unlabeled Pool': cycle_result.unlabeled_count,
             'Epochs Trained': cycle_result.epochs_trained,
             'Best Val Acc': cycle_result.best_val_accuracy,
             'Best Epoch': cycle_result.best_epoch,
@@ -643,80 +689,57 @@ def display_metrics_table(state: ExperimentState):
     
     # Detailed epoch history for selected cycle
     st.markdown("#### 🔍 Epoch-Level Details")
-    
-    cycle_options = [f"Cycle {c}" for c in df['Cycle']]
-    selected_cycle_str = st.selectbox(
-        "Select cycle to view epoch details:",
-        options=cycle_options,
-        help="View training progress within a specific cycle"
-    )
-    
-    if selected_cycle_str:
-        selected_cycle_num = int(selected_cycle_str.split()[1])
-        
-        # Find the cycle result
-        cycle_result = None
-        for cr in state.cycle_results:
-            if cr.cycle == selected_cycle_num:
-                cycle_result = cr
-                break
-        
-        if cycle_result and cycle_result.epoch_history:
-            # Create epoch history DataFrame
-            epoch_data = []
-            for epoch_metrics in cycle_result.epoch_history:
-                epoch_row = {
-                    'Epoch': epoch_metrics.epoch,
-                    'Train Loss': f"{epoch_metrics.train_loss:.4f}",
-                    'Train Acc': f"{epoch_metrics.train_accuracy:.3f}",
-                }
-                
-                if epoch_metrics.val_loss is not None:
-                    epoch_row['Val Loss'] = f"{epoch_metrics.val_loss:.4f}"
-                if epoch_metrics.val_accuracy is not None:
-                    epoch_row['Val Acc'] = f"{epoch_metrics.val_accuracy:.3f}"
-                if epoch_metrics.learning_rate is not None:
-                    epoch_row['Learning Rate'] = f"{epoch_metrics.learning_rate:.6f}"
-                
-                epoch_data.append(epoch_row)
-            
-            epoch_df = pd.DataFrame(epoch_data)
-            
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                st.dataframe(epoch_df, use_container_width=True)
-            
-            with col2:
-                st.markdown(f"**Cycle {selected_cycle_num} Summary:**")
-                st.write(f"• Epochs: {cycle_result.epochs_trained}")
-                st.write(f"• Best Epoch: {cycle_result.best_epoch}")
-                st.write(f"• Best Val Acc: {cycle_result.best_val_accuracy:.3f}")
-                st.write(f"• Final Test Acc: {cycle_result.test_accuracy:.3f}")
-        else:
-            st.info("No epoch history available for this cycle.")
+    st.info("📊 Epoch-level training details will be available in a future update. Currently showing cycle-level summaries only.")
     
     st.markdown('</div>', unsafe_allow_html=True)
 def display_multi_experiment_comparison():
     """Display multi-experiment comparison interface."""
     st.markdown('<div class="results-section">', unsafe_allow_html=True)
     st.subheader("🔄 Multi-Experiment Comparison")
-    
+
+    # Get controller to access database
+    ctrl = get_controller()
+    db_manager = ctrl._model_handler._db_manager
+
     # Get all experiments with results
-    experiments = st.session_state.experiment_manager.list_experiments()
+    try:
+        experiments = db_manager.list_experiments()
+    except Exception as e:
+        st.error(f"Failed to load experiments: {e}")
+        st.markdown('</div>', unsafe_allow_html=True)
+        return
+
     experiments_with_results = []
-    
+
     for exp in experiments:
         try:
-            exp_dir = Path("experiments") / exp["experiment_id"]
-            state_manager = StateManager(exp_dir)
-            state = state_manager.read_state()
-            if state.cycle_results:
+            exp_id = exp["experiment_id"]
+            cycle_summaries = db_manager.get_cycle_summaries(exp_id)
+
+            if cycle_summaries:
+                # Get full experiment details including config
+                experiment_details = db_manager.get_experiment(exp_id)
+
+                # Create a simple data structure
+                class ExperimentData:
+                    def __init__(self, exp_id: str, exp_name: str, cycles: List[CycleSummary], config):
+                        self.experiment_id = exp_id
+                        self.experiment_name = exp_name
+                        self.cycle_results = cycles
+                        self.config = config
+
+                exp_data = ExperimentData(
+                    exp_id,
+                    experiment_details.get("experiment_name", exp_id) if experiment_details else exp_id,
+                    cycle_summaries,
+                    experiment_details.get("config") if experiment_details else None
+                )
+
                 experiments_with_results.append({
-                    'id': exp["experiment_id"],
-                    'name': state.experiment_name,
-                    'state': state,
-                    'config': state.config
+                    'id': exp_id,
+                    'name': exp_data.experiment_name,
+                    'state': exp_data,
+                    'config': exp_data.config
                 })
         except Exception as e:
             logger.warning(f"Could not load experiment {exp['experiment_id']}: {e}")
@@ -766,7 +789,7 @@ def display_multi_experiment_comparison():
         state = exp_data['state']
         
         # Extract performance data
-        labeled_samples = [cr.labeled_pool_size for cr in state.cycle_results]
+        labeled_samples = [cr.labeled_count for cr in state.cycle_results]
         test_accuracies = [cr.test_accuracy for cr in state.cycle_results]
         
         # Create experiment label
@@ -819,7 +842,7 @@ def display_multi_experiment_comparison():
             'Avg Accuracy': np.mean(test_accs),
             'Best F1': max(test_f1s),
             'Final F1': test_f1s[-1],
-            'Total Labeled': state.cycle_results[-1].labeled_pool_size if state.cycle_results else 0
+            'Total Labeled': state.cycle_results[-1].labeled_count if state.cycle_results else 0
         }
         
         comparison_data.append(row)
@@ -901,7 +924,7 @@ def display_multi_experiment_comparison():
                     cycle_result = state.cycle_results[cycle - 1]
                     row[f"{exp_id}_Acc"] = f"{cycle_result.test_accuracy:.3f}"
                     row[f"{exp_id}_F1"] = f"{cycle_result.test_f1:.3f}"
-                    row[f"{exp_id}_Labeled"] = f"{cycle_result.labeled_pool_size:,}"
+                    row[f"{exp_id}_Labeled"] = f"{cycle_result.labeled_count:,}"
                 else:
                     row[f"{exp_id}_Acc"] = "N/A"
                     row[f"{exp_id}_F1"] = "N/A"
@@ -913,7 +936,7 @@ def display_multi_experiment_comparison():
         st.dataframe(detailed_df, use_container_width=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
-def display_per_class_metrics(state: ExperimentState):
+def display_per_class_metrics(state):
     """Display per-class performance metrics."""
     st.markdown('<div class="results-section">', unsafe_allow_html=True)
     st.subheader("🎯 Per-Class Performance Analysis")
@@ -1193,7 +1216,7 @@ def display_per_class_metrics(state: ExperimentState):
                 st.write("  Some classes favor precision or recall")
     
     st.markdown('</div>', unsafe_allow_html=True)
-def display_confusion_matrix(state: ExperimentState):
+def display_confusion_matrix(state):
     """Display confusion matrix visualization with lazy loading and filtering."""
     st.markdown('<div class="results-section">', unsafe_allow_html=True)
     st.subheader("🔥 Confusion Matrix Analysis")
