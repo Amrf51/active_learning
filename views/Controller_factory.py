@@ -57,7 +57,11 @@ def get_controller() -> EventDispatcher:
             
             # Initialize model layer components
             world_state = WorldState()
-            db_manager = DatabaseManager()
+            
+            # Use a default database path (you can make this configurable later)
+            db_path = Path(__file__).parent.parent / "experiments" / "al_dashboard.db"
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            db_manager = DatabaseManager(db_path)
             
             # Create model handler with dependencies
             model_handler = ModelHandler(world_state, db_manager)

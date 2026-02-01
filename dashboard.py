@@ -19,11 +19,17 @@ from pathlib import Path
 import sys
 import logging
 
-# Add src to path for imports
-src_path = Path(__file__).parent / "src"
-sys.path.insert(0, str(src_path))
+# Add project root to path for imports
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
 
-from state import ExperimentManager, StateManager
+# NEW: Import MVC controller factory
+from views.controller_factory import (
+    initialize_controller_session,
+    get_controller,
+    update_session_heartbeat
+)
+from model.schemas import ExperimentPhase
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +42,14 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Initialize controller session (FIRST THING - before any other code)
+# This ensures only one browser tab can run the dashboard at a time
+if not initialize_controller_session():
+    st.stop()
+
+# Update session heartbeat to prevent timeout
+update_session_heartbeat()
 
 # Custom CSS for better styling
 st.markdown("""
@@ -110,7 +124,6 @@ def initialize_session_state():
     
     if "state_manager" not in st.session_state:
         st.session_state.state_manager = None
-    
 
 
 
@@ -156,52 +169,64 @@ def display_experiment_selector():
 
 
 def display_experiment_status():
-    """Display current experiment status in sidebar."""
-    if not st.session_state.selected_experiment or not st.session_state.state_manager:
+    """Display current experiment status in sidebar using Controller."""
+    ctrl = get_controller()
+    
+    # Get current status from Controller (fast, in-memory read)
+    status = ctrl.get_status()
+    
+    if not status.get('experiment_id'):
+        st.sidebar.info("👈 No experiment selected. Create one in Configuration page.")
         return
     
     try:
-        state = st.session_state.state_manager.read_state()
-        
         st.sidebar.subheader("📊 Experiment Status")
         
-        # Phase status
+        # Phase status with color coding
         phase_colors = {
-            "IDLE": "🔵",
-            "TRAINING": "🟢", 
-            "EVALUATING": "🟡",
-            "QUERYING": "🟠",
-            "AWAITING_ANNOTATION": "🟣",
-            "COMPLETED": "✅",
-            "ERROR": "🔴"
+            ExperimentPhase.IDLE: "🔵",
+            ExperimentPhase.TRAINING: "🟢", 
+            ExperimentPhase.EVALUATING: "🟡",
+            ExperimentPhase.QUERYING: "🟠",
+            ExperimentPhase.AWAITING_ANNOTATION: "🟣",
+            ExperimentPhase.COMPLETED: "✅",
+            ExperimentPhase.ERROR: "🔴"
         }
         
-        phase_icon = phase_colors.get(state.phase.value, "⚪")
-        st.sidebar.write(f"**Phase:** {phase_icon} {state.phase.value}")
+        phase = status.get('phase', 'IDLE')
+        phase_enum = ExperimentPhase(phase) if phase else ExperimentPhase.IDLE
+        phase_icon = phase_colors.get(phase_enum, "⚪")
+        st.sidebar.write(f"**Phase:** {phase_icon} {phase}")
         
         # Cycle progress
-        if state.total_cycles > 0:
-            progress = state.current_cycle / state.total_cycles
+        total_cycles = status.get('total_cycles', 0)
+        current_cycle = status.get('current_cycle', 0)
+        if total_cycles > 0:
+            progress = current_cycle / total_cycles
             st.sidebar.progress(progress)
-            st.sidebar.write(f"**Cycle:** {state.current_cycle}/{state.total_cycles}")
+            st.sidebar.write(f"**Cycle:** {current_cycle}/{total_cycles}")
         
         # Pool sizes
-        if state.labeled_count > 0 or state.unlabeled_count > 0:
-            st.sidebar.write(f"**Labeled:** {state.labeled_count:,}")
-            st.sidebar.write(f"**Unlabeled:** {state.unlabeled_count:,}")
+        labeled_count = status.get('labeled_count', 0)
+        unlabeled_count = status.get('unlabeled_count', 0)
+        if labeled_count > 0 or unlabeled_count > 0:
+            st.sidebar.write(f"**Labeled:** {labeled_count:,}")
+            st.sidebar.write(f"**Unlabeled:** {unlabeled_count:,}")
         
-        # Worker status
-        if st.session_state.state_manager.is_worker_alive():
-            st.sidebar.success("🟢 Worker Active")
+        # Service status
+        if ctrl.is_service_alive():
+            st.sidebar.success("🟢 Service Active")
         else:
-            st.sidebar.warning("🟡 Worker Inactive")
+            st.sidebar.warning("🟡 Service Inactive")
         
         # Error message
-        if state.error_message:
-            st.sidebar.error(f"❌ {state.error_message}")
+        error_message = status.get('error_message')
+        if error_message:
+            st.sidebar.error(f"❌ {error_message}")
     
     except Exception as e:
-        st.sidebar.error(f"❌ Error reading state: {str(e)}")
+        st.sidebar.error(f"❌ Error reading status: {str(e)}")
+        logger.error(f"Error in display_experiment_status: {e}")
 
 
 def display_navigation_info():
@@ -220,9 +245,7 @@ def display_navigation_info():
 
 
 def main():
-    """Main dashboard application."""
-    # Initialize session state
-    initialize_session_state()
+    """Main dashboard application - MVC architecture."""
     
     # Main header
     st.markdown('<h1 class="main-header">🎯 Active Learning Dashboard</h1>', unsafe_allow_html=True)
@@ -230,81 +253,88 @@ def main():
     # Display navigation info
     display_navigation_info()
     
-    # Sidebar experiment selection
-    selected_exp = display_experiment_selector()
+    # Sidebar experiment status
     display_experiment_status()
     
-    # Main content area
-    if selected_exp:
-        st.success(f"✅ Experiment **{selected_exp}** selected. Use the pages in the sidebar to configure, control, or analyze your experiment.")
-    else:
-        st.info("👈 Select an experiment from the sidebar or create a new one in the **Configuration** page.")
+    # Get controller and status
+    ctrl = get_controller()
+    status = ctrl.get_status()
     
-    # Quick stats if experiment is selected
-    if selected_exp and st.session_state.state_manager:
-        try:
-            state = st.session_state.state_manager.read_state()
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Current Cycle", f"{state.current_cycle}/{state.total_cycles}")
-            
-            with col2:
-                st.metric("Labeled Samples", f"{state.labeled_count:,}")
-            
-            with col3:
-                st.metric("Unlabeled Samples", f"{state.unlabeled_count:,}")
-            
-            with col4:
-                if state.cycle_results:
-                    latest_acc = state.cycle_results[-1].test_accuracy
-                    st.metric("Latest Test Acc", f"{latest_acc:.3f}")
-                else:
-                    st.metric("Latest Test Acc", "N/A")
+    # Main content area
+    if status.get('experiment_id'):
+        experiment_name = status.get('experiment_name', 'Unknown')
+        st.success(f"✅ Experiment **{experiment_name}** selected. Use the pages in the sidebar to configure, control, or analyze your experiment.")
         
-        except Exception as e:
-            st.warning(f"Could not load experiment stats: {str(e)}")
+        # Display quick stats
+        st.markdown("---")
+        display_quick_stats(status)
+    else:
+        st.info("👈 No experiment active. Create a new experiment in the **Configuration** page.")
     
     # Recent experiments overview
-    st.subheader("📋 Recent Experiments")
-    
-    experiments = st.session_state.experiment_manager.list_experiments()
-    
-    if experiments:
-        # Sort by creation date (most recent first) - handle None values
-        experiments.sort(key=lambda x: x.get("created") or "1900-01-01", reverse=True)
-        
-        for exp in experiments[:5]:  # Show last 5 experiments
-            with st.expander(f"🔬 {exp['experiment_id']}", expanded=False):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.write(f"**Status:** {exp.get('phase', 'Unknown')}")
-                    if exp.get('created'):
-                        st.write(f"**Created:** {exp['created'][:19].replace('T', ' ')}")
-                
-                with col2:
-                    if exp.get('experiment_name'):
-                        st.write(f"**Name:** {exp['experiment_name']}")
-                    
-                    # Quick action buttons
-                    if st.button(f"Select {exp['experiment_id']}", key=f"select_{exp['experiment_id']}"):
-                        st.session_state.selected_experiment = exp['experiment_id']
-                        exp_dir = Path("experiments") / exp['experiment_id']
-                        st.session_state.state_manager = StateManager(exp_dir)
-                        st.rerun()
-    else:
-        st.info("No experiments found. Create your first experiment in the **⚙️ Configuration** page!")
+    st.markdown("---")
+    display_recent_experiments()
     
     # Footer
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #6c757d; font-size: 0.9rem;">
-        🎯 Active Learning Dashboard | Built with Streamlit | 
-        <a href="https://github.com/your-repo" target="_blank">Documentation</a>
+        🎯 Active Learning Dashboard (MVC Architecture) | Built with Streamlit | 
+        Service Auto-Managed ✨
     </div>
     """, unsafe_allow_html=True)
+
+
+def display_quick_stats(status):
+    """Display quick statistics for current experiment."""
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        current_cycle = status.get('current_cycle', 0)
+        total_cycles = status.get('total_cycles', 0)
+        st.metric("Current Cycle", f"{current_cycle}/{total_cycles}")
+    
+    with col2:
+        labeled_count = status.get('labeled_count', 0)
+        st.metric("Labeled Samples", f"{labeled_count:,}")
+    
+    with col3:
+        unlabeled_count = status.get('unlabeled_count', 0)
+        st.metric("Unlabeled Samples", f"{unlabeled_count:,}")
+    
+    with col4:
+        # TODO: Get latest test accuracy from controller
+        st.metric("Latest Test Acc", "N/A")
+
+
+def display_recent_experiments():
+    """Display overview of recent experiments."""
+    st.subheader("📋 Recent Experiments")
+    
+    # TODO: Implement recent experiments display using controller
+    st.info("Recent experiments display will be implemented with the database integration.")
+    
+    # Placeholder for now
+    st.markdown("""
+    **Coming Soon:**
+    - View recent experiment history
+    - Quick experiment selection
+    - Performance comparison
+    """)
+
+
+def initialize_session_state():
+    """Initialize session state (kept for compatibility, but MVC handles most state)."""
+    # Most state is now handled by the Controller
+    # This function is kept for any view-specific session state
+    pass
+
+
+def display_experiment_selector():
+    """Legacy function - experiment selection now handled by Controller."""
+    # This function is no longer needed in MVC architecture
+    # Experiment selection is handled by the Controller
+    pass
 
 
 if __name__ == "__main__":
