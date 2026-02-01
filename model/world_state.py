@@ -454,6 +454,139 @@ class WorldState:
             "error_message": self.error_message
         }
     
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Get current experiment status for view layer.
+        
+        Returns:
+            Dictionary with current status information
+        """
+        return {
+            'experiment_id': self.experiment_id,
+            'experiment_name': self.experiment_name,
+            'created_at': self.created_at,
+            'phase': self.phase.value,
+            'error_message': self.error_message,
+            'current_cycle': self.current_cycle,
+            'total_cycles': self.total_cycles,
+            'current_epoch': self.current_epoch,
+            'epochs_per_cycle': self.epochs_per_cycle,
+            'labeled_count': self.labeled_count,
+            'unlabeled_count': self.unlabeled_count,
+            'progress_percentage': self.progress_percentage,
+            'is_initialized': self.is_initialized,
+            'is_running': self.is_running,
+            'is_complete': self.is_complete,
+            'has_error': self.has_error
+        }
+    
+    def get_training_progress(self) -> Dict[str, Any]:
+        """
+        Get current training progress for view layer.
+        
+        Returns:
+            Dictionary with training progress information
+        """
+        return {
+            'current_epoch': self.current_epoch,
+            'epochs_per_cycle': self.epochs_per_cycle,
+            'current_metrics': self.current_metrics.to_dict() if self.current_metrics else None,
+            'epoch_history': [metrics.to_dict() for metrics in self.epoch_history],
+            'has_metrics': self.current_metrics is not None,
+            'has_history': len(self.epoch_history) > 0
+        }
+    
+    def get_queried_images(self) -> List[Dict[str, Any]]:
+        """
+        Get current queried images for view layer.
+        
+        Returns:
+            List of queried image data
+        """
+        return [img.to_dict() if hasattr(img, 'to_dict') else img for img in self.queried_images]
+    
+    def set_pending_updates(self, value: bool = True) -> None:
+        """
+        Set the pending updates flag.
+        
+        Args:
+            value: Whether there are pending updates
+        """
+        with self._lock:
+            self.pending_updates = value
+    
+    def update_training_progress(self, epoch: int, metrics: Dict[str, Any]) -> None:
+        """
+        Update training progress with new epoch metrics.
+        
+        Args:
+            epoch: Current epoch number
+            metrics: Dictionary with training metrics
+        """
+        # Convert dict to EpochMetrics if needed
+        if isinstance(metrics, dict):
+            epoch_metrics = EpochMetrics(
+                epoch=epoch,
+                train_loss=metrics.get('train_loss', 0.0),
+                train_accuracy=metrics.get('train_accuracy', 0.0),
+                val_loss=metrics.get('val_loss', 0.0),
+                val_accuracy=metrics.get('val_accuracy', 0.0),
+                learning_rate=metrics.get('learning_rate', 0.0)
+            )
+        else:
+            epoch_metrics = metrics
+        
+        self.update_epoch(epoch_metrics)
+    
+    def complete_cycle(self, results: Dict[str, Any]) -> None:
+        """
+        Complete the current cycle with results.
+        
+        Args:
+            results: Cycle completion results
+        """
+        with self._lock:
+            # Update pool counts from results
+            self.labeled_count = results.get('labeled_count', self.labeled_count)
+            self.unlabeled_count = results.get('unlabeled_count', self.unlabeled_count)
+            
+            # Clear cycle-specific data
+            self.queried_images = []
+            self.current_epoch = 0
+            self.current_metrics = None
+            self.epoch_history = []
+            
+            # Set to idle phase
+            self.phase = ExperimentPhase.IDLE
+            self.pending_updates = True
+            
+        logger.info(f"Cycle {self.current_cycle} completed")
+    
+    def initialize_experiment(self, experiment_name: str, config: Dict[str, Any]) -> str:
+        """
+        Initialize a new experiment and return generated ID.
+        
+        Args:
+            experiment_name: Human-readable name
+            config: Experiment configuration
+            
+        Returns:
+            Generated experiment ID
+        """
+        # Generate unique experiment ID
+        experiment_id = f"exp_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # Convert config dict to ExperimentConfig if needed
+        if isinstance(config, dict):
+            exp_config = ExperimentConfig.from_dict(config)
+        else:
+            exp_config = config
+        
+        # Initialize the experiment
+        self.initialize(experiment_id, experiment_name, exp_config)
+        
+        return experiment_id
+
     def __repr__(self) -> str:
         return (
             f"WorldState(id={self.experiment_id}, phase={self.phase.value}, "

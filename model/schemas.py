@@ -230,6 +230,66 @@ class ExperimentConfig:
     def from_dict(cls, data: Dict[str, Any]) -> "ExperimentConfig":
         """Deserialize from SQLite storage."""
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+    
+    def validate(self) -> "ValidationResult":
+        """
+        Validate the experiment configuration.
+        
+        Returns:
+            ValidationResult indicating if configuration is valid
+        """
+        result = ValidationResult(is_valid=True)
+        
+        # Model validation
+        valid_models = ["resnet18", "resnet50", "mobilenetv2"]
+        if self.model_name.lower() not in valid_models:
+            result.add_error(f"Invalid model name: {self.model_name}. Must be one of: {valid_models}")
+        
+        if self.num_classes <= 0:
+            result.add_error("Number of classes must be positive")
+        
+        # Training validation
+        if self.epochs_per_cycle <= 0:
+            result.add_error("Epochs per cycle must be positive")
+        
+        if self.batch_size <= 0:
+            result.add_error("Batch size must be positive")
+        
+        if self.learning_rate <= 0:
+            result.add_error("Learning rate must be positive")
+        
+        # Active Learning validation
+        if self.num_cycles <= 0:
+            result.add_error("Number of cycles must be positive")
+        
+        valid_strategies = ["random", "uncertainty", "entropy", "margin"]
+        if self.sampling_strategy.lower() not in valid_strategies:
+            result.add_error(f"Invalid sampling strategy: {self.sampling_strategy}. Must be one of: {valid_strategies}")
+        
+        if self.initial_pool_size <= 0:
+            result.add_error("Initial pool size must be positive")
+        
+        if self.batch_size_al <= 0:
+            result.add_error("AL batch size must be positive")
+        
+        # Data validation
+        if self.val_split < 0 or self.val_split >= 1:
+            result.add_error("Validation split must be between 0 and 1")
+        
+        if self.test_split < 0 or self.test_split >= 1:
+            result.add_error("Test split must be between 0 and 1")
+        
+        if self.val_split + self.test_split >= 1:
+            result.add_error("Validation + test splits must be less than 1")
+        
+        # Warnings
+        if self.initial_pool_size < 10:
+            result.add_warning("Initial pool size is very small, consider using at least 10 samples")
+        
+        if self.batch_size_al > self.initial_pool_size:
+            result.add_warning("AL batch size is larger than initial pool size")
+        
+        return result
 
 
 @dataclass
@@ -266,6 +326,13 @@ class ValidationResult:
     def add_warning(self, message: str) -> None:
         """Add a warning message."""
         self.warnings.append(message)
+    
+    @property
+    def error_message(self) -> str:
+        """Get formatted error message for display."""
+        if not self.errors:
+            return ""
+        return "; ".join(self.errors)
 
 
 @dataclass 
