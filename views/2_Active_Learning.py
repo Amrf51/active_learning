@@ -27,15 +27,14 @@ import seaborn as sns
 from datetime import datetime
 import logging
 
-# Add src to path for imports
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-from state import (
-    StateManager, ExperimentManager, ExperimentPhase, Command,
-    EpochMetrics, CycleMetrics, QueriedImage, ProbeImage,
-    UserAnnotation, AnnotationSubmission  # Added for annotation submission
-)
+# NEW: MVC imports
+from views.controller_factory import get_controller, update_session_heartbeat
+from controller.events import Event, EventType
+from model.schemas import ExperimentPhase, EpochMetrics, QueriedImage
 
 logger = logging.getLogger(__name__)
 
@@ -132,16 +131,9 @@ st.markdown("""
 
 
 def initialize_session_state():
-    """Initialize session state for AL Control page."""
-    if "experiment_manager" not in st.session_state:
-        experiments_dir = Path("experiments")
-        st.session_state.experiment_manager = ExperimentManager(experiments_dir)
-    
-    if "selected_experiment" not in st.session_state:
-        st.session_state.selected_experiment = None
-    
-    if "state_manager" not in st.session_state:
-        st.session_state.state_manager = None
+    """Initialize session state for AL Control page (MVC version)."""
+    # NEW: Update session heartbeat
+    update_session_heartbeat()
     
     # AL Control specific state
     if "training_active" not in st.session_state:
@@ -159,11 +151,14 @@ def initialize_session_state():
 
 
 def check_experiment_selected():
-    """Check if an experiment is selected and state manager is available."""
-    if not st.session_state.selected_experiment or not st.session_state.state_manager:
+    """Check if an experiment is selected and controller is available (MVC version)."""
+    try:
+        ctrl = get_controller()
+        status = ctrl.get_status()
+        return status.get('experiment_id') is not None
+    except Exception:
         st.warning("⚠️ No experiment selected. Please select an experiment from the sidebar or create one in the Configuration page.")
         return False
-    return True
 
 
 def get_phase_display(phase: ExperimentPhase) -> tuple:
@@ -187,12 +182,13 @@ def get_phase_display(phase: ExperimentPhase) -> tuple:
 
 
 def display_cycle_progress():
-    """Display current cycle progress and pool sizes."""
+    """Display current cycle progress and pool sizes (MVC version)."""
     if not check_experiment_selected():
-        return
+        return None
     
     try:
-        state = st.session_state.state_manager.read_state()
+        ctrl = get_controller()
+        status = ctrl.get_status()
         
         st.markdown('<div class="control-panel">', unsafe_allow_html=True)
         st.subheader("📊 Cycle Progress")
@@ -201,54 +197,57 @@ def display_cycle_progress():
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            if state.total_cycles > 0:
-                progress = state.current_cycle / state.total_cycles
-                st.metric("Current Cycle", f"{state.current_cycle}/{state.total_cycles}")
+            total_cycles = status.get('total_cycles', 0)
+            current_cycle = status.get('current_cycle', 0)
+            if total_cycles > 0:
+                progress = current_cycle / total_cycles
+                st.metric("Current Cycle", f"{current_cycle}/{total_cycles}")
                 st.progress(progress)
             else:
                 st.metric("Current Cycle", "Not Started")
         
         with col2:
-            st.metric("Labeled Pool", f"{state.labeled_count:,}")
+            labeled_count = status.get('labeled_count', 0)
+            st.metric("Labeled Pool", f"{labeled_count:,}")
         
         with col3:
-            st.metric("Unlabeled Pool", f"{state.unlabeled_count:,}")
+            unlabeled_count = status.get('unlabeled_count', 0)
+            st.metric("Unlabeled Pool", f"{unlabeled_count:,}")
         
         with col4:
-            if state.cycle_results:
-                latest_acc = state.cycle_results[-1].test_accuracy
-                st.metric("Latest Test Acc", f"{latest_acc:.3f}")
-            else:
-                st.metric("Latest Test Acc", "N/A")
+            # TODO: Get latest test accuracy from controller
+            st.metric("Latest Test Acc", "N/A")
         
-        # Phase and worker status
+        # Phase and service status
         st.markdown("---")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            icon, phase_text, css_class = get_phase_display(state.phase)
+            phase = status.get('phase', 'UNKNOWN')
+            icon, phase_text, css_class = get_phase_display(ExperimentPhase(phase))
             st.markdown(f"**Current Phase:** {icon} <span class='{css_class}'>{phase_text}</span>", 
                        unsafe_allow_html=True)
         
         with col2:
-            if st.session_state.state_manager.is_worker_alive():
-                st.markdown("**Worker Status:** <span class='worker-active'>🟢 Active</span>", 
+            if ctrl.is_service_alive():
+                st.markdown("**Service Status:** <span class='worker-active'>🟢 Active</span>", 
                            unsafe_allow_html=True)
             else:
-                st.markdown("**Worker Status:** <span class='worker-inactive'>🔴 Inactive</span>", 
+                st.markdown("**Service Status:** <span class='worker-inactive'>🔴 Inactive</span>", 
                            unsafe_allow_html=True)
         
         # Error message if present
-        if state.error_message:
-            st.error(f"❌ {state.error_message}")
+        error_message = status.get('error_message')
+        if error_message:
+            st.error(f"❌ {error_message}")
         
         st.markdown('</div>', unsafe_allow_html=True)
         
-        return state
+        return status
     
     except Exception as e:
-        st.error(f"❌ Error reading experiment state: {str(e)}")
+        st.error(f"❌ Error reading experiment status: {str(e)}")
         return None
 
 

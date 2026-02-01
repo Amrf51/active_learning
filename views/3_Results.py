@@ -25,11 +25,13 @@ import logging
 import json
 from typing import List, Dict, Optional, Any
 
-# Add src to path for imports
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-from state import ExperimentManager, StateManager, ExperimentState, CycleMetrics
+# NEW: MVC imports
+from views.controller_factory import get_controller, update_session_heartbeat
+from model.schemas import ExperimentPhase, CycleSummary, ExperimentStatus
 
 logger = logging.getLogger(__name__)
 

@@ -26,17 +26,18 @@ from datetime import datetime
 import logging
 import pandas as pd
 
-# Add src to path for imports
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 # NEW: MVC imports
 from views.controller_factory import get_controller, update_session_heartbeat
 from controller.events import Event, EventType
-from model.schemas import DatasetInfo
+from model.schemas import DatasetInfo, ExperimentConfig, ValidationResult
 
 # Keep existing Config import (we still use it)
-from config import ConfigManager, Config
+# TODO: Create proper config management or use ExperimentConfig from model.schemas
+# from config import ConfigManager, Config
 
 logger = logging.getLogger(__name__)
 
@@ -238,8 +239,9 @@ def initialize_session_state():
     """Initialize session state for configuration (MVC version)."""
     # REMOVED: experiment_manager (Controller handles this now)
     
-    if "config_manager" not in st.session_state:
-        st.session_state.config_manager = ConfigManager()
+    # TODO: Implement proper config management
+    # if "config_manager" not in st.session_state:
+    #     st.session_state.config_manager = ConfigManager()
     
     if "config_form_data" not in st.session_state:
         st.session_state.config_form_data = {
@@ -604,8 +606,12 @@ def display_template_management():
             if st.button("ðŸ”„ Refresh Templates"):
                 st.rerun()
         
+        # TODO: Implement template management with proper config system
+        st.info("Template management will be implemented with the new config system.")
+        
         # Get available templates
-        templates = st.session_state.config_manager.list_templates()
+        # templates = st.session_state.config_manager.list_templates()
+        templates = []  # Placeholder
         
         if templates:
             template_options = {}
@@ -946,39 +952,48 @@ def validate_configuration():
     return errors, warnings
 
 
-def create_config_from_form_data() -> Config:
-    """Create a Config object from current form data."""
+def create_config_from_form_data() -> ExperimentConfig:
+    """Create an ExperimentConfig object from current form data."""
     form_data = st.session_state.config_form_data
     dataset_info = st.session_state.dataset_info
     
-    config = Config()
+    if not dataset_info:
+        raise ValueError("Dataset information not available")
     
-    # Model config
-    config.model.name = form_data["model_name"]
-    config.model.pretrained = True
-    config.model.num_classes = dataset_info.num_classes if dataset_info else 4
+    data_dir = str(Path(form_data["data_base_path"]) / form_data["selected_dataset"]) if form_data.get("selected_dataset") else "data"
     
-    # Training config
-    config.training.epochs = form_data["epochs_per_cycle"]
-    config.training.batch_size = form_data["batch_size"]
-    config.training.learning_rate = form_data["learning_rate"]
-    config.training.seed = form_data["seed"]
-    
-    # Data config
-    if form_data.get("selected_dataset"):
-        config.data.data_dir = str(Path(form_data["data_base_path"]) / form_data["selected_dataset"])
-    config.data.val_split = form_data["val_split"]
-    config.data.test_split = form_data["test_split"]
-    
-    # Active Learning config
-    config.active_learning.enabled = True
-    config.active_learning.num_cycles = form_data["num_cycles"]
-    config.active_learning.sampling_strategy = form_data["sampling_strategy"]
-    config.active_learning.initial_pool_size = form_data["initial_pool_size"]
-    config.active_learning.batch_size_al = form_data["batch_size_al"]
-    config.active_learning.reset_mode = form_data["reset_mode"]
-    
-    return config
+    return ExperimentConfig(
+        # Model settings
+        model_name=form_data["model_name"],
+        pretrained=True,
+        num_classes=dataset_info.num_classes,
+        
+        # Training settings
+        epochs_per_cycle=form_data["epochs_per_cycle"],
+        batch_size=form_data["batch_size"],
+        learning_rate=form_data["learning_rate"],
+        optimizer="adam",
+        weight_decay=1e-4,
+        early_stopping_patience=5,
+        
+        # Active Learning settings
+        num_cycles=form_data["num_cycles"],
+        sampling_strategy=form_data["sampling_strategy"],
+        uncertainty_method="entropy",
+        initial_pool_size=form_data["initial_pool_size"],
+        batch_size_al=form_data["batch_size_al"],
+        reset_mode=form_data["reset_mode"],
+        
+        # Data settings
+        data_dir=data_dir,
+        val_split=form_data["val_split"],
+        test_split=form_data["test_split"],
+        augmentation=True,
+        
+        # Misc
+        seed=form_data["seed"],
+        class_names=dataset_info.class_names
+    )
 
 
 def create_experiment_config() -> ExperimentConfig:
@@ -1058,16 +1073,7 @@ def initialize_experiment():
         # Prepare dataset info for payload
         dataset_info_dict = None
         if st.session_state.dataset_info:
-            dataset_info_dict = {
-                "name": st.session_state.dataset_info.name,
-                "num_classes": st.session_state.dataset_info.num_classes,
-                "class_names": st.session_state.dataset_info.class_names,
-                "total_images": st.session_state.dataset_info.total_images,
-                "images_per_class": st.session_state.dataset_info.images_per_class,
-                "train_samples": st.session_state.dataset_info.train_samples,
-                "val_samples": st.session_state.dataset_info.val_samples,
-                "test_samples": st.session_state.dataset_info.test_samples
-            }
+            dataset_info_dict = st.session_state.dataset_info.to_dict()
         
         # Create event payload
         payload = {
@@ -1101,7 +1107,7 @@ def initialize_experiment():
         else:
             # Get error from controller
             status = ctrl.get_status()
-            error_msg = status.error_message if status.error_message else "Unknown error"
+            error_msg = status.get('error_message', 'Unknown error')
             
             st.error(f"❌ Failed to initialize experiment: {error_msg}")
             return False

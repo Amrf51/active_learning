@@ -25,9 +25,9 @@ from pathlib import Path
 import sys
 import logging
 
-# Add src to path for imports
-src_path = Path(__file__).parent / "src"
-sys.path.insert(0, str(src_path))
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 # NEW: Import MVC controller factory
 from views.controller_factory import (

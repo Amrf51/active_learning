@@ -20,10 +20,10 @@ from pathlib import Path
 from typing import Optional
 
 # Import from your actual structure
-from dispatcher import EventDispatcher
-from model_handler import ModelHandler
-from service_manager import ServiceManager
-from session_manager import SessionManager
+from controller.dispatcher import EventDispatcher
+from controller.model_handler import ModelHandler
+from controller.service_manager import ServiceManager
+from controller.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,15 @@ def get_controller() -> EventDispatcher:
         
         try:
             # Create dependencies
-            model_handler = ModelHandler()
+            from model.world_state import WorldState
+            from model.database import DatabaseManager
+            
+            # Initialize model layer components
+            world_state = WorldState()
+            db_manager = DatabaseManager()
+            
+            # Create model handler with dependencies
+            model_handler = ModelHandler(world_state, db_manager)
             service_manager = ServiceManager()
             
             # Create Controller
