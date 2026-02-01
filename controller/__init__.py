@@ -26,7 +26,7 @@ from .events import Event, EventType, create_event
 
 __all__ = [
     "Event",
-    "EventType", 
+    "EventType",
     "create_event"
 ]
 

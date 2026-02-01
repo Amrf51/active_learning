@@ -13,7 +13,7 @@ from multiprocessing.connection import Connection
 from threading import Thread
 from typing import Optional, Callable, Any
 
-from controller.events import Event, EventType, create_controller_event
+from controller.events import Event, EventType, create_event
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ class ServiceManager:
         try:
             # Step 1: Send graceful shutdown command
             if self._pipe and not self._pipe.closed:
-                shutdown_event = create_controller_event(EventType.CMD_SHUTDOWN)
+                shutdown_event = create_event(EventType.CMD_SHUTDOWN, source="controller")
                 self._pipe.send(shutdown_event)
                 logger.debug("Sent CMD_SHUTDOWN to service")
             
@@ -236,13 +236,14 @@ class ServiceManager:
         if within retry limits.
         """
         if self._event_callback:
-            error_event = create_controller_event(
+            error_event = create_event(
                 EventType.SERVICE_ERROR,
                 {
                     "error_type": "service_crash",
                     "message": "Service process died unexpectedly",
                     "restart_attempts": self._restart_attempts
-                }
+                },
+                source="controller"
             )
             self._event_callback(error_event)
         
