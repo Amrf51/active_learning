@@ -10,7 +10,7 @@ import logging
 import traceback
 from typing import Dict, Callable, Any, Optional
 
-from controller.events import Event, EventType, create_controller_event
+from controller.events import Event, EventType, create_event
 from controller.model_handler import ModelHandler
 from controller.service_manager import ServiceManager
 
@@ -161,9 +161,10 @@ class EventDispatcher:
             self._model_handler.set_phase("TRAINING")
             
             # Send command to service
-            cmd_event = create_controller_event(
+            cmd_event = create_event(
                 EventType.CMD_START_CYCLE,
-                {"cycle_number": self._model_handler._world_state.current_cycle + 1}
+                {"cycle_number": self._model_handler._world_state.current_cycle + 1},
+                source="controller"
             )
             
             success = self._service_manager.send_command(cmd_event)
@@ -185,7 +186,7 @@ class EventDispatcher:
         
         try:
             # Send pause command to service
-            cmd_event = create_controller_event(EventType.CMD_PAUSE)
+            cmd_event = create_event(EventType.CMD_PAUSE, source="controller")
             success = self._service_manager.send_command(cmd_event)
             
             if success:
@@ -210,7 +211,7 @@ class EventDispatcher:
         
         try:
             # Send resume command to service
-            cmd_event = create_controller_event(EventType.CMD_RESUME)
+            cmd_event = create_event(EventType.CMD_RESUME, source="controller")
             success = self._service_manager.send_command(cmd_event)
             
             if success:
@@ -235,7 +236,7 @@ class EventDispatcher:
         
         try:
             # Send stop command to service
-            cmd_event = create_controller_event(EventType.CMD_STOP)
+            cmd_event = create_event(EventType.CMD_STOP, source="controller")
             success = self._service_manager.send_command(cmd_event)
             
             if success:
@@ -269,9 +270,10 @@ class EventDispatcher:
                 return
             
             # Send annotations to service
-            cmd_event = create_controller_event(
+            cmd_event = create_event(
                 EventType.CMD_ANNOTATIONS,
-                {"annotations": annotations}
+                {"annotations": annotations},
+                source="controller"
             )
             
             success = self._service_manager.send_command(cmd_event)
