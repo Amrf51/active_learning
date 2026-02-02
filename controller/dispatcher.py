@@ -116,8 +116,13 @@ class EventDispatcher:
             event: INITIALIZE_EXPERIMENT event with config payload
         """
         config = event.payload.get('config', {})
-        
-        logger.info("Initializing new experiment")
+        experiment_name = event.payload.get('experiment_name')
+
+        # Add experiment_name to config if provided
+        if experiment_name:
+            config['name'] = experiment_name  # Added
+
+        logger.info(f"Initializing new experiment: {experiment_name or 'unnamed'}")
         
         try:
             # Validate configuration

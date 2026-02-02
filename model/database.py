@@ -208,7 +208,7 @@ class DatabaseManager:
         experiment_name: str,
         config: Dict[str, Any],
         set_active: bool = True
-    ) -> None:
+    ) -> bool:  
         """
         Insert a new experiment.
         
@@ -235,6 +235,7 @@ class DatabaseManager:
             """, (experiment_id, experiment_name, config_json, int(set_active), now, now))
             
         logger.info(f"Inserted experiment: {experiment_id}")
+        return True  # Added return statement
     
     def update_experiment_phase(
         self,

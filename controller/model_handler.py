@@ -12,7 +12,8 @@ from datetime import datetime
 
 from model.world_state import WorldState
 from model.database import DatabaseManager
-from model.schemas import ExperimentConfig, ValidationResult, EpochMetrics
+from model.schemas import ExperimentConfig, ValidationResult, EpochMetrics, ExperimentPhase
+
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +153,10 @@ class ModelHandler:
             phase: New phase (IDLE, INITIALIZING, TRAINING, AWAITING_ANNOTATION, ERROR)
             error_message: Optional error message if phase is ERROR
         """
-        self._world_state.set_phase(phase, error_message)
+        # Convert string to ExperimentPhase enum
+        phase_enum = ExperimentPhase(phase) if isinstance(phase, str) else phase
+        
+        self._world_state.set_phase(phase_enum, error_message)
         
         # Persist phase change to database if experiment exists
         if self._world_state.experiment_id:

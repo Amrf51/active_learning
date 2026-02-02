@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 import logging
+from types import SimpleNamespace
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
@@ -41,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Page configuration
 st.set_page_config(
     page_title="Active Learning Control - AL Dashboard",
-    page_icon="🎯",
+    page_icon="ðŸŽ¯",
     layout="wide"
 )
 
@@ -157,28 +158,28 @@ def check_experiment_selected():
         status = ctrl.get_status()
         return status.get('experiment_id') is not None
     except Exception:
-        st.warning("⚠️ No experiment selected. Please select an experiment from the sidebar or create one in the Configuration page.")
+        st.warning("âš ï¸ No experiment selected. Please select an experiment from the sidebar or create one in the Configuration page.")
         return False
 
 
 def get_phase_display(phase: ExperimentPhase) -> tuple:
     """Get display information for a phase."""
     phase_info = {
-        ExperimentPhase.IDLE: ("🔵", "IDLE", "phase-idle"),
-        ExperimentPhase.INITIALIZING: ("🟡", "INITIALIZING", "phase-evaluating"),
-        ExperimentPhase.PREPARING: ("🟡", "PREPARING", "phase-evaluating"),
-        ExperimentPhase.TRAINING: ("🟢", "TRAINING", "phase-training"),
-        ExperimentPhase.VALIDATING: ("🟡", "VALIDATING", "phase-evaluating"),
-        ExperimentPhase.EVALUATING: ("🟡", "EVALUATING", "phase-evaluating"),
-        ExperimentPhase.QUERYING: ("🟠", "QUERYING", "phase-querying"),
-        ExperimentPhase.AWAITING_ANNOTATION: ("🟣", "AWAITING ANNOTATION", "phase-awaiting"),
-        ExperimentPhase.ANNOTATIONS_SUBMITTED: ("🟣", "PROCESSING ANNOTATIONS", "phase-awaiting"),
-        ExperimentPhase.COMPLETED: ("✅", "COMPLETED", "phase-completed"),
-        ExperimentPhase.ERROR: ("❌", "ERROR", "phase-error"),
-        ExperimentPhase.ABORT: ("🛑", "ABORTED", "phase-error")
+        ExperimentPhase.IDLE: ("ðŸ”µ", "IDLE", "phase-idle"),
+        ExperimentPhase.INITIALIZING: ("ðŸŸ¡", "INITIALIZING", "phase-evaluating"),
+        ExperimentPhase.PREPARING: ("ðŸŸ¡", "PREPARING", "phase-evaluating"),
+        ExperimentPhase.TRAINING: ("ðŸŸ¢", "TRAINING", "phase-training"),
+        ExperimentPhase.VALIDATING: ("ðŸŸ¡", "VALIDATING", "phase-evaluating"),
+        ExperimentPhase.EVALUATING: ("ðŸŸ¡", "EVALUATING", "phase-evaluating"),
+        ExperimentPhase.QUERYING: ("ðŸŸ ", "QUERYING", "phase-querying"),
+        ExperimentPhase.AWAITING_ANNOTATION: ("ðŸŸ£", "AWAITING ANNOTATION", "phase-awaiting"),
+        ExperimentPhase.ANNOTATIONS_SUBMITTED: ("ðŸŸ£", "PROCESSING ANNOTATIONS", "phase-awaiting"),
+        ExperimentPhase.COMPLETED: ("âœ…", "COMPLETED", "phase-completed"),
+        ExperimentPhase.ERROR: ("âŒ", "ERROR", "phase-error"),
+        ExperimentPhase.ABORT: ("ðŸ›‘", "ABORTED", "phase-error")
     }
     
-    return phase_info.get(phase, ("⚪", str(phase), "phase-idle"))
+    return phase_info.get(phase, ("âšª", str(phase), "phase-idle"))
 
 
 def display_cycle_progress():
@@ -191,7 +192,7 @@ def display_cycle_progress():
         status = ctrl.get_status()
         
         st.markdown('<div class="control-panel">', unsafe_allow_html=True)
-        st.subheader("📊 Cycle Progress")
+        st.subheader("ðŸ“Š Cycle Progress")
         
         # Progress metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -231,23 +232,39 @@ def display_cycle_progress():
         
         with col2:
             if ctrl.is_service_alive():
-                st.markdown("**Service Status:** <span class='worker-active'>🟢 Active</span>", 
+                st.markdown("**Service Status:** <span class='worker-active'>ðŸŸ¢ Active</span>", 
                            unsafe_allow_html=True)
             else:
-                st.markdown("**Service Status:** <span class='worker-inactive'>🔴 Inactive</span>", 
+                st.markdown("**Service Status:** <span class='worker-inactive'>ðŸ”´ Inactive</span>", 
                            unsafe_allow_html=True)
         
         # Error message if present
         error_message = status.get('error_message')
         if error_message:
-            st.error(f"❌ {error_message}")
+            st.error(f"âŒ {error_message}")
         
         st.markdown('</div>', unsafe_allow_html=True)
         
-        return status
+        # Convert status dict to object with attributes for easier access
+        # (so we can use state.phase instead of state['phase'])
+        return SimpleNamespace(
+            phase=ExperimentPhase(status.get('phase', 'IDLE')),
+            experiment_id=status.get('experiment_id'),
+            experiment_name=status.get('experiment_name'),
+            current_cycle=status.get('current_cycle', 0),
+            total_cycles=status.get('total_cycles', 0),
+            current_epoch=status.get('current_epoch', 0),
+            epochs_per_cycle=status.get('epochs_per_cycle', 0),
+            labeled_count=status.get('labeled_count', 0),
+            unlabeled_count=status.get('unlabeled_count', 0),
+            error_message=status.get('error_message'),
+            config=status.get('config'),
+            current_cycle_epochs=status.get('current_cycle_epochs', []),
+            _raw_status=status  # Keep raw dict for any other access
+        )
     
     except Exception as e:
-        st.error(f"❌ Error reading experiment status: {str(e)}")
+        st.error(f"âŒ Error reading experiment status: {str(e)}")
         return None
 
 
@@ -263,21 +280,27 @@ def display_control_buttons(state):
         return
     
     st.markdown('<div class="control-panel">', unsafe_allow_html=True)
-    st.subheader("🎮 Cycle Control")
+    st.subheader("ðŸŽ® Cycle Control")
     
     # Display current phase prominently
     icon, phase_text, css_class = get_phase_display(state.phase)
     st.markdown(f"**Current Phase:** {icon} <span class='{css_class}'>{phase_text}</span>", 
                unsafe_allow_html=True)
     
-    # Show worker status
-    if st.session_state.state_manager.is_worker_alive():
-        st.markdown("**Worker Status:** <span class='worker-active'>🟢 Active</span>", 
+    # Show service status
+    try:
+        ctrl = get_controller()
+        service_alive = ctrl.is_service_alive()
+    except Exception:
+        service_alive = False
+    
+    if service_alive:
+        st.markdown("**Worker Status:** <span class='worker-active'>ðŸŸ¢ Active</span>", 
                    unsafe_allow_html=True)
     else:
-        st.markdown("**Worker Status:** <span class='worker-inactive'>🔴 Inactive</span>", 
+        st.markdown("**Worker Status:** <span class='worker-inactive'>ðŸ”´ Inactive</span>", 
                    unsafe_allow_html=True)
-        st.warning("⚠️ Worker is not active. Start the worker process to execute commands.")
+        st.warning("âš ï¸ Worker is not active. Start the worker process to execute commands.")
     
     st.markdown("---")
     
@@ -295,7 +318,7 @@ def display_control_buttons(state):
         start_help = get_button_help_text("start", state.phase)
         
         if st.button(
-            "🚀 Start Cycle",
+            "ðŸš€ Start Cycle",
             disabled=not can_start,
             use_container_width=True,
             type=start_button_type,
@@ -303,15 +326,15 @@ def display_control_buttons(state):
         ):
             try:
                 # COMMAND PATTERN: Only write command, never call training functions
-                st.session_state.state_manager.set_command(Command.START_CYCLE)
-                st.success("✅ START_CYCLE command sent to worker")
+                ctrl = get_controller(); event = Event(EventType.START_CYCLE, payload={}); ctrl.dispatch(event)
+                st.success("âœ… START_CYCLE command sent to worker")
                 logger.info(f"START_CYCLE command issued for experiment {state.experiment_id}")
                 
                 # Brief pause for command to be processed, then refresh
                 time.sleep(0.5)
                 st.rerun()
             except Exception as e:
-                st.error(f"❌ Failed to send START_CYCLE command: {str(e)}")
+                st.error(f"âŒ Failed to send START_CYCLE command: {str(e)}")
                 logger.error(f"Failed to send START_CYCLE command: {e}")
     
     # PAUSE Button - Command Pattern Implementation
@@ -319,21 +342,21 @@ def display_control_buttons(state):
         pause_help = get_button_help_text("pause", state.phase)
         
         if st.button(
-            "⏸️ Pause",
+            "â¸ï¸ Pause",
             disabled=not can_pause,
             use_container_width=True,
             help=pause_help
         ):
             try:
                 # COMMAND PATTERN: Only write command, never call training functions
-                st.session_state.state_manager.set_command(Command.PAUSE)
-                st.warning("⏸️ PAUSE command sent to worker")
+                ctrl = get_controller(); event = Event(EventType.PAUSE, payload={}); ctrl.dispatch(event)
+                st.warning("â¸ï¸ PAUSE command sent to worker")
                 logger.info(f"PAUSE command issued for experiment {state.experiment_id}")
                 
                 time.sleep(0.5)
                 st.rerun()
             except Exception as e:
-                st.error(f"❌ Failed to send PAUSE command: {str(e)}")
+                st.error(f"âŒ Failed to send PAUSE command: {str(e)}")
                 logger.error(f"Failed to send PAUSE command: {e}")
     
     # STOP Button - Command Pattern Implementation
@@ -341,21 +364,21 @@ def display_control_buttons(state):
         stop_help = get_button_help_text("stop", state.phase)
         
         if st.button(
-            "🛑 Stop",
+            "ðŸ›‘ Stop",
             disabled=not can_stop,
             use_container_width=True,
             help=stop_help
         ):
             try:
                 # COMMAND PATTERN: Only write command, never call training functions
-                st.session_state.state_manager.set_command(Command.STOP)
-                st.error("🛑 STOP command sent to worker")
+                ctrl = get_controller(); event = Event(EventType.STOP, payload={}); ctrl.dispatch(event)
+                st.error("ðŸ›‘ STOP command sent to worker")
                 logger.info(f"STOP command issued for experiment {state.experiment_id}")
                 
                 time.sleep(0.5)
                 st.rerun()
             except Exception as e:
-                st.error(f"❌ Failed to send STOP command: {str(e)}")
+                st.error(f"âŒ Failed to send STOP command: {str(e)}")
                 logger.error(f"Failed to send STOP command: {e}")
     
     # CONTINUE Button - Command Pattern Implementation
@@ -364,10 +387,10 @@ def display_control_buttons(state):
         continue_help = get_button_help_text("continue", state.phase)
         
         # Check if annotations have been submitted
-        annotations_ready = st.session_state.state_manager.annotations_pending()
+        annotations_ready = len(st.session_state.get("manual_annotations", {})) > 0
         
         if st.button(
-            "▶️ Continue",
+            "â–¶ï¸ Continue",
             disabled=not can_continue or not annotations_ready,
             use_container_width=True,
             type=continue_button_type,
@@ -375,14 +398,14 @@ def display_control_buttons(state):
         ):
             try:
                 # COMMAND PATTERN: Only write command, never call training functions
-                st.session_state.state_manager.set_command(Command.CONTINUE)
-                st.info("▶️ CONTINUE command sent to worker")
+                ctrl = get_controller(); event = Event(EventType.CONTINUE, payload={}); ctrl.dispatch(event)
+                st.info("â–¶ï¸ CONTINUE command sent to worker")
                 logger.info(f"CONTINUE command issued for experiment {state.experiment_id}")
                 
                 time.sleep(0.5)
                 st.rerun()
             except Exception as e:
-                st.error(f"❌ Failed to send CONTINUE command: {str(e)}")
+                st.error(f"âŒ Failed to send CONTINUE command: {str(e)}")
                 logger.error(f"Failed to send CONTINUE command: {e}")
     
     # Display phase-specific guidance
@@ -390,14 +413,14 @@ def display_control_buttons(state):
     
     # Show current command if any
     if state.command:
-        st.info(f"🔄 Pending command: **{state.command.value}**")
+        st.info(f"ðŸ”„ Pending command: **{state.command.value}**")
     
     # Show annotation status if in awaiting phase
     if state.phase == ExperimentPhase.AWAITING_ANNOTATION:
         if annotations_ready:
-            st.success("✅ Annotations submitted. Click **Continue** to proceed to the next cycle.")
+            st.success("âœ… Annotations submitted. Click **Continue** to proceed to the next cycle.")
         else:
-            st.warning("⏳ Waiting for annotations. Submit annotations below, then click **Continue**.")
+            st.warning("â³ Waiting for annotations. Submit annotations below, then click **Continue**.")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -436,31 +459,31 @@ def display_phase_guidance(phase: ExperimentPhase):
     """Display contextual guidance based on current phase."""
     guidance_messages = {
         ExperimentPhase.IDLE: {
-            "message": "💡 Click **Start Cycle** to begin the next Active Learning cycle",
+            "message": "ðŸ’¡ Click **Start Cycle** to begin the next Active Learning cycle",
             "type": "info"
         },
         ExperimentPhase.TRAINING: {
-            "message": "🔄 Training in progress. Monitor live charts above. You can **Pause** or **Stop** at any time",
+            "message": "ðŸ”„ Training in progress. Monitor live charts above. You can **Pause** or **Stop** at any time",
             "type": "info"
         },
         ExperimentPhase.EVALUATING: {
-            "message": "📊 Model evaluation in progress. This usually takes a few moments",
+            "message": "ðŸ“Š Model evaluation in progress. This usually takes a few moments",
             "type": "info"
         },
         ExperimentPhase.QUERYING: {
-            "message": "🎯 Selecting most informative samples for annotation",
+            "message": "ðŸŽ¯ Selecting most informative samples for annotation",
             "type": "info"
         },
         ExperimentPhase.AWAITING_ANNOTATION: {
-            "message": "📝 Review and annotate the queried images below, then click **Continue** to proceed",
+            "message": "ðŸ“ Review and annotate the queried images below, then click **Continue** to proceed",
             "type": "info"
         },
         ExperimentPhase.COMPLETED: {
-            "message": "🎉 All cycles completed! Check the Results page for detailed analysis",
+            "message": "ðŸŽ‰ All cycles completed! Check the Results page for detailed analysis",
             "type": "success"
         },
         ExperimentPhase.ERROR: {
-            "message": "❌ An error occurred. Check the error message above and restart if needed",
+            "message": "âŒ An error occurred. Check the error message above and restart if needed",
             "type": "error"
         }
     }
@@ -483,7 +506,7 @@ def display_phase_guidance(phase: ExperimentPhase):
 def create_training_charts_containers():
     """Create containers for live training charts."""
     st.markdown('<div class="training-charts">', unsafe_allow_html=True)
-    st.subheader("📈 Live Training Progress")
+    st.subheader("ðŸ“ˆ Live Training Progress")
     
     # Create containers that will be updated during polling
     chart_col1, chart_col2 = st.columns(2)
@@ -513,7 +536,7 @@ def create_training_charts_containers():
 def create_prediction_monitor_section():
     """Create section for prediction monitor display."""
     st.markdown('<div class="prediction-monitor">', unsafe_allow_html=True)
-    st.subheader("🔍 Prediction Monitor")
+    st.subheader("ðŸ” Prediction Monitor")
     st.markdown("Track how model predictions change across cycles on reference images")
     
     # Container for probe images
@@ -536,7 +559,7 @@ def main():
     """Main Active Learning Control page."""
     initialize_session_state()
     
-    st.title("🎯 Active Learning Control")
+    st.title("ðŸŽ¯ Active Learning Control")
     st.markdown("Interactive control interface for managing Active Learning cycles")
     
     # Check if experiment is selected
@@ -611,19 +634,19 @@ def display_early_stopping_indicator(containers, state):
         with containers["loss_chart"]:
             if state.current_cycle_epochs:
                 st.markdown(
-                    f'<div class="early-stop-marker">⏹️ Early Stop at Epoch {stop_epoch}</div>',
+                    f'<div class="early-stop-marker">â¹ï¸ Early Stop at Epoch {stop_epoch}</div>',
                     unsafe_allow_html=True
                 )
         
         with containers["accuracy_chart"]:
             if state.current_cycle_epochs:
                 st.markdown(
-                    f'<div class="early-stop-marker">📊 {reason}</div>',
+                    f'<div class="early-stop-marker">ðŸ“Š {reason}</div>',
                     unsafe_allow_html=True
                 )
         
         with containers["metrics"]:
-            st.warning(f"⏹️ **Early Stopping Triggered**\n\n"
+            st.warning(f"â¹ï¸ **Early Stopping Triggered**\n\n"
                       f"Training stopped at epoch {stop_epoch}/{state.config.epochs_per_cycle}\n\n"
                       f"Reason: {reason}")
     
@@ -650,11 +673,11 @@ def display_live_training_visualization(containers, state):
                 epoch_text = f"Epoch {current_epoch}/{total_epochs}"
             
             if early_stopped:
-                epoch_text += " ⏹️ EARLY STOPPED"
+                epoch_text += " â¹ï¸ EARLY STOPPED"
             
             st.write(epoch_text)
         else:
-            st.info("🔄 Training starting... Waiting for first epoch data")
+            st.info("ðŸ”„ Training starting... Waiting for first epoch data")
     
     # Update current epoch metrics
     if not early_stopped:
@@ -706,10 +729,10 @@ def display_live_training_visualization(containers, state):
             st.line_chart(chart_data.set_index("Epoch"))
             
             if len(train_losses) >= 2:
-                trend = "📉 Decreasing" if train_losses[-1] < train_losses[-2] else "📈 Increasing"
+                trend = "ðŸ“‰ Decreasing" if train_losses[-1] < train_losses[-2] else "ðŸ“ˆ Increasing"
                 st.caption(f"Loss trend: {trend}")
         else:
-            st.info("📊 Waiting for training data to plot loss curves...")
+            st.info("ðŸ“Š Waiting for training data to plot loss curves...")
     
     # Update accuracy curve chart
     with containers["accuracy_chart"]:
@@ -733,7 +756,7 @@ def display_live_training_visualization(containers, state):
                 best_epoch = epochs[train_accs.index(best_acc)]
                 st.caption(f"Best train accuracy: {best_acc:.3f} (epoch {best_epoch})")
         else:
-            st.info("📊 Waiting for training data to plot accuracy curves...")
+            st.info("ðŸ“Š Waiting for training data to plot accuracy curves...")
     
     st.session_state.last_poll_time = datetime.now()
 
@@ -742,7 +765,7 @@ def display_last_training_results(containers, state):
     """Display results from the last completed training."""
     with containers["progress"]:
         if state.current_cycle_epochs:
-            st.success(f"✅ Training completed - {len(state.current_cycle_epochs)} epochs")
+            st.success(f"âœ… Training completed - {len(state.current_cycle_epochs)} epochs")
         else:
             st.info("No training data available")
     
@@ -753,7 +776,7 @@ def display_prediction_monitor(container, state):
     """Display prediction monitor with probe images."""
     with container:
         if not state.probe_images:
-            st.info("🔍 No probe images available. They will be initialized when the first cycle starts.")
+            st.info("ðŸ” No probe images available. They will be initialized when the first cycle starts.")
             return
         
         st.markdown("**Reference Images - Prediction History**")
@@ -775,7 +798,7 @@ def display_prediction_monitor(container, state):
                 with cols[j]:
                     st.markdown(f"**Image {probe_img.image_id}**")
                     st.markdown(f"**True Class:** {probe_img.true_class}")
-                    st.markdown("🖼️ *[Image placeholder]*")
+                    st.markdown("ðŸ–¼ï¸ *[Image placeholder]*")
                     
                     if probe_img.predictions_by_cycle:
                         st.markdown("**Prediction History:**")
@@ -788,11 +811,11 @@ def display_prediction_monitor(container, state):
                             confidence = pred_data.get("confidence", 0.0)
                             
                             is_correct = pred_class == probe_img.true_class
-                            correctness_icon = "✅" if is_correct else "❌"
+                            correctness_icon = "âœ…" if is_correct else "âŒ"
                             
                             change_icon = ""
                             if previous_pred and previous_pred != pred_class:
-                                change_icon = " 🔄"
+                                change_icon = " ðŸ”„"
                             
                             confidence_pct = f"{confidence:.0%}" if confidence > 0 else "N/A"
                             
@@ -818,7 +841,7 @@ def display_prediction_monitor(container, state):
                         pred_classes = [pred.get("predicted_class") for _, pred in sorted_cycles]
                         unique_predictions = len(set(pred_classes))
                         if unique_predictions > 1:
-                            st.markdown(f"🔄 **{unique_predictions} different predictions**")
+                            st.markdown(f"ðŸ”„ **{unique_predictions} different predictions**")
                     
                     else:
                         st.markdown("*No predictions yet*")
@@ -841,8 +864,8 @@ def display_queried_images(state):
         return
     
     st.markdown('<div class="query-section">', unsafe_allow_html=True)
-    st.subheader("🎯 Queried Images")
-    st.markdown(f"### 📋 {len(state.queried_images)} images selected for annotation")
+    st.subheader("ðŸŽ¯ Queried Images")
+    st.markdown(f"### ðŸ“‹ {len(state.queried_images)} images selected for annotation")
     
     # Annotation mode selection
     col_mode1, col_mode2 = st.columns([2, 1])
@@ -896,7 +919,7 @@ def display_queried_images(state):
                     if use_ground_truth:
                         # Show ground truth (simulated mode)
                         is_correct = queried_img.predicted_class == queried_img.ground_truth_name
-                        icon = "✅" if is_correct else "❌"
+                        icon = "âœ…" if is_correct else "âŒ"
                         st.markdown(f"**Ground Truth:** {queried_img.ground_truth_name} {icon}")
                     else:
                         # Manual label selection
@@ -928,7 +951,7 @@ def display_queried_images(state):
                     st.markdown("---")
     
     # Annotation submission section
-    st.markdown("### ✅ Submit Annotations")
+    st.markdown("### âœ… Submit Annotations")
     
     # Show summary
     if use_ground_truth:
@@ -938,25 +961,25 @@ def display_queried_images(state):
             if img.predicted_class == img.ground_truth_name
         )
         total = len(state.queried_images)
-        st.info(f"📊 Using ground truth labels. Model predicted {correct_count}/{total} ({correct_count/total:.0%}) correctly.")
+        st.info(f"ðŸ“Š Using ground truth labels. Model predicted {correct_count}/{total} ({correct_count/total:.0%}) correctly.")
     else:
         annotated_count = len(st.session_state.manual_annotations)
-        st.info(f"📝 Manual annotation mode. {annotated_count} labels assigned.")
+        st.info(f"ðŸ“ Manual annotation mode. {annotated_count} labels assigned.")
     
     # Check if annotations already submitted
-    annotations_pending = st.session_state.state_manager.annotations_pending()
+    annotations_pending = len(st.session_state.get("manual_annotations", {})) > 0
     
     if annotations_pending:
-        st.success("✅ Annotations already submitted! Click **Continue** in the control panel to proceed.")
+        st.success("âœ… Annotations already submitted! Click **Continue** in the control panel to proceed.")
     else:
         # Submit button
         col1, col2, col3 = st.columns([1, 2, 1])
         
         with col2:
-            if st.button("✅ Confirm & Submit Annotations", type="primary", use_container_width=True):
+            if st.button("âœ… Confirm & Submit Annotations", type="primary", use_container_width=True):
                 success = submit_annotations(state, use_ground_truth, class_names)
                 if success:
-                    st.success("✅ Annotations submitted successfully! Click **Continue** in the control panel to proceed.")
+                    st.success("âœ… Annotations submitted successfully! Click **Continue** in the control panel to proceed.")
                     st.balloons()
                     time.sleep(1)
                     st.rerun()
@@ -978,11 +1001,11 @@ def display_image_thumbnail(queried_img):
         try:
             st.image(image_path, use_container_width=True)
         except Exception as e:
-            st.warning(f"⚠️ Could not load image: {e}")
-            st.markdown("🖼️ *[Image unavailable]*")
+            st.warning(f"âš ï¸ Could not load image: {e}")
+            st.markdown("ðŸ–¼ï¸ *[Image unavailable]*")
     else:
         # Show placeholder with path info for debugging
-        st.markdown("🖼️ *[Image not found]*")
+        st.markdown("ðŸ–¼ï¸ *[Image not found]*")
         with st.expander("Debug Info"):
             st.caption(f"display_path: {queried_img.display_path}")
             st.caption(f"image_path: {queried_img.image_path}")
@@ -1036,18 +1059,18 @@ def submit_annotations(state, use_ground_truth: bool, class_names: list) -> bool
         )
         
         # Write to state file
-        st.session_state.state_manager.write_annotations(submission)
+        ctrl = get_controller(); event = Event(EventType.SUBMIT_ANNOTATIONS, payload={"annotations": submission}); ctrl.dispatch(event)
         
         # Log summary
         correct_count = sum(1 for a in annotations if a.was_correct)
         total = len(annotations)
         
-        st.info(f"📊 Annotation accuracy: {correct_count}/{total} ({correct_count/total:.0%}) correct")
+        st.info(f"ðŸ“Š Annotation accuracy: {correct_count}/{total} ({correct_count/total:.0%}) correct")
         
         return True
         
     except Exception as e:
-        st.error(f"❌ Failed to submit annotations: {str(e)}")
+        st.error(f"âŒ Failed to submit annotations: {str(e)}")
         import traceback
         st.code(traceback.format_exc())
         return False
