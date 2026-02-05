@@ -106,9 +106,13 @@ def display_experiment_selector() -> Optional[Tuple[str, List[CycleSummary]]]:
     """
     st.sidebar.header("📊 Results Analysis")
 
-    # Get controller to access database
-    ctrl = get_controller()
-    db_manager = ctrl._model_handler._db_manager
+    # Access ExperimentManager directly for reading results
+    # (ExperimentManager is safe to use from UI process for read operations)
+    from model.experiment_manager import ExperimentManager
+    from pathlib import Path
+    
+    experiments_dir = Path("./experiments")
+    db_manager = ExperimentManager(experiments_dir)
 
     # Get all experiments from database
     try:
@@ -356,9 +360,12 @@ def main():
         return
 
     try:
-        # Get full experiment details including config
-        ctrl = get_controller()
-        db_manager = ctrl._model_handler._db_manager
+        # Access ExperimentManager directly for reading results
+        from model.experiment_manager import ExperimentManager
+        from pathlib import Path
+        
+        experiments_dir = Path("./experiments")
+        db_manager = ExperimentManager(experiments_dir)
         experiment_details = db_manager.get_experiment(experiment_id)
 
         # Create a simple data structure to pass to display functions
@@ -741,9 +748,12 @@ def display_multi_experiment_comparison():
     st.markdown('<div class="results-section">', unsafe_allow_html=True)
     st.subheader("🔄 Multi-Experiment Comparison")
 
-    # Get controller to access database
-    ctrl = get_controller()
-    db_manager = ctrl._model_handler._db_manager
+    # Access ExperimentManager directly for reading results
+    from model.experiment_manager import ExperimentManager
+    from pathlib import Path
+    
+    experiments_dir = Path("./experiments")
+    db_manager = ExperimentManager(experiments_dir)
 
     # Get all experiments with results
     try:

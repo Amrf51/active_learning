@@ -972,6 +972,7 @@ def create_config_from_form_data() -> ExperimentConfig:
         model_name=form_data["model_name"],
         pretrained=True,
         num_classes=dataset_info.num_classes,
+        class_names=dataset_info.class_names,
         
         # Training settings
         epochs_per_cycle=form_data["epochs_per_cycle"],
@@ -996,8 +997,7 @@ def create_config_from_form_data() -> ExperimentConfig:
         augmentation=True,
         
         # Misc
-        seed=form_data["seed"],
-        class_names=dataset_info.class_names
+        seed=form_data["seed"]
     )
 
 

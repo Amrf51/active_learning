@@ -251,21 +251,20 @@ This plan implements the MVC architecture for the Active Learning Dashboard usin
     - Add search by filename
     - _Requirements: 11.5_
 
-- [ ] 14. Update pages to fit the new flow
-  - [ ] 14.1 check configuration.py
+- [x] 13. Update pages to fit the new flow
+  - [x] 13.1 check configuration.py
     - check compatibility with the required components 
     - imports
     - update required parts
 
-  - [ ] 14.2 check results.py
+  - [x] 13.2 check results.py
     - check compatibility with the required components 
     - imports
     - update required parts
-  - [ ] 14.3 Backend integration with the MVC
+  - [x] 13.3 Backend integration with the MVC
 
-  - [] 14.4 Check the whole project to ensure that readme.md is fulfilled
+  - [x] 13.4 Check the whole project to ensure that readme.md is fulfilled
   
-
 
 - [ ] 15. Update Dashboard Entry Point
   - [ ] 15.1 Add service lifecycle management
