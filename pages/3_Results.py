@@ -30,7 +30,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # NEW: MVC imports
-from pages.controller_factory import get_controller, update_session_heartbeat
+from controller.controller_factory import get_controller, update_session_heartbeat
 from model.schemas import ExperimentPhase, CycleSummary, ExperimentStatus
 
 logger = logging.getLogger(__name__)

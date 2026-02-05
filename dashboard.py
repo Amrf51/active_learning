@@ -24,8 +24,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # NEW: Import MVC controller factory
-from pages.controller_factory import (
-    initialize_controller_session,
+from controller.controller_factory import (
     get_controller,
     update_session_heartbeat
 )
@@ -43,10 +42,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize controller session (FIRST THING - before any other code)
-# This ensures only one browser tab can run the dashboard at a time
-if not initialize_controller_session():
-    st.stop()
+# Initialize controller (FIRST THING - before any other code)
+# This creates the controller instance if it doesn't exist
+get_controller()
 
 # Update session heartbeat to prevent timeout
 update_session_heartbeat()
