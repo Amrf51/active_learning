@@ -143,10 +143,12 @@ This plan implements the MVC architecture for the Active Learning Dashboard usin
     - Implement `_push_state()`: send WorldState via pipe
     - _Requirements: 3.1, 7.2_
   
-  - [ ]* 6.5 Write property tests for multiprocessing
+  - [x] 6.5 Write property tests for multiprocessing
+
     - **Property 16: Service Process Lifecycle**
     - **Property 17: Pipe Communication Integrity**
     - **Property 18: State Push After Event**
+    (provide the testing files but dont run the commands, i will test them manually)
     - **Validates: Requirements 3.1, 7.2, 8.2**
 
 - [ ] 7. Update ExperimentController for Multiprocessing
