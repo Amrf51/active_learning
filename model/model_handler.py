@@ -12,10 +12,9 @@ from typing import Optional, Dict, Any
 import logging
 import torch
 
-from .world_state import WorldState, Phase
+from .world_state import WorldState, Phase, EpochMetrics, QueriedImage, ProbeImage
 from .experiment_manager import ExperimentManager
 from controller.events import Event, EventType
-from backend.state import EpochMetrics as BackendEpochMetrics, QueriedImage, ProbeImage
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +176,7 @@ class ModelHandler:
         logger.info(f"Cycle {cycle_num} prepared: labeled={cycle_info['labeled_count']}, "
                    f"unlabeled={cycle_info['unlabeled_count']}")
     
-    def train_epoch(self) -> BackendEpochMetrics:
+    def train_epoch(self) -> EpochMetrics:
         """Train one epoch and update WorldState.
         
         This method is called by the controller's training thread.

@@ -1,15 +1,36 @@
 """WorldState and Phase definitions for the Active Learning Dashboard.
 
 WorldState is the single source of truth for UI state - fast reads, no I/O.
+All data in WorldState must be picklable for multiprocessing pipe transport.
 """
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
+import time
+
+# Import from backend - single source of truth for these types
+# These are all picklable dataclasses
+from backend.state import (
+    EpochMetrics,
+    CycleMetrics,
+    QueriedImage,
+    ProbeImage,
+)
+
+# Re-export for convenience
+__all__ = [
+    'Phase',
+    'WorldState',
+    'EpochMetrics',
+    'CycleMetrics', 
+    'QueriedImage',
+    'ProbeImage',
+]
 
 
 class Phase(Enum):
-    """Current phase of an experiment."""
+    """Current phase of an experiment (MVC-specific)."""
     IDLE = "idle"                           # Ready to start
     INITIALIZING = "initializing"           # Setting up experiment
     TRAINING = "training"                   # Training in progress
@@ -20,40 +41,18 @@ class Phase(Enum):
 
 
 @dataclass
-class EpochMetrics:
-    """Metrics for a single training epoch."""
-    epoch: int
-    train_loss: float
-    train_accuracy: float
-    val_loss: Optional[float] = None
-    val_accuracy: Optional[float] = None
-
-
-@dataclass
-class QueriedImage:
-    """An image selected by the AL strategy for annotation."""
-    index: int
-    path: str
-    predicted_label: Optional[str] = None
-    confidence: Optional[float] = None
-    annotation: Optional[str] = None
-
-
-@dataclass
-class ProbeImage:
-    """A probe image for tracking predictions across cycles."""
-    index: int
-    path: str
-    true_label: str
-    predictions: Dict[int, str] = field(default_factory=dict)  # cycle -> predicted_label
-
-
-@dataclass
 class WorldState:
     """In-memory state for fast UI reads.
     
     This is the single source of truth for the UI layer. All fields are
-    updated by the ModelHandler and read by the views via the controller.
+    updated by the ModelHandler (in service process) and read by the views 
+    via the controller.
+    
+    IMPORTANT: All fields must be picklable for multiprocessing pipe transport.
+    - Use primitives (int, float, str, bool)
+    - Use dataclasses with primitive fields
+    - Use lists/dicts with picklable contents
+    - Do NOT store PyTorch models, DataLoaders, or open file handles
     """
     # Identity
     experiment_id: Optional[str] = None
@@ -72,17 +71,23 @@ class WorldState:
     labeled_count: int = 0
     unlabeled_count: int = 0
     
-    # Live metrics (updated during training)
+    # Class distribution (for Dataset Explorer)
+    class_distribution: Dict[str, int] = field(default_factory=dict)
+    
+    # Live metrics (updated during training) - uses backend.state.EpochMetrics
     epoch_metrics: List[EpochMetrics] = field(default_factory=list)
     
-    # Queried images for annotation
+    # Queried images for annotation - uses backend.state.QueriedImage
     queried_images: List[QueriedImage] = field(default_factory=list)
     
-    # Probe images for prediction tracking
+    # Probe images for prediction tracking - uses backend.state.ProbeImage
     probe_images: List[ProbeImage] = field(default_factory=list)
     
     # Error
     error_message: Optional[str] = None
+    
+    # Timestamp for state versioning (multiprocessing)
+    updated_at: float = field(default_factory=time.time)
     
     def reset(self) -> None:
         """Reset state to initial values."""
@@ -95,13 +100,20 @@ class WorldState:
         self.epochs_per_cycle = 0
         self.labeled_count = 0
         self.unlabeled_count = 0
+        self.class_distribution = {}
         self.epoch_metrics = []
         self.queried_images = []
         self.probe_images = []
         self.error_message = None
+        self.updated_at = time.time()
     
     def clear_error(self) -> None:
         """Clear any error message."""
         self.error_message = None
         if self.phase == Phase.ERROR:
             self.phase = Phase.IDLE
+        self.updated_at = time.time()
+    
+    def touch(self) -> None:
+        """Update timestamp to mark state as modified."""
+        self.updated_at = time.time()
