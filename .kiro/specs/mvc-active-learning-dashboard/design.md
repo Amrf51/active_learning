@@ -2,7 +2,7 @@
 
 ## Overview
 
-A practical MVC architecture for the Streamlit-based Active Learning dashboard. This design prioritizes simplicity while ensuring scalability from 400 to 16,000+ images.
+A practical MVC architecture for the Streamlit-based Active Learning dashboard using **multiprocessing with pipes** for process isolation and scalability. The ActiveLearning service runs in a separate process, communicating with the controller via bidirectional pipes.
 
 ## Architecture Diagram
 
@@ -17,7 +17,7 @@ A practical MVC architecture for the Streamlit-based Active Learning dashboard. 
 │           ▼                    ▼                    ▼                   │
 │                    ┌───────────────────────┐                            │
 │                    │   st.session_state    │                            │
-│                    │   (WorldState ref)    │                            │
+│                    │   (cached WorldState) │                            │
 │                    └───────────┬───────────┘                            │
 └────────────────────────────────┼────────────────────────────────────────┘
                                  │
@@ -25,19 +25,37 @@ A practical MVC architecture for the Streamlit-based Active Learning dashboard. 
 │                         CONTROLLER LAYER                                 │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
 │  │                    ExperimentController                          │    │
-│  │  • dispatch(event: Event) → routes to ModelHandler               │    │
-│  │  • get_state() → returns WorldState (fast read)                  │    │
-│  │  • start_background_task() → spawns training thread              │    │
+│  │  • dispatch(event) → sends to service via pipe                   │    │
+│  │  • get_state() → returns cached WorldState                       │    │
+│  │  • poll_updates() → receives state from service                  │    │
+│  │  INBOX: receives WorldState updates from service                 │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 │                                 │                                        │
 │  ┌──────────────────────────────┴──────────────────────────────────┐    │
-│  │  Events: START_CYCLE | PAUSE | STOP | SUBMIT_ANNOTATIONS        │    │
-│  │          CREATE_EXPERIMENT | LOAD_EXPERIMENT                     │    │
+│  │                      BackgroundWorker                            │    │
+│  │  • start() → spawns service process                              │    │
+│  │  • send_event() → writes to pipe                                 │    │
+│  │  • poll_state() → reads from pipe (non-blocking)                 │    │
+│  │  • is_alive() → checks process health                            │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────┬───────────────────────────────────────┘
                                   │
+                          ┌───────┴───────┐
+                          │     PIPE      │  (bidirectional)
+                          │  Event →      │
+                          │  ← WorldState │
+                          └───────┬───────┘
+                                  │
 ┌─────────────────────────────────▼───────────────────────────────────────┐
-│                            MODEL LAYER                                   │
+│                    SERVICE PROCESS (multiprocessing)                     │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │                  ActiveLearningService                           │    │
+│  │  INBOX: receives Events from controller                          │    │
+│  │  • run_loop() → main event loop                                  │    │
+│  │  • handle_event() → processes events                             │    │
+│  │  • push_state() → sends WorldState to controller                 │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                 │                                        │
 │  ┌────────────────┐  ┌────────────────┐  ┌────────────────────────┐     │
 │  │   WorldState   │  │  ModelHandler  │  │   ExperimentManager    │     │
 │  │  (In-Memory)   │  │ (Orchestrator) │  │  (Folder + SQLite)     │     │
@@ -50,16 +68,34 @@ A practical MVC architecture for the Streamlit-based Active Learning dashboard. 
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
+## Process Communication Pattern
+
+```
+┌──────────────────┐                              ┌──────────────────┐
+│    CONTROLLER    │                              │     SERVICE      │
+│                  │                              │                  │
+│  ┌────────────┐  │      Event (pickle)          │  ┌────────────┐  │
+│  │   INBOX    │◄─┼──────────────────────────────┼──│   OUTBOX   │  │
+│  │ WorldState │  │                              │  │ WorldState │  │
+│  └────────────┘  │                              │  └────────────┘  │
+│                  │                              │                  │
+│  ┌────────────┐  │      Event (pickle)          │  ┌────────────┐  │
+│  │   OUTBOX   │──┼──────────────────────────────┼─►│   INBOX    │  │
+│  │   Event    │  │                              │  │   Event    │  │
+│  └────────────┘  │                              │  └────────────┘  │
+└──────────────────┘                              └──────────────────┘
+```
+
 ## Core Components
 
 ### 1. WorldState (In-Memory State)
 
-Single source of truth for UI. Fast reads, no I/O.
+Single source of truth for UI. Must be **picklable** for pipe transport.
 
 ```python
 @dataclass
 class WorldState:
-    """In-memory state for fast UI reads."""
+    """In-memory state for fast UI reads. Must be picklable."""
     # Identity
     experiment_id: Optional[str] = None
     experiment_name: Optional[str] = None
@@ -77,10 +113,13 @@ class WorldState:
     labeled_count: int = 0
     unlabeled_count: int = 0
     
+    # Class distribution (for Dataset Explorer)
+    class_distribution: Dict[str, int] = field(default_factory=dict)
+    
     # Live metrics (updated during training)
     epoch_metrics: List[EpochMetrics] = field(default_factory=list)
     
-    # Queried images for annotation
+    # Queried images for annotation (paths only, not image data)
     queried_images: List[QueriedImage] = field(default_factory=list)
     
     # Probe images for prediction tracking
@@ -88,54 +127,207 @@ class WorldState:
     
     # Error
     error_message: Optional[str] = None
+    
+    # Timestamp for state versioning
+    updated_at: float = field(default_factory=time.time)
 ```
 
 ### 2. Event System (Command Pattern)
 
-All user actions go through events. Views never call backend directly.
+All user actions go through events. Events must be **picklable** for pipe transport.
 
 ```python
 class EventType(Enum):
+    # Experiment lifecycle
     CREATE_EXPERIMENT = "create_experiment"
     LOAD_EXPERIMENT = "load_experiment"
+    DELETE_EXPERIMENT = "delete_experiment"
+    
+    # Training control
     START_CYCLE = "start_cycle"
     PAUSE = "pause"
     STOP = "stop"
+    CONTINUE = "continue"
+    
+    # Annotation
     SUBMIT_ANNOTATIONS = "submit_annotations"
+    
+    # Data queries
+    GET_POOL_DATA = "get_pool_data"
+    
+    # Service control
+    SHUTDOWN = "shutdown"  # Graceful service termination
 
 @dataclass
 class Event:
+    """Picklable event for pipe transport."""
     type: EventType
     payload: Dict[str, Any] = field(default_factory=dict)
+    timestamp: float = field(default_factory=time.time)
 ```
 
-### 3. ExperimentController
+### 3. BackgroundWorker (Process Manager)
 
-Routes events to ModelHandler. Manages background training thread.
+Manages the service process lifecycle and pipe communication.
+
+```python
+class BackgroundWorker:
+    """Manages the ActiveLearning service process."""
+    
+    def __init__(self):
+        self._process: Optional[Process] = None
+        self._pipe: Optional[Connection] = None  # Parent end of pipe
+        self._is_started = False
+    
+    def start(self, experiments_dir: Path) -> None:
+        """Spawn the service process with pipe connection."""
+        if self._is_started:
+            return
+        
+        parent_conn, child_conn = Pipe(duplex=True)
+        self._pipe = parent_conn
+        self._process = Process(
+            target=run_service_loop,
+            args=(child_conn, experiments_dir),
+            daemon=False  # Allow graceful shutdown
+        )
+        self._process.start()
+        self._is_started = True
+    
+    def send_event(self, event: Event) -> None:
+        """Send event to service via pipe."""
+        if self._pipe and self._is_started:
+            self._pipe.send(event)
+    
+    def poll_state(self, timeout: float = 0.0) -> Optional[WorldState]:
+        """Non-blocking check for state updates from service."""
+        if self._pipe and self._pipe.poll(timeout):
+            return self._pipe.recv()
+        return None
+    
+    def is_alive(self) -> bool:
+        """Check if service process is running."""
+        return self._process is not None and self._process.is_alive()
+    
+    def shutdown(self, timeout: float = 5.0) -> None:
+        """Graceful shutdown of service process."""
+        if self._pipe and self._is_started:
+            self.send_event(Event(EventType.SHUTDOWN))
+            self._process.join(timeout=timeout)
+            if self._process.is_alive():
+                self._process.terminate()
+            self._pipe.close()
+            self._is_started = False
+```
+
+### 4. ExperimentController
+
+Routes events via BackgroundWorker. Caches WorldState locally for fast reads.
 
 ```python
 class ExperimentController:
+    """Controller that communicates with service process via pipes."""
+    
     def __init__(self, experiments_dir: Path):
-        self._model_handler = ModelHandler(experiments_dir)
-        self._training_thread: Optional[Thread] = None
+        self.experiments_dir = Path(experiments_dir)
+        self._worker = BackgroundWorker()
+        self._cached_state = WorldState()  # Local cache for fast UI reads
+        self._worker.start(experiments_dir)
     
     def dispatch(self, event: Event) -> None:
-        """Route event to model handler."""
-        self._model_handler.handle_event(event)
+        """Send event to service process via pipe."""
+        self._worker.send_event(event)
     
     def get_state(self) -> WorldState:
-        """Fast in-memory state read."""
-        return self._model_handler.world_state
+        """Return cached state. Call poll_updates() first for fresh data."""
+        return self._cached_state
     
-    def start_training_async(self) -> None:
-        """Start training in background thread."""
-        self._training_thread = Thread(target=self._run_training)
-        self._training_thread.start()
+    def poll_updates(self) -> bool:
+        """Poll for state updates from service. Returns True if updated."""
+        new_state = self._worker.poll_state()
+        if new_state:
+            self._cached_state = new_state
+            return True
+        return False
+    
+    def drain_updates(self) -> WorldState:
+        """Drain all pending updates and return latest state."""
+        while self.poll_updates():
+            pass
+        return self._cached_state
+    
+    def is_service_alive(self) -> bool:
+        """Check if service process is running."""
+        return self._worker.is_alive()
+    
+    def shutdown(self) -> None:
+        """Graceful shutdown of service."""
+        self._worker.shutdown()
 ```
 
-### 4. ModelHandler
+### 5. ActiveLearningService (Service Process)
+
+Runs in a separate process. Handles events and pushes state updates.
+
+```python
+def run_service_loop(pipe: Connection, experiments_dir: Path) -> None:
+    """Main loop running in separate process."""
+    service = ActiveLearningService(pipe, experiments_dir)
+    service.run()
+
+
+class ActiveLearningService:
+    """Service that runs in a separate process."""
+    
+    def __init__(self, pipe: Connection, experiments_dir: Path):
+        self._pipe = pipe
+        self._model_handler = ModelHandler(experiments_dir)
+        self._running = True
+    
+    def run(self) -> None:
+        """Main event loop."""
+        while self._running:
+            # Check for incoming events (INBOX)
+            if self._pipe.poll(timeout=0.1):
+                event = self._pipe.recv()
+                self._handle_event(event)
+            
+            # If training, run one epoch and push state
+            if self._model_handler.world_state.phase == Phase.TRAINING:
+                self._train_one_epoch()
+    
+    def _handle_event(self, event: Event) -> None:
+        """Process event from controller."""
+        if event.type == EventType.SHUTDOWN:
+            self._running = False
+            return
+        
+        # Delegate to ModelHandler
+        self._model_handler.handle_event(event)
+        
+        # Push updated state to controller
+        self._push_state()
+    
+    def _train_one_epoch(self) -> None:
+        """Train one epoch and push state update."""
+        try:
+            self._model_handler.train_epoch()
+            self._push_state()
+        except Exception as e:
+            self._model_handler.world_state.phase = Phase.ERROR
+            self._model_handler.world_state.error_message = str(e)
+            self._push_state()
+    
+    def _push_state(self) -> None:
+        """Send current WorldState to controller."""
+        self._model_handler.world_state.updated_at = time.time()
+        self._pipe.send(self._model_handler.world_state)
+```
+
+### 6. ModelHandler
 
 Orchestrates backend operations. Updates WorldState after each step.
+Runs inside the service process.
 
 ```python
 class ModelHandler:
@@ -151,6 +343,10 @@ class ModelHandler:
             self._create_experiment(event.payload)
         elif event.type == EventType.START_CYCLE:
             self._start_cycle()
+        elif event.type == EventType.PAUSE:
+            self._pause()
+        elif event.type == EventType.STOP:
+            self._stop()
         # ... etc
     
     def train_epoch(self) -> EpochMetrics:
@@ -161,7 +357,7 @@ class ModelHandler:
         return metrics
 ```
 
-### 5. ExperimentManager
+### 7. ExperimentManager
 
 Handles persistence: SQLite for metadata, folders for artifacts.
 
@@ -195,15 +391,21 @@ project_root/
 ├── pages/
 │   ├── 1_Configuration.py          # Dataset, model, strategy selection
 │   ├── 2_Active_Learning.py        # Training control, annotation UI
-│   └── 3_Results.py                # Metrics, comparison, export
+│   ├── 3_Results.py                # Metrics, comparison, export
+│   └── 4_Dataset_Explorer.py       # Inspect labeled/unlabeled pools
 ├── controller/
 │   ├── __init__.py
-│   ├── experiment_controller.py    # Event routing, thread management
+│   ├── experiment_controller.py    # Event routing, state caching
+│   ├── background_worker.py        # NEW: Process management, pipe I/O
 │   └── events.py                   # EventType enum, Event dataclass
+├── services/                       # NEW: Service process
+│   ├── __init__.py
+│   └── active_learning_service.py  # Main service loop
 ├── model/
 │   ├── __init__.py
-│   ├── world_state.py              # WorldState dataclass
+│   ├── world_state.py              # WorldState dataclass (picklable)
 │   ├── model_handler.py            # Backend orchestration
+│   ├── schemas.py                  # Data schemas
 │   └── experiment_manager.py       # SQLite + folder persistence
 ├── backend/                        # Existing (unchanged)
 │   ├── active_loop.py
@@ -274,38 +476,67 @@ CREATE TABLE epoch_metrics (
 
 ## Data Flow Examples
 
-### Starting a Training Cycle
+### Starting a Training Cycle (Multiprocessing)
 
 ```
 1. User clicks "Start Cycle"
 2. View: controller.dispatch(Event(START_CYCLE))
-3. Controller: model_handler.handle_event(event)
-4. ModelHandler:
-   a. world_state.phase = Phase.TRAINING
-   b. active_loop.prepare_cycle(cycle_num)
-   c. For each epoch:
-      - metrics = active_loop.train_single_epoch(epoch)
+3. Controller: worker.send_event(event) → writes to pipe
+4. Service Process (INBOX receives event):
+   a. model_handler.handle_event(event)
+   b. world_state.phase = Phase.TRAINING
+   c. active_loop.prepare_cycle(cycle_num)
+   d. service.push_state() → sends WorldState via pipe
+5. Service Process (training loop):
+   a. For each epoch:
+      - metrics = model_handler.train_epoch()
       - world_state.epoch_metrics.append(metrics)
-      - world_state.current_epoch = epoch
-   d. world_state.phase = Phase.QUERYING
-   e. queried = active_loop.query_samples()
-   f. world_state.queried_images = queried
-   g. world_state.phase = Phase.AWAITING_ANNOTATION
-5. View: Polls controller.get_state(), updates display
+      - service.push_state() → sends WorldState via pipe
+   b. world_state.phase = Phase.QUERYING
+   c. queried = active_loop.query_samples()
+   d. world_state.queried_images = queried
+   e. world_state.phase = Phase.AWAITING_ANNOTATION
+   f. service.push_state() → sends WorldState via pipe
+6. View: controller.poll_updates() → receives WorldState from pipe
+7. View: Updates display with latest state
 ```
 
-### Submitting Annotations
+### Submitting Annotations (Multiprocessing)
 
 ```
 1. User clicks "Submit Annotations"
 2. View: controller.dispatch(Event(SUBMIT_ANNOTATIONS, {annotations: [...]}))
-3. Controller: model_handler.handle_event(event)
-4. ModelHandler:
-   a. active_loop.receive_annotations(annotations)
-   b. exp_manager.save_cycle_result(exp_id, cycle_metrics)
-   c. world_state.current_cycle += 1
-   d. world_state.phase = Phase.IDLE (or COMPLETED if last cycle)
-5. View: Shows updated pool sizes, ready for next cycle
+3. Controller: worker.send_event(event) → writes to pipe
+4. Service Process (INBOX receives event):
+   a. model_handler.handle_event(event)
+   b. active_loop.receive_annotations(annotations)
+   c. exp_manager.save_cycle_result(exp_id, cycle_metrics)
+   d. world_state.current_cycle += 1
+   e. world_state.phase = Phase.IDLE (or COMPLETED if last cycle)
+   f. service.push_state() → sends WorldState via pipe
+5. View: controller.poll_updates() → receives WorldState from pipe
+6. View: Shows updated pool sizes, ready for next cycle
+```
+
+### Service Lifecycle
+
+```
+1. Dashboard starts:
+   - controller = ExperimentController(experiments_dir)
+   - controller._worker.start() → spawns service process
+   - Service process initializes ModelHandler, enters run loop
+
+2. During operation:
+   - View dispatches events → pipe → Service INBOX
+   - Service processes events, trains epochs
+   - Service pushes WorldState → pipe → Controller INBOX
+   - View polls controller.get_state() for display
+
+3. Dashboard closes:
+   - controller.shutdown()
+   - Sends SHUTDOWN event → pipe → Service
+   - Service exits run loop gracefully
+   - Process joins with timeout, terminate if needed
 ```
 
 ## Scalability Considerations
@@ -324,34 +555,100 @@ CREATE TABLE epoch_metrics (
 - Large arrays (confusion matrices) saved to disk immediately
 - Query image cache cleared after each cycle
 
-## Threading Strategy
+## Multiprocessing Strategy
 
-PyTorch releases GIL during tensor operations, allowing concurrent UI updates.
+### Why Multiprocessing over Threading
+
+| Aspect | Threading | Multiprocessing (chosen) |
+|--------|-----------|--------------------------|
+| Process isolation | No - crash affects UI | Yes - service crash doesn't kill UI |
+| Memory isolation | Shared memory | Separate memory spaces |
+| GIL limitations | Affected by GIL | True parallelism |
+| Scalability | Limited | Better for heavy workloads |
+| Debugging | Easier | Requires more care |
+
+### Pipe Communication
+
+Using `multiprocessing.Pipe` for bidirectional communication:
 
 ```python
-class ExperimentController:
-    def start_training_async(self):
-        """Run training in background thread."""
-        def training_loop():
-            while self._model_handler.world_state.phase == Phase.TRAINING:
-                self._model_handler.train_epoch()
-                # WorldState updated, UI can poll
-        
-        self._thread = Thread(target=training_loop, daemon=True)
-        self._thread.start()
+from multiprocessing import Pipe, Process
+
+# Create bidirectional pipe
+parent_conn, child_conn = Pipe(duplex=True)
+
+# Parent (Controller) uses parent_conn
+# Child (Service) uses child_conn
 ```
 
-UI polls `controller.get_state()` on each Streamlit rerun to show live progress.
+### Serialization Requirements
+
+All data crossing the pipe must be **picklable**:
+
+✅ **Picklable** (safe to send):
+- Primitive types (int, float, str, bool)
+- Dataclasses with primitive fields
+- Lists, dicts with picklable contents
+- Enums
+- File paths (as strings)
+
+❌ **Not Picklable** (must stay in service):
+- PyTorch models
+- DataLoaders
+- Open file handles
+- Database connections
+- Lambda functions
+
+### State Synchronization
+
+```python
+# Service pushes state after each significant change
+def _push_state(self) -> None:
+    self._model_handler.world_state.updated_at = time.time()
+    self._pipe.send(self._model_handler.world_state)
+
+# Controller polls for updates (non-blocking)
+def poll_updates(self) -> bool:
+    if self._worker._pipe.poll(timeout=0.0):
+        self._cached_state = self._worker._pipe.recv()
+        return True
+    return False
+```
+
+### Error Handling in Multiprocessing
+
+```python
+class BackgroundWorker:
+    def is_alive(self) -> bool:
+        return self._process is not None and self._process.is_alive()
+    
+    def restart_if_dead(self) -> bool:
+        """Restart service if it crashed."""
+        if not self.is_alive() and self._is_started:
+            self.start(self._experiments_dir)
+            return True
+        return False
+
+class ExperimentController:
+    def get_state(self) -> WorldState:
+        # Check service health before returning state
+        if not self._worker.is_alive():
+            self._cached_state.phase = Phase.ERROR
+            self._cached_state.error_message = "Service process died unexpectedly"
+        return self._cached_state
+```
 
 ## Key Design Decisions
 
 | Decision | Rationale |
 |----------|-----------|
 | Command Pattern (Events) | Decouples UI from backend, enables logging/undo |
-| In-Memory WorldState | Fast UI reads without I/O |
+| Multiprocessing with Pipes | Process isolation, crash recovery, true parallelism |
+| Cached WorldState in Controller | Fast UI reads without pipe I/O on every access |
+| Picklable dataclasses | Required for pipe transport |
+| Service pushes state | Controller doesn't need to request updates |
 | SQLite for metadata | Scalable, queryable, ACID-compliant |
 | Folder-based artifacts | Large files (checkpoints, matrices) stay out of DB |
-| Threading (not multiprocessing) | Simpler, PyTorch releases GIL |
 | Existing backend unchanged | Reuse proven ActiveLearningLoop, Trainer, etc. |
 
 ## Phase Enum
@@ -392,17 +689,37 @@ class Phase(Enum):
 - Confusion matrix heatmap
 - Export buttons (CSV, JSON)
 
+### Dataset Explorer Page (NEW)
+- View labeled pool: display images with their assigned labels
+- View unlabeled pool: display images awaiting annotation
+- Pool statistics: counts, class distribution charts
+- Image preview with metadata (path, predicted class if available)
+- Filter/search by class or filename
+- Pagination for large datasets (lazy loading)
+
 ## Migration from Current Code
 
-1. **Create MVC folders**: `controller/`, `model/`
-2. **Implement WorldState**: Simple dataclass
-3. **Implement Events**: Enum + dataclass
-4. **Implement ExperimentManager**: SQLite wrapper
-5. **Implement ModelHandler**: Wraps existing backend
-6. **Implement Controller**: Event routing
-7. **Update Views**: Use controller.dispatch() and controller.get_state()
+### Phase 1: Create Multiprocessing Infrastructure
+1. **Create `services/` folder**: New package for service process
+2. **Create `controller/background_worker.py`**: Process management
+3. **Create `services/active_learning_service.py`**: Main service loop
+
+### Phase 2: Update Existing Components
+4. **Update `controller/events.py`**: Add SHUTDOWN event, timestamp field
+5. **Update `model/world_state.py`**: Add updated_at field, ensure picklable
+6. **Update `controller/experiment_controller.py`**: Use BackgroundWorker instead of direct ModelHandler
+
+### Phase 3: Integration
+7. **Update Views**: Use `controller.poll_updates()` before `get_state()`
+8. **Update `dashboard.py`**: Handle service lifecycle (start/shutdown)
+
+### Phase 4: Testing
+9. **Add process lifecycle tests**: Start, shutdown, crash recovery
+10. **Add pipe communication tests**: Event sending, state receiving
 
 The existing `backend/` code (ActiveLearningLoop, Trainer, ALDataManager, strategies) remains unchanged.
+The existing `model/model_handler.py` remains unchanged (runs inside service process).
+
 
 
 ## Correctness Properties
@@ -499,6 +816,24 @@ The existing `backend/` code (ActiveLearningLoop, Trainer, ALDataManager, strate
 
 **Validates: Requirements 9.4**
 
+### Property 16: Service Process Lifecycle
+
+*For any* controller initialization, the service process SHALL be alive after start() and not alive after shutdown().
+
+**Validates: Requirements 3.1 (background process management)**
+
+### Property 17: Pipe Communication Integrity
+
+*For any* event sent via pipe, the service SHALL receive an equivalent event (serialization round-trip).
+
+**Validates: Requirements 8.2 (event routing)**
+
+### Property 18: State Push After Event
+
+*For any* event processed by the service, a WorldState update SHALL be pushed to the controller via pipe.
+
+**Validates: Requirements 7.2 (state synchronization)**
+
 ## Error Handling
 
 ### Experiment Creation Errors
@@ -544,15 +879,19 @@ tests/
 │   ├── test_world_state.py         # WorldState dataclass tests
 │   ├── test_events.py              # Event creation and validation
 │   ├── test_experiment_manager.py  # CRUD operations, edge cases
-│   └── test_model_handler.py       # Event handling, state transitions
+│   ├── test_model_handler.py       # Event handling, state transitions
+│   ├── test_background_worker.py   # NEW: Process lifecycle tests
+│   └── test_serialization.py       # NEW: Pickle round-trip tests
 ├── property/
 │   ├── test_experiment_properties.py   # Properties 1-4 (experiment management)
 │   ├── test_training_properties.py     # Properties 5-7 (training cycle)
 │   ├── test_annotation_properties.py   # Properties 8-10 (annotation flow)
 │   ├── test_persistence_properties.py  # Properties 12-15 (data persistence)
-│   └── test_control_properties.py      # Property 11 (pause/stop)
+│   ├── test_control_properties.py      # Property 11 (pause/stop)
+│   └── test_multiprocessing_properties.py  # NEW: Properties 16-18 (process/pipe)
 └── integration/
-    └── test_full_cycle.py          # End-to-end cycle tests
+    ├── test_full_cycle.py          # End-to-end cycle tests
+    └── test_service_integration.py # NEW: Full service process tests
 ```
 
 ### Unit Test Focus Areas

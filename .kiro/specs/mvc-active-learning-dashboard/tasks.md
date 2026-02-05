@@ -2,7 +2,7 @@
 
 ## Overview
 
-This plan implements the MVC architecture for the Active Learning Dashboard. The existing `backend/` code remains unchanged. We create the `controller/` and `model/` layers, then update the Streamlit pages to use the new architecture.
+This plan implements the MVC architecture for the Active Learning Dashboard using **multiprocessing with pipes** for process isolation. The ActiveLearning service runs in a separate process, communicating with the controller via bidirectional pipes. The existing `backend/` code remains unchanged.
 
 ## Tasks
 
@@ -109,74 +109,158 @@ This plan implements the MVC architecture for the Active Learning Dashboard. The
 - [ ] 5. Checkpoint - Ensure model layer tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [x] 6. Implement ExperimentController (event routing and threading)
-  - [x] 6.1 Create ExperimentController class
-    - Create `controller/experiment_controller.py` with ExperimentController class
-    - Initialize ModelHandler
-    - Implement `dispatch()` to route events to ModelHandler
-    - Implement `get_state()` to return WorldState
+- [ ] 6. Implement Multiprocessing Infrastructure (NEW)
+  - [ ] 6.1 Update WorldState for picklability
+    - Add `updated_at: float` field for state versioning
+    - Ensure all fields are picklable (no lambdas, no open handles)
+    - Add unit test to verify WorldState is picklable
+    - _Requirements: 7.1_
+  
+  - [ ] 6.2 Update Event system for picklability
+    - Add `timestamp: float` field to Event dataclass
+    - Add SHUTDOWN event type for graceful service termination
+    - Add unit test to verify Event is picklable
+    - _Requirements: 8.1_
+  
+  - [ ] 6.3 Create BackgroundWorker class
+    - Create `controller/background_worker.py`
+    - Implement `start()`: spawn service process with Pipe
+    - Implement `send_event()`: write event to pipe
+    - Implement `poll_state()`: non-blocking read from pipe
+    - Implement `is_alive()`: check process health
+    - Implement `shutdown()`: graceful termination with timeout
+    - _Requirements: 3.1_
+  
+  - [ ] 6.4 Create ActiveLearningService class
+    - Create `services/__init__.py`
+    - Create `services/active_learning_service.py`
+    - Implement `run_service_loop()`: entry point for Process
+    - Implement `run()`: main event loop with pipe polling
+    - Implement `_handle_event()`: delegate to ModelHandler
+    - Implement `_train_one_epoch()`: train and push state
+    - Implement `_push_state()`: send WorldState via pipe
+    - _Requirements: 3.1, 7.2_
+  
+  - [ ]* 6.5 Write property tests for multiprocessing
+    - **Property 16: Service Process Lifecycle**
+    - **Property 17: Pipe Communication Integrity**
+    - **Property 18: State Push After Event**
+    - **Validates: Requirements 3.1, 7.2, 8.2**
+
+- [ ] 7. Update ExperimentController for Multiprocessing
+  - [ ] 7.1 Refactor ExperimentController to use BackgroundWorker
+    - Replace direct ModelHandler with BackgroundWorker
+    - Add `_cached_state: WorldState` for fast local reads
+    - Update `dispatch()` to use `worker.send_event()`
+    - Update `get_state()` to return cached state
+    - Add `poll_updates()` to receive state from pipe
+    - Add `drain_updates()` to get latest state
+    - Add `shutdown()` for graceful service termination
     - _Requirements: 7.2, 8.2_
   
-  - [x] 6.2 Implement background training thread management
-    - Implement `start_training_async()` to spawn training thread
-    - Training loop calls `model_handler.train_epoch()` repeatedly
-    - Handle pause/stop flags to control thread
-    - _Requirements: 3.1, 5.1, 5.2_
+  - [ ] 7.2 Add service health monitoring
+    - Implement `is_service_alive()` check
+    - Set error state if service dies unexpectedly
+    - _Requirements: 7.5_
   
-  - [x] 6.3 Add thread-safe state access
-    - Ensure `get_state()` returns consistent WorldState during training
-    - Use appropriate synchronization if needed
-    - _Requirements: 7.2_
+  - [ ] 7.3 Remove threading code
+    - Remove `_training_thread` and related methods
+    - Remove `_state_lock` (no longer needed with process isolation)
+    - Training now runs in service process, not thread
+    - _Requirements: 3.1_
 
-- [x] 7. Update Configuration Page to use MVC
-  - [x] 7.1 Initialize controller in session state
+- [ ] 8. Checkpoint - Ensure multiprocessing infrastructure works
+  - Test service start/shutdown lifecycle
+  - Test event sending and state receiving via pipe
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 9. Update Configuration Page to use MVC
+  - [x] 9.1 Initialize controller in session state
     - Create ExperimentController on app start
     - Store in st.session_state for persistence across reruns
     - _Requirements: 8.4_
   
-  - [x] 7.2 Update experiment creation to dispatch events
+  - [x] 9.2 Update experiment creation to dispatch events
     - Replace direct backend calls with controller.dispatch(Event(CREATE_EXPERIMENT, {...}))
     - Read state via controller.get_state() for UI updates
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 8.4_
 
-- [x] 8. Update Active Learning Page to use MVC
-  - [x] 8.1 Implement training controls with events
-    - Start button: dispatch START_CYCLE event, call start_training_async()
+- [ ] 10. Update Active Learning Page for Multiprocessing
+  - [ ] 10.1 Update training controls with events
+    - Start button: dispatch START_CYCLE event (training runs in service process)
     - Pause button: dispatch PAUSE event
     - Stop button: dispatch STOP event
+    - Remove `start_training_async()` call (no longer needed)
     - _Requirements: 3.1, 5.1, 5.2, 8.4_
   
-  - [x] 8.2 Implement live metrics display via state polling
-    - Poll controller.get_state() on each Streamlit rerun
+  - [ ] 10.2 Implement live metrics display via state polling
+    - Call `controller.poll_updates()` before `get_state()`
     - Display epoch_metrics as loss/accuracy curves
     - Show current_cycle, current_epoch progress
+    - Use `st.rerun()` with delay for live updates during training
     - _Requirements: 3.2, 3.6_
   
-  - [x] 8.3 Implement annotation interface
+  - [ ] 10.3 Implement annotation interface
     - Display queried_images from WorldState in grid
     - Collect annotations and dispatch SUBMIT_ANNOTATIONS event
     - _Requirements: 4.1, 4.5_
 
-- [x] 9. Update Results Page to use MVC
-  - [x] 9.1 Implement experiment selector
+- [x] 11. Update Results Page to use MVC
+  - [x] 11.1 Implement experiment selector
     - Load experiment list via ExperimentManager
     - Dispatch LOAD_EXPERIMENT on selection
     - _Requirements: 2.1, 2.4_
   
-  - [x] 9.2 Implement results visualization
+  - [x] 11.2 Implement results visualization
     - Display cycle metrics from ExperimentManager
     - Show confusion matrix heatmaps
     - _Requirements: 6.1, 6.4_
   
-  - [x] 9.3 Implement export functionality
+  - [x] 11.3 Implement export functionality
     - Export cycle metrics to CSV/JSON
     - _Requirements: 6.3_
   
-  - [ ]* 9.4 Write property test for export round-trip
+  - [ ]* 11.4 Write property test for export round-trip
     - **Property 12: Export Data Round-Trip**
     - **Validates: Requirements 6.3**
 
-- [ ] 10. Final checkpoint - Full integration verification
+- [ ] 12. Implement Dataset Explorer Page
+  - [ ] 12.1 Create Dataset Explorer page structure
+    - Create `pages/4_Dataset_Explorer.py`
+    - Add pool selector (labeled/unlabeled)
+    - _Requirements: 11.1, 11.2_
+  
+  - [ ] 12.2 Implement pool visualization with pagination
+    - Display images in grid with lazy loading
+    - Show image metadata (path, label if labeled)
+    - Implement pagination for large pools
+    - _Requirements: 11.1, 11.2, 11.4_
+  
+  - [ ] 12.3 Implement pool statistics display
+    - Show total counts for labeled/unlabeled pools
+    - Display class distribution chart for labeled pool
+    - _Requirements: 11.3_
+  
+  - [ ] 12.4 Implement filtering functionality
+    - Add filter by class name dropdown
+    - Add search by filename
+    - _Requirements: 11.5_
+
+- [ ] 13. Update Dashboard Entry Point
+  - [ ] 13.1 Add service lifecycle management
+    - Initialize controller on app start
+    - Add cleanup on app shutdown (atexit handler)
+    - Handle service restart if it dies
+    - _Requirements: 3.1_
+  
+  - [ ] 13.2 Add service health indicator
+    - Show service status in sidebar
+    - Display error if service is not alive
+    - _Requirements: 7.5_
+
+- [ ] 14. Final checkpoint - Full integration verification
+  - Test full active learning cycle with multiprocessing
+  - Verify service isolation (UI responsive during training)
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
@@ -186,3 +270,8 @@ This plan implements the MVC architecture for the Active Learning Dashboard. The
 - All view interactions go through controller.dispatch() - views never call backend directly
 - Property tests use Hypothesis with minimum 100 iterations
 - Each property test references its design document property number
+- **Multiprocessing key points:**
+  - Service process runs ModelHandler and backend components
+  - Controller caches WorldState locally for fast UI reads
+  - Pipe communication requires picklable data only
+  - Service pushes state after each event/epoch (controller doesn't poll)

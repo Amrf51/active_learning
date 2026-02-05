@@ -135,3 +135,15 @@ This document defines the requirements for the MVC Architecture implementation o
 3. THE Trainer SHALL process images in configurable batches
 4. WHEN querying cycle results THEN THE ExperimentManager SHALL support LIMIT/OFFSET pagination
 5. THE system SHALL cache only the current cycle's query images to disk
+
+### Requirement 11: Dataset Explorer
+
+**User Story:** As a researcher, I want to inspect the labeled and unlabeled data pools, so that I can understand the current state of my dataset and verify annotations.
+
+#### Acceptance Criteria
+
+1. THE Dataset_Explorer_Page SHALL display images from the labeled pool with their assigned labels
+2. THE Dataset_Explorer_Page SHALL display images from the unlabeled pool
+3. THE Dataset_Explorer_Page SHALL show pool statistics (counts, class distribution)
+4. WHEN viewing large pools THEN THE Dataset_Explorer_Page SHALL use pagination with lazy loading
+5. THE Dataset_Explorer_Page SHALL provide filtering by class name or filename

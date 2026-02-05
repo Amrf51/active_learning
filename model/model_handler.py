@@ -445,12 +445,20 @@ class ModelHandler:
         # 5. Create model
         logger.info(f"Creating model: {config.get('model_name', 'resnet18')}")
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        model = get_model(
-            model_name=config.get('model_name', 'resnet18'),
+        
+        # Create a simple config object for get_model()
+        class ModelConfig:
+            def __init__(self, name, num_classes, pretrained):
+                self.name = name
+                self.num_classes = num_classes
+                self.pretrained = pretrained
+        
+        model_config = ModelConfig(
+            name=config.get('model_name', 'resnet18'),
             num_classes=config.get('num_classes', len(class_names)),
             pretrained=config.get('pretrained', True)
         )
-        model = model.to(device)
+        model = get_model(model_config, device=device)
         
         # 6. Create a minimal config object for Trainer
         # The Trainer expects a config object with nested attributes
