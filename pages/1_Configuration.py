@@ -25,6 +25,7 @@ import yaml
 from datetime import datetime
 import logging
 import pandas as pd
+from emoji_sanitizer import EmojiSanitizer
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
@@ -48,9 +49,9 @@ IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp'}
 # Page configuration
 st.set_page_config(
     page_title="Configuration - AL Dashboard",
-    page_icon="⚙️",
     layout="wide"
 )
+EmojiSanitizer(st).patch()
 
 # NEW: Update session heartbeat
 update_session_heartbeat()

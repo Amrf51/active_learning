@@ -27,6 +27,7 @@ import seaborn as sns
 from datetime import datetime
 import logging
 from types import SimpleNamespace
+from emoji_sanitizer import EmojiSanitizer
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
@@ -45,9 +46,9 @@ logger = logging.getLogger(__name__)
 # Page configuration
 st.set_page_config(
     page_title="Active Learning Control - AL Dashboard",
-    page_icon="🎯",
     layout="wide"
 )
+EmojiSanitizer(st).patch()
 
 # Custom CSS for AL Control page
 st.markdown("""

@@ -17,6 +17,7 @@ import sys
 import pandas as pd
 import logging
 from typing import Optional, Dict, List, Any
+from emoji_sanitizer import EmojiSanitizer
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
@@ -30,9 +31,9 @@ logger = logging.getLogger(__name__)
 # Page configuration
 st.set_page_config(
     page_title="Dataset Explorer - AL Dashboard",
-    page_icon="🔍",
     layout="wide"
 )
+EmojiSanitizer(st).patch()
 
 # Custom CSS
 st.markdown("""

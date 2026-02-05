@@ -18,6 +18,7 @@ import streamlit as st
 from pathlib import Path
 import sys
 import logging
+from emoji_sanitizer import EmojiSanitizer
 
 # Add project root to path for imports
 project_root = Path(__file__).parent
@@ -39,10 +40,10 @@ logger = logging.getLogger(__name__)
 # Page configuration
 st.set_page_config(
     page_title="Active Learning Dashboard",
-    page_icon="🎯",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+EmojiSanitizer(st).patch()
 
 # Initialize controller (FIRST THING - before any other code)
 # This creates the controller instance if it doesn't exist
