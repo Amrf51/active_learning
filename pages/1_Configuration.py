@@ -163,8 +163,13 @@ def scan_dataset(data_dir: str) -> DatasetInfo:
     """
     data_path = Path(data_dir)
     
+    # Validate path exists
     if not data_path.exists():
         raise ValueError(f"Path does not exist: {data_dir}")
+    
+    # Ensure path is accessible
+    if not data_path.is_dir():
+        raise ValueError(f"Path is not a directory: {data_dir}")
     
     # Discover classes (subdirectories)
     class_names = sorted([
@@ -1037,10 +1042,9 @@ def initialize_experiment():
     Initialize a new experiment via Controller (MVC version).
     
     Key Changes from Old Version:
-    - Uses Controller.dispatch(INITIALIZE_EXPERIMENT) instead of StateManager
-    - Service auto-spawns (no manual worker command)
-    - Config saved by Controller, not by this page
-    - Database handles experiment persistence
+    - Uses Controller.dispatch(CREATE_EXPERIMENT) instead of direct backend calls
+    - Reads state via controller.get_state() for UI updates
+    - All interactions go through the event system
     
     Returns:
         bool: True if experiment created successfully, False otherwise
@@ -1082,34 +1086,41 @@ def initialize_experiment():
             "dataset_info": dataset_info_dict
         }
         
-        # Get controller and dispatch initialization event
+        # Get controller and dispatch CREATE_EXPERIMENT event
         ctrl = get_controller()
         
-        with st.spinner("🔄 Initializing experiment and starting service..."):
-            event = Event(EventType.INITIALIZE_EXPERIMENT, payload=payload)
-            success = ctrl.dispatch(event)
+        with st.spinner("🔄 Creating experiment..."):
+            event = Event(EventType.CREATE_EXPERIMENT, payload=payload)
+            ctrl.dispatch(event)
         
-        if success:
+        # Read state via controller.get_state() for UI updates
+        state = ctrl.get_state()
+        
+        # Check if experiment was created successfully
+        if state.error_message:
+            st.error(f"❌ Failed to create experiment: {state.error_message}")
+            return False
+        
+        if state.experiment_id:
             st.success(f"✅ Experiment **{experiment_name}** created successfully!")
-            st.success("🚀 **Service process started automatically!**")
+            st.success(f"🆔 Experiment ID: `{state.experiment_id}`")
             st.info("📊 Go to the **Active Learning** page to begin training.")
             
-            # Show that no manual commands are needed!
-            st.markdown("""
+            # Show experiment details
+            st.markdown(f"""
             <div class="success-box">
-            <h4>✨ No Manual Steps Required!</h4>
-            <p>The training service has been automatically started by the Controller.</p>
-            <p>You can immediately proceed to the <strong>Active Learning</strong> page to start training.</p>
+            <h4>✨ Experiment Ready!</h4>
+            <p><strong>Name:</strong> {state.experiment_name}</p>
+            <p><strong>Cycles:</strong> {state.total_cycles}</p>
+            <p><strong>Epochs per cycle:</strong> {state.epochs_per_cycle}</p>
+            <p><strong>Initial labeled pool:</strong> {state.labeled_count}</p>
+            <p>You can now proceed to the <strong>Active Learning</strong> page to start training.</p>
             </div>
             """, unsafe_allow_html=True)
             
             return True
         else:
-            # Get error from controller
-            status = ctrl.get_status()
-            error_msg = status.get('error_message', 'Unknown error')
-            
-            st.error(f"❌ Failed to initialize experiment: {error_msg}")
+            st.error("❌ Failed to create experiment: Unknown error")
             return False
     
     except Exception as e:

@@ -1,47 +1,8 @@
-"""
-Model Layer - Data Storage and State Management.
+"""Model layer for the Active Learning Dashboard MVC architecture.
 
-This package provides:
-- WorldState: In-memory current experiment state (~1μs access)
-- DatabaseManager: SQLite persistence for historical data (~50ms access)
-- Schemas: Data structures used throughout the application
-
-Usage:
-    from model import WorldState, DatabaseManager
-    from model.schemas import ExperimentPhase, EpochMetrics
-    
-    # Create instances
-    world_state = WorldState()
-    db = DatabaseManager("experiments.db")
+This module provides state management, persistence, and backend orchestration.
 """
 
-from .world_state import WorldState
-from .database import DatabaseManager
-from .schemas import (
-    ExperimentPhase,
-    EpochMetrics,
-    CycleSummary,
-    QueriedImage,
-    ExperimentConfig,
-    DatasetInfo,
-    ValidationResult,
-    TrainingProgress,
-    ExperimentStatus
-)
+from .world_state import Phase, WorldState
 
-__all__ = [
-    # Core classes
-    "WorldState",
-    "DatabaseManager",
-    
-    # Schemas
-    "ExperimentPhase",
-    "EpochMetrics",
-    "CycleSummary",
-    "QueriedImage",
-    "ExperimentConfig",
-    "DatasetInfo",
-    "ValidationResult",
-    "TrainingProgress",
-    "ExperimentStatus"
-]
+__all__ = ['Phase', 'WorldState']

@@ -114,58 +114,18 @@ st.markdown("""
 
 
 def initialize_session_state():
-    """Initialize session state variables."""
-    if "experiment_manager" not in st.session_state:
-        experiments_dir = Path("experiments")
-        st.session_state.experiment_manager = ExperimentManager(experiments_dir)
-    
-    if "selected_experiment" not in st.session_state:
-        st.session_state.selected_experiment = None
-    
-    if "state_manager" not in st.session_state:
-        st.session_state.state_manager = None
+    """Initialize session state variables (MVC version - most state in Controller)."""
+    # MVC architecture: Controller manages state, not session_state
+    # This function is kept for any view-specific session state only
+    pass
 
 
 
 def display_experiment_selector():
-    """Display experiment selection interface."""
-    st.sidebar.header("🔬 Experiment Selection")
-    
-    # Get all experiments
-    experiments = st.session_state.experiment_manager.list_experiments()
-    
-    if not experiments:
-        st.sidebar.info("No experiments found. Create one in the Configuration page.")
-        return None
-    
-    # Display active experiment
-    active = st.session_state.experiment_manager.get_active()
-    if active:
-        st.sidebar.success(f"🟢 Active: {active.experiment_id}")
-    
-    # Experiment selection
-    exp_options = ["None"] + [exp["experiment_id"] for exp in experiments]
-    
-    current_selection = st.session_state.selected_experiment
-    if current_selection not in exp_options:
-        current_selection = "None"
-    
-    selected = st.sidebar.selectbox(
-        "Select Experiment",
-        exp_options,
-        index=exp_options.index(current_selection) if current_selection in exp_options else 0,
-        help="Choose an experiment to view or control"
-    )
-    
-    if selected != "None" and selected != st.session_state.selected_experiment:
-        st.session_state.selected_experiment = selected
-        
-        # Initialize state manager for selected experiment
-        exp_dir = Path("experiments") / selected
-        st.session_state.state_manager = StateManager(exp_dir)
-        st.rerun()
-    
-    return selected if selected != "None" else None
+    """Legacy function - experiment selection now handled by Controller (MVC)."""
+    # This function is no longer needed in MVC architecture
+    # Experiment selection is handled by the Controller via events
+    pass
 
 
 def display_experiment_status():
@@ -280,7 +240,7 @@ def main():
     st.markdown("""
     <div style="text-align: center; color: #6c757d; font-size: 0.9rem;">
         🎯 Active Learning Dashboard (MVC Architecture) | Built with Streamlit | 
-        Service Auto-Managed ✨
+        Backend Auto-Initialized ✨
     </div>
     """, unsafe_allow_html=True)
 
@@ -321,20 +281,6 @@ def display_recent_experiments():
     - Quick experiment selection
     - Performance comparison
     """)
-
-
-def initialize_session_state():
-    """Initialize session state (kept for compatibility, but MVC handles most state)."""
-    # Most state is now handled by the Controller
-    # This function is kept for any view-specific session state
-    pass
-
-
-def display_experiment_selector():
-    """Legacy function - experiment selection now handled by Controller."""
-    # This function is no longer needed in MVC architecture
-    # Experiment selection is handled by the Controller
-    pass
 
 
 if __name__ == "__main__":

@@ -364,17 +364,61 @@ def main():
         # Create a simple data structure to pass to display functions
         # This mimics the old state object but uses CycleSummary list
         class ExperimentData:
-            def __init__(self, exp_id: str, exp_name: str, cycles: List[CycleSummary], config):
+            def __init__(self, exp_id: str, exp_name: str, cycles: List[CycleSummary], 
+                        config, created_at, phase, total_cycles, current_cycle, 
+                        labeled_count, unlabeled_count, dataset_info):
                 self.experiment_id = exp_id
                 self.experiment_name = exp_name
                 self.cycle_results = cycles
                 self.config = config
+                self.created_at = created_at
+                self.phase = phase
+                self.total_cycles = total_cycles
+                self.current_cycle = current_cycle
+                self.labeled_count = labeled_count
+                self.unlabeled_count = unlabeled_count
+                self.dataset_info = dataset_info
+
+        # Parse created_at timestamp
+        created_at = None
+        if experiment_details and experiment_details.get("created_at"):
+            try:
+                created_at = datetime.fromisoformat(experiment_details["created_at"])
+            except:
+                created_at = None
+
+        # Get additional experiment info
+        phase = None
+        total_cycles = 0
+        current_cycle = len(cycle_summaries)
+        labeled_count = cycle_summaries[-1].labeled_count if cycle_summaries else 0
+        unlabeled_count = cycle_summaries[-1].unlabeled_count if cycle_summaries else 0
+        
+        # Parse config if available
+        config_obj = None
+        if experiment_details and experiment_details.get("config"):
+            from model.schemas import ExperimentConfig
+            try:
+                config_dict = experiment_details["config"]
+                if isinstance(config_dict, str):
+                    config_dict = json.loads(config_dict)
+                config_obj = ExperimentConfig.from_dict(config_dict)
+                total_cycles = config_obj.num_cycles
+            except Exception as e:
+                logger.warning(f"Failed to parse config: {e}")
 
         experiment_data = ExperimentData(
             experiment_id,
             experiment_details.get("experiment_name", experiment_id) if experiment_details else experiment_id,
             cycle_summaries,
-            experiment_details.get("config") if experiment_details else None
+            config_obj,
+            created_at,
+            phase,
+            total_cycles,
+            current_cycle,
+            labeled_count,
+            unlabeled_count,
+            None  # dataset_info not available from DB
         )
 
         # Create tabs for different result views
@@ -722,17 +766,61 @@ def display_multi_experiment_comparison():
 
                 # Create a simple data structure
                 class ExperimentData:
-                    def __init__(self, exp_id: str, exp_name: str, cycles: List[CycleSummary], config):
+                    def __init__(self, exp_id: str, exp_name: str, cycles: List[CycleSummary], 
+                                config, created_at, phase, total_cycles, current_cycle, 
+                                labeled_count, unlabeled_count, dataset_info):
                         self.experiment_id = exp_id
                         self.experiment_name = exp_name
                         self.cycle_results = cycles
                         self.config = config
+                        self.created_at = created_at
+                        self.phase = phase
+                        self.total_cycles = total_cycles
+                        self.current_cycle = current_cycle
+                        self.labeled_count = labeled_count
+                        self.unlabeled_count = unlabeled_count
+                        self.dataset_info = dataset_info
+
+                # Parse created_at timestamp
+                created_at = None
+                if experiment_details and experiment_details.get("created_at"):
+                    try:
+                        created_at = datetime.fromisoformat(experiment_details["created_at"])
+                    except:
+                        created_at = None
+
+                # Get additional experiment info
+                phase = None
+                total_cycles = 0
+                current_cycle = len(cycle_summaries)
+                labeled_count = cycle_summaries[-1].labeled_count if cycle_summaries else 0
+                unlabeled_count = cycle_summaries[-1].unlabeled_count if cycle_summaries else 0
+                
+                # Parse config if available
+                config_obj = None
+                if experiment_details and experiment_details.get("config"):
+                    from model.schemas import ExperimentConfig
+                    try:
+                        config_dict = experiment_details["config"]
+                        if isinstance(config_dict, str):
+                            config_dict = json.loads(config_dict)
+                        config_obj = ExperimentConfig.from_dict(config_dict)
+                        total_cycles = config_obj.num_cycles
+                    except Exception as e:
+                        logger.warning(f"Failed to parse config: {e}")
 
                 exp_data = ExperimentData(
                     exp_id,
                     experiment_details.get("experiment_name", exp_id) if experiment_details else exp_id,
                     cycle_summaries,
-                    experiment_details.get("config") if experiment_details else None
+                    config_obj,
+                    created_at,
+                    phase,
+                    total_cycles,
+                    current_cycle,
+                    labeled_count,
+                    unlabeled_count,
+                    None  # dataset_info not available from DB
                 )
 
                 experiments_with_results.append({

@@ -1,0 +1,188 @@
+# Implementation Plan: MVC Active Learning Dashboard
+
+## Overview
+
+This plan implements the MVC architecture for the Active Learning Dashboard. The existing `backend/` code remains unchanged. We create the `controller/` and `model/` layers, then update the Streamlit pages to use the new architecture.
+
+## Tasks
+
+- [x] 1. Set up MVC folder structure and core data types
+  - [x] 1.1 Create controller/ and model/ directories with __init__.py files
+    - Create `controller/__init__.py` and `model/__init__.py`
+    - _Requirements: 8.1, 8.3_
+  
+  - [x] 1.2 Implement Phase enum and WorldState dataclass
+    - Create `model/world_state.py` with Phase enum and WorldState dataclass
+    - Include all fields: experiment_id, phase, current_cycle, epoch_metrics, queried_images, etc.
+    - _Requirements: 7.1, 7.3, 7.4, 7.5_
+  
+  - [x] 1.3 Implement Event system
+    - Create `controller/events.py` with EventType enum and Event dataclass
+    - Include: CREATE_EXPERIMENT, LOAD_EXPERIMENT, START_CYCLE, PAUSE, STOP, SUBMIT_ANNOTATIONS
+    - _Requirements: 8.1, 8.3_
+
+- [x] 2. Implement ExperimentManager (persistence layer)
+  - [x] 2.1 Create SQLite database initialization
+    - Create `model/experiment_manager.py` with ExperimentManager class
+    - Implement `_init_db()` to create experiments, cycle_results, epoch_metrics tables
+    - _Requirements: 9.1, 9.5_
+  
+  - [x] 2.2 Implement experiment CRUD operations
+    - Implement `create_experiment()`, `list_experiments()`, `load_experiment()`, `delete_experiment()`
+    - Generate unique experiment IDs
+    - Create experiment folder structure on creation
+    - _Requirements: 1.1, 1.2, 2.1, 2.2, 2.3_
+  
+  - [ ]* 2.3 Write property tests for experiment management
+    - **Property 1: Experiment ID Uniqueness**
+    - **Property 2: Experiment Persistence Round-Trip**
+    - **Property 3: Experiment Listing Completeness**
+    - **Property 4: Experiment Deletion Removes from List**
+    - **Validates: Requirements 1.1, 1.2, 2.1, 2.2, 2.3**
+  
+  - [x] 2.4 Implement cycle results persistence
+    - Implement `save_cycle_result()` and `get_cycle_results()` with pagination
+    - _Requirements: 4.2, 6.5, 10.4_
+  
+  - [ ]* 2.5 Write property tests for cycle results
+    - **Property 8: Cycle Results Persistence Round-Trip**
+    - **Property 13: Pagination Correctness**
+    - **Validates: Requirements 4.2, 6.5**
+  
+  - [x] 2.6 Implement artifact persistence (checkpoints, confusion matrices)
+    - Implement `save_checkpoint()`, `load_checkpoint()`, `save_confusion_matrix()`, `load_confusion_matrix()`
+    - Use folder-based storage: experiments/{id}/checkpoints/, experiments/{id}/results/
+    - _Requirements: 9.2, 9.3, 9.4_
+  
+  - [ ]* 2.7 Write property tests for artifact persistence
+    - **Property 14: Checkpoint Persistence Round-Trip**
+    - **Property 15: Confusion Matrix Persistence Round-Trip**
+    - **Validates: Requirements 9.3, 9.4**
+
+- [ ] 3. Checkpoint - Ensure persistence layer tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 4. Implement ModelHandler (backend orchestration)
+  - [x] 4.1 Create ModelHandler class with WorldState management
+    - Create `model/model_handler.py` with ModelHandler class
+    - Initialize WorldState and ExperimentManager
+    - Implement `handle_event()` dispatcher
+    - _Requirements: 7.2, 8.2_
+  
+  - [x] 4.2 Implement experiment creation and loading handlers
+    - Handle CREATE_EXPERIMENT: create via ExperimentManager, update WorldState
+    - Handle LOAD_EXPERIMENT: load via ExperimentManager, restore WorldState
+    - _Requirements: 1.1, 1.2, 1.6, 2.2_
+  
+  - [x] 4.3 Implement training cycle handlers
+    - Handle START_CYCLE: set phase to TRAINING, prepare ActiveLearningLoop
+    - Implement `train_epoch()`: train one epoch, update WorldState.epoch_metrics
+    - Transition to QUERYING after training, then AWAITING_ANNOTATION after querying
+    - _Requirements: 3.2, 3.3, 3.4, 3.5_
+  
+  - [ ]* 4.4 Write property tests for training cycle
+    - **Property 5: Epoch Tracking Consistency**
+    - **Property 6: Phase Transition After Training**
+    - **Property 7: Queried Images Population**
+    - **Validates: Requirements 3.2, 3.3, 3.4, 3.5**
+  
+  - [x] 4.5 Implement annotation submission handler
+    - Handle SUBMIT_ANNOTATIONS: pass to ActiveLearningLoop, save cycle results
+    - Increment current_cycle, transition to COMPLETED if final cycle
+    - _Requirements: 4.1, 4.2, 4.3, 4.4_
+  
+  - [ ]* 4.6 Write property tests for annotation submission
+    - **Property 9: Cycle Counter Increment**
+    - **Property 10: Completion Phase Transition**
+    - **Validates: Requirements 4.3, 4.4**
+  
+  - [x] 4.7 Implement pause and stop handlers
+    - Handle PAUSE: set flag to pause training loop
+    - Handle STOP: terminate training, save current state
+    - Update WorldState.phase accordingly
+    - _Requirements: 5.1, 5.2, 5.3_
+  
+  - [ ]* 4.8 Write property test for control actions
+    - **Property 11: Phase Reflects Control Actions**
+    - **Validates: Requirements 5.3**
+
+- [ ] 5. Checkpoint - Ensure model layer tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 6. Implement ExperimentController (event routing and threading)
+  - [x] 6.1 Create ExperimentController class
+    - Create `controller/experiment_controller.py` with ExperimentController class
+    - Initialize ModelHandler
+    - Implement `dispatch()` to route events to ModelHandler
+    - Implement `get_state()` to return WorldState
+    - _Requirements: 7.2, 8.2_
+  
+  - [x] 6.2 Implement background training thread management
+    - Implement `start_training_async()` to spawn training thread
+    - Training loop calls `model_handler.train_epoch()` repeatedly
+    - Handle pause/stop flags to control thread
+    - _Requirements: 3.1, 5.1, 5.2_
+  
+  - [x] 6.3 Add thread-safe state access
+    - Ensure `get_state()` returns consistent WorldState during training
+    - Use appropriate synchronization if needed
+    - _Requirements: 7.2_
+
+- [x] 7. Update Configuration Page to use MVC
+  - [x] 7.1 Initialize controller in session state
+    - Create ExperimentController on app start
+    - Store in st.session_state for persistence across reruns
+    - _Requirements: 8.4_
+  
+  - [x] 7.2 Update experiment creation to dispatch events
+    - Replace direct backend calls with controller.dispatch(Event(CREATE_EXPERIMENT, {...}))
+    - Read state via controller.get_state() for UI updates
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 8.4_
+
+- [x] 8. Update Active Learning Page to use MVC
+  - [x] 8.1 Implement training controls with events
+    - Start button: dispatch START_CYCLE event, call start_training_async()
+    - Pause button: dispatch PAUSE event
+    - Stop button: dispatch STOP event
+    - _Requirements: 3.1, 5.1, 5.2, 8.4_
+  
+  - [x] 8.2 Implement live metrics display via state polling
+    - Poll controller.get_state() on each Streamlit rerun
+    - Display epoch_metrics as loss/accuracy curves
+    - Show current_cycle, current_epoch progress
+    - _Requirements: 3.2, 3.6_
+  
+  - [x] 8.3 Implement annotation interface
+    - Display queried_images from WorldState in grid
+    - Collect annotations and dispatch SUBMIT_ANNOTATIONS event
+    - _Requirements: 4.1, 4.5_
+
+- [x] 9. Update Results Page to use MVC
+  - [x] 9.1 Implement experiment selector
+    - Load experiment list via ExperimentManager
+    - Dispatch LOAD_EXPERIMENT on selection
+    - _Requirements: 2.1, 2.4_
+  
+  - [x] 9.2 Implement results visualization
+    - Display cycle metrics from ExperimentManager
+    - Show confusion matrix heatmaps
+    - _Requirements: 6.1, 6.4_
+  
+  - [x] 9.3 Implement export functionality
+    - Export cycle metrics to CSV/JSON
+    - _Requirements: 6.3_
+  
+  - [ ]* 9.4 Write property test for export round-trip
+    - **Property 12: Export Data Round-Trip**
+    - **Validates: Requirements 6.3**
+
+- [ ] 10. Final checkpoint - Full integration verification
+  - Ensure all tests pass, ask the user if questions arise.
+
+## Notes
+
+- Tasks marked with `*` are optional and can be skipped for faster MVP
+- The existing `backend/` code remains unchanged
+- All view interactions go through controller.dispatch() - views never call backend directly
+- Property tests use Hypothesis with minimum 100 iterations
+- Each property test references its design document property number

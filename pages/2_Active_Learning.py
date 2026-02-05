@@ -35,7 +35,10 @@ sys.path.insert(0, str(project_root))
 # NEW: MVC imports
 from pages.controller_factory import get_controller, update_session_heartbeat
 from controller.events import Event, EventType
-from model.schemas import ExperimentPhase, EpochMetrics, QueriedImage
+from model.schemas import (
+    ExperimentPhase, EpochMetrics, QueriedImage,
+    UserAnnotation, AnnotationSubmission
+)
 
 logger = logging.getLogger(__name__)
 
@@ -260,6 +263,7 @@ def display_cycle_progress():
             error_message=status.get('error_message'),
             config=status.get('config'),
             current_cycle_epochs=status.get('current_cycle_epochs', []),
+            command=None,  # Not used in MVC implementation
             _raw_status=status  # Keep raw dict for any other access
         )
     
