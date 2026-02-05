@@ -229,44 +229,56 @@ This plan implements the MVC architecture for the Active Learning Dashboard usin
     - **Property 12: Export Data Round-Trip**
     - **Validates: Requirements 6.3**
 
-- [ ] 12. Implement Dataset Explorer Page
-  - [ ] 12.1 Create Dataset Explorer page structure
+- [x] 12. Implement Dataset Explorer Page
+  - [x] 12.1 Create Dataset Explorer page structure
     - Create `pages/4_Dataset_Explorer.py`
     - Add pool selector (labeled/unlabeled)
     - _Requirements: 11.1, 11.2_
   
-  - [ ] 12.2 Implement pool visualization with pagination
+  - [x] 12.2 Implement pool visualization with pagination
     - Display images in grid with lazy loading
     - Show image metadata (path, label if labeled)
     - Implement pagination for large pools
     - _Requirements: 11.1, 11.2, 11.4_
   
-  - [ ] 12.3 Implement pool statistics display
+  - [x] 12.3 Implement pool statistics display
     - Show total counts for labeled/unlabeled pools
     - Display class distribution chart for labeled pool
     - _Requirements: 11.3_
   
-  - [ ] 12.4 Implement filtering functionality
+  - [x] 12.4 Implement filtering functionality
     - Add filter by class name dropdown
     - Add search by filename
     - _Requirements: 11.5_
 
-- [ ] 13. Update Dashboard Entry Point
-  - [ ] 13.1 Add service lifecycle management
+- [ ] 14. Update pages to fit the new flow
+  - [ ] 14.1 check configuration.py
+    - check compatibility with the required components 
+    - imports
+    - update required parts
+
+  - [ ] 14.2 check results.py
+    - check compatibility with the required components 
+    - imports
+    - update required parts
+  - [ ] 14.3 Backend integration with the MVC
+
+  - [] 14.4 Check the whole project to ensure that readme.md is fulfilled
+  
+
+
+- [ ] 15. Update Dashboard Entry Point
+  - [ ] 15.1 Add service lifecycle management
     - Initialize controller on app start
     - Add cleanup on app shutdown (atexit handler)
     - Handle service restart if it dies
     - _Requirements: 3.1_
   
-  - [ ] 13.2 Add service health indicator
+  - [ ] 15.2 Add service health indicator
     - Show service status in sidebar
     - Display error if service is not alive
     - _Requirements: 7.5_
 
-- [ ] 14. Final checkpoint - Full integration verification
-  - Test full active learning cycle with multiprocessing
-  - Verify service isolation (UI responsive during training)
-  - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
 
