@@ -371,9 +371,11 @@ class ModelHandler:
         """Initialize backend components (Trainer, ALDataManager, ActiveLearningLoop).
         
         This is the critical missing link between MVC and the existing backend.
+        The config dict comes from ExperimentConfig.to_dict() which is a flat structure.
+        The backend expects nested attributes, so we create a BackendConfig adapter.
         
         Args:
-            config: Experiment configuration dictionary
+            config: Experiment configuration dictionary (from ExperimentConfig.to_dict())
             exp_id: Experiment ID
         """
         from backend.trainer import Trainer
@@ -441,60 +443,21 @@ class ModelHandler:
             exp_dir=self.experiments_dir / exp_id
         )
         
-        # 5. Create model
+        # 5. Create BackendConfig adapter
+        # The backend expects nested config attributes (config.training.batch_size, etc.)
+        # ExperimentConfig is flat, so we adapt it here
+        backend_config = self._create_backend_config(config, class_names)
+        
+        # 6. Create model
         logger.info(f"Creating model: {config.get('model_name', 'resnet18')}")
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        
-        # Create a simple config object for get_model()
-        class ModelConfig:
-            def __init__(self, name, num_classes, pretrained):
-                self.name = name
-                self.num_classes = num_classes
-                self.pretrained = pretrained
-        
-        model_config = ModelConfig(
-            name=config.get('model_name', 'resnet18'),
-            num_classes=config.get('num_classes', len(class_names)),
-            pretrained=config.get('pretrained', True)
-        )
-        model = get_model(model_config, device=device)
-        
-        # 6. Create a minimal config object for Trainer
-        # The Trainer expects a config object with nested attributes
-        class SimpleConfig:
-            def __init__(self, config_dict):
-                self.training = type('obj', (object,), {
-                    'optimizer': config_dict.get('optimizer', 'adam'),
-                    'learning_rate': config_dict.get('learning_rate', 0.001),
-                    'weight_decay': config_dict.get('weight_decay', 1e-4),
-                    'early_stopping_patience': config_dict.get('early_stopping_patience', 5)
-                })()
-                self.model = type('obj', (object,), {
-                    'name': config_dict.get('model_name', 'resnet18'),
-                    'num_classes': config_dict.get('num_classes', len(class_names)),
-                    'pretrained': config_dict.get('pretrained', True)
-                })()
-                self.active_learning = type('obj', (object,), {
-                    'num_cycles': config_dict.get('num_cycles', 5),
-                    'batch_size_al': config_dict.get('batch_size_al', 10),
-                    'sampling_strategy': config_dict.get('sampling_strategy', 'uncertainty'),
-                    'uncertainty_method': config_dict.get('uncertainty_method', 'entropy'),
-                    'reset_mode': config_dict.get('reset_mode', 'pretrained')
-                })()
-                self.data = type('obj', (object,), {
-                    'num_workers': config_dict.get('num_workers', 4)
-                })()
-                self.checkpoint = type('obj', (object,), {
-                    'save_best_per_cycle': True
-                })()
-        
-        config_obj = SimpleConfig(config)
+        model = get_model(backend_config.model, device=device)
         
         # 7. Create Trainer
         logger.info("Creating Trainer...")
         trainer = Trainer(
             model=model,
-            config=config_obj,
+            config=backend_config,
             exp_dir=self.experiments_dir / exp_id,
             device=device
         )
@@ -515,7 +478,7 @@ class ModelHandler:
             val_loader=val_loader,
             test_loader=test_loader,
             exp_dir=self.experiments_dir / exp_id,
-            config=config_obj,
+            config=backend_config,
             class_names=class_names
         )
         
@@ -526,3 +489,69 @@ class ModelHandler:
         
         logger.info(f"Backend initialization complete - Labeled: {pool_info['labeled']}, "
                    f"Unlabeled: {pool_info['unlabeled']}")
+    
+    def _create_backend_config(self, config: Dict[str, Any], class_names: list) -> Any:
+        """Create a backend-compatible config object from flat ExperimentConfig dict.
+        
+        The backend (Trainer, ActiveLearningLoop) expects nested attributes like:
+        - config.training.batch_size
+        - config.model.name
+        - config.active_learning.reset_mode
+        - config.checkpoint.save_best_per_cycle
+        
+        ExperimentConfig is flat, so this adapter bridges the gap.
+        
+        Args:
+            config: Flat config dict from ExperimentConfig.to_dict()
+            class_names: List of class names from dataset
+            
+        Returns:
+            Config object with nested attributes for backend compatibility
+        """
+        class BackendConfig:
+            """Adapter that provides nested attribute access for backend components."""
+            
+            def __init__(self, flat_config: Dict[str, Any], class_names: list):
+                # Training config
+                self.training = type('TrainingConfig', (), {
+                    'optimizer': flat_config.get('optimizer', 'adam'),
+                    'learning_rate': flat_config.get('learning_rate', 0.001),
+                    'weight_decay': flat_config.get('weight_decay', 1e-4),
+                    'early_stopping_patience': flat_config.get('early_stopping_patience', 5),
+                    'batch_size': flat_config.get('batch_size', 32),
+                    'epochs': flat_config.get('epochs_per_cycle', 20),
+                })()
+                
+                # Model config
+                self.model = type('ModelConfig', (), {
+                    'name': flat_config.get('model_name', 'resnet18'),
+                    'num_classes': flat_config.get('num_classes', len(class_names)),
+                    'pretrained': flat_config.get('pretrained', True),
+                })()
+                
+                # Active learning config
+                self.active_learning = type('ALConfig', (), {
+                    'num_cycles': flat_config.get('num_cycles', 5),
+                    'batch_size_al': flat_config.get('batch_size_al', 10),
+                    'sampling_strategy': flat_config.get('sampling_strategy', 'uncertainty'),
+                    'uncertainty_method': flat_config.get('uncertainty_method', 'entropy'),
+                    'reset_mode': flat_config.get('reset_mode', 'pretrained'),
+                    'initial_pool_size': flat_config.get('initial_pool_size', 50),
+                })()
+                
+                # Data config
+                self.data = type('DataConfig', (), {
+                    'num_workers': flat_config.get('num_workers', 4),
+                    'data_dir': flat_config.get('data_dir', './data'),
+                    'val_split': flat_config.get('val_split', 0.15),
+                    'test_split': flat_config.get('test_split', 0.15),
+                })()
+                
+                # Checkpoint config
+                self.checkpoint = type('CheckpointConfig', (), {
+                    'save_best_per_cycle': True,
+                    'save_best_model': True,
+                    'save_every_n_epochs': 10,
+                })()
+        
+        return BackendConfig(config, class_names)
