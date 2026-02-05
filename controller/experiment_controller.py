@@ -1,26 +1,37 @@
-"""ExperimentController - Routes events and manages background training threads.
+"""ExperimentController - Routes events via BackgroundWorker for multiprocessing.
 
 The ExperimentController is the main entry point for the view layer. It:
-1. Routes events to the ModelHandler
-2. Manages background training threads
-3. Provides thread-safe state access
-4. Handles pause/stop control flow
+1. Routes events to the service process via BackgroundWorker
+2. Caches WorldState locally for fast UI reads
+3. Polls for state updates from the service
+4. Handles graceful service shutdown
 """
 
 from pathlib import Path
-from threading import Thread, Lock
 from typing import Optional
 import logging
 
 from .events import Event, EventType
-from model.model_handler import ModelHandler
+from .background_worker import BackgroundWorker
 from model.world_state import WorldState, Phase
 
 logger = logging.getLogger(__name__)
 
 
 class ExperimentController:
-    """Controller for routing events and managing background threads."""
+    """Controller that communicates with service process via pipes.
+    
+    The ExperimentController uses multiprocessing for process isolation.
+    Training runs in a separate service process, communicating via pipes.
+    The controller caches WorldState locally for fast UI reads.
+    
+    Usage:
+        controller = ExperimentController(experiments_dir)
+        controller.dispatch(Event(EventType.START_CYCLE))
+        controller.poll_updates()  # Get latest state from service
+        state = controller.get_state()  # Fast local read
+        controller.shutdown()  # Graceful cleanup
+    """
     
     def __init__(self, experiments_dir: Path):
         """Initialize ExperimentController.
@@ -29,39 +40,146 @@ class ExperimentController:
             experiments_dir: Root directory for experiment storage
         """
         self.experiments_dir = Path(experiments_dir)
-        self._model_handler = ModelHandler(experiments_dir)
+        self._worker = BackgroundWorker()
+        self._cached_state = WorldState()  # Local cache for fast UI reads
         
-        # Threading
-        self._training_thread: Optional[Thread] = None
-        self._state_lock = Lock()  # Protects WorldState access
+        # Start the service process
+        self._worker.start(experiments_dir)
         
         logger.info(f"ExperimentController initialized with experiments_dir: {experiments_dir}")
     
-    def dispatch(self, event: Event) -> None:
-        """Route event to model handler.
+    def dispatch(self, event: Event) -> bool:
+        """Send event to service process via pipe.
         
         This is the main entry point for all user actions from the view layer.
+        Events are sent to the service process for processing.
         
         Args:
-            event: Event to process
+            event: Event to send to the service
+            
+        Returns:
+            True if event was sent successfully, False otherwise
         """
         logger.info(f"Dispatching event: {event.type}")
-        
-        # Thread-safe event handling
-        with self._state_lock:
-            self._model_handler.handle_event(event)
+        return self._worker.send_event(event)
     
     def get_state(self) -> WorldState:
-        """Fast in-memory state read.
+        """Return cached state for fast UI reads.
         
-        Returns a consistent snapshot of WorldState, safe to call from
-        any thread (including the UI thread during training).
+        Call poll_updates() first to get fresh data from the service.
+        This method returns the locally cached state without any I/O.
+        
+        If the service has died unexpectedly, the state will be updated
+        to reflect an error condition.
         
         Returns:
-            Current WorldState
+            Current cached WorldState
         """
-        with self._state_lock:
-            return self._model_handler.world_state
+        # Check service health before returning state
+        if not self._worker.is_alive() and self._cached_state.phase != Phase.IDLE:
+            # Service died unexpectedly during operation
+            if self._cached_state.phase not in (Phase.ERROR, Phase.COMPLETED):
+                self._cached_state.phase = Phase.ERROR
+                self._cached_state.error_message = "Service process died unexpectedly"
+                self._cached_state.touch()
+        
+        return self._cached_state
+    
+    def poll_updates(self) -> bool:
+        """Poll for state updates from service.
+        
+        Non-blocking check for WorldState updates from the service process.
+        If an update is available, the cached state is replaced.
+        
+        Returns:
+            True if state was updated, False otherwise
+        """
+        new_state = self._worker.poll_state()
+        if new_state is not None:
+            self._cached_state = new_state
+            logger.debug(f"State updated (phase: {new_state.phase.value})")
+            return True
+        return False
+    
+    def drain_updates(self) -> WorldState:
+        """Drain all pending updates and return latest state.
+        
+        Reads all pending WorldState updates from the pipe and returns
+        the most recent one. Useful when you want to skip intermediate
+        states and get the current state.
+        
+        Returns:
+            The latest WorldState (cached state if no updates pending)
+        """
+        latest = self._worker.drain_all_states()
+        if latest is not None:
+            self._cached_state = latest
+            logger.debug(f"Drained to latest state (phase: {latest.phase.value})")
+        return self._cached_state
+    
+    def is_service_alive(self) -> bool:
+        """Check if service process is running.
+        
+        Returns:
+            True if service process is alive, False otherwise
+        """
+        return self._worker.is_alive()
+    
+    def check_service_health(self) -> bool:
+        """Check service health and update state if service died.
+        
+        This method checks if the service is alive and updates the
+        cached state to ERROR if the service died unexpectedly during
+        an active operation.
+        
+        Returns:
+            True if service is healthy, False if service died
+        """
+        if self._worker.is_alive():
+            return True
+        
+        # Service is not alive - check if this is expected
+        if self._cached_state.phase in (Phase.IDLE, Phase.COMPLETED, Phase.ERROR):
+            # Service may have been shut down intentionally or already in error
+            return True
+        
+        # Service died unexpectedly during operation
+        logger.error("Service process died unexpectedly")
+        self._cached_state.phase = Phase.ERROR
+        self._cached_state.error_message = "Service process died unexpectedly"
+        self._cached_state.touch()
+        return False
+    
+    def restart_service_if_dead(self) -> bool:
+        """Restart the service if it has died.
+        
+        Attempts to restart the service process if it's not running.
+        Clears any error state from the previous crash.
+        
+        Returns:
+            True if service was restarted, False if already running
+        """
+        if self._worker.restart_if_dead():
+            # Clear error state from previous crash
+            if self._cached_state.phase == Phase.ERROR:
+                self._cached_state.phase = Phase.IDLE
+                self._cached_state.error_message = None
+                self._cached_state.touch()
+            logger.info("Service process restarted successfully")
+            return True
+        return False
+    
+    def shutdown(self) -> bool:
+        """Graceful shutdown of service.
+        
+        Sends SHUTDOWN event to the service and waits for it to terminate.
+        If the service doesn't terminate gracefully, it's forcefully killed.
+        
+        Returns:
+            True if shutdown was graceful, False if forced termination
+        """
+        logger.info("Shutting down ExperimentController")
+        return self._worker.shutdown()
     
     def get_status(self) -> dict:
         """Get experiment status as a dictionary.
@@ -72,129 +190,20 @@ class ExperimentController:
         Returns:
             Dictionary with experiment status
         """
-        with self._state_lock:
-            state = self._model_handler.world_state
-            return {
-                'experiment_id': state.experiment_id,
-                'experiment_name': state.experiment_name,
-                'phase': state.phase.value if state.phase else 'idle',
-                'current_cycle': state.current_cycle,
-                'total_cycles': state.total_cycles,
-                'current_epoch': state.current_epoch,
-                'epochs_per_cycle': state.epochs_per_cycle,
-                'labeled_count': state.labeled_count,
-                'unlabeled_count': state.unlabeled_count,
-                'error_message': state.error_message,
-                'config': None,  # TODO: Add config to WorldState
-                'current_cycle_epochs': state.epoch_metrics,
-                'queried_images': state.queried_images,
-                'probe_images': state.probe_images
-            }
-    
-    def is_service_alive(self) -> bool:
-        """Check if the service is alive.
-        
-        For the MVC implementation, the service is always alive since
-        it runs in the same process. This method is provided for
-        compatibility with the worker-based architecture.
-        
-        Returns:
-            Always True for MVC implementation
-        """
-        return True
-    
-    def start_training_async(self) -> None:
-        """Start training in background thread.
-        
-        Spawns a background thread that repeatedly calls train_epoch() until:
-        - Training phase completes (all epochs done)
-        - Pause is requested
-        - Stop is requested
-        - An error occurs
-        
-        The UI can poll get_state() to show live progress.
-        """
-        if self._training_thread is not None and self._training_thread.is_alive():
-            logger.warning("Training thread already running")
-            return
-        
-        logger.info("Starting background training thread")
-        
-        # Clear any previous control flags
-        self._model_handler.clear_control_flags()
-        
-        # Create and start training thread
-        self._training_thread = Thread(target=self._run_training, daemon=True)
-        self._training_thread.start()
-    
-    def _run_training(self) -> None:
-        """Training loop that runs in background thread.
-        
-        This method runs in a separate thread and repeatedly trains epochs
-        until the training phase is complete or a control action is requested.
-        """
-        logger.info("Training thread started")
-        
-        try:
-            while True:
-                # Check control flags
-                if self._model_handler.is_stopped():
-                    logger.info("Training stopped by user")
-                    break
-                
-                if self._model_handler.is_paused():
-                    logger.info("Training paused by user")
-                    break
-                
-                # Check if still in training phase
-                with self._state_lock:
-                    current_phase = self._model_handler.world_state.phase
-                
-                if current_phase != Phase.TRAINING:
-                    logger.info(f"Training complete, phase transitioned to {current_phase}")
-                    break
-                
-                # Train one epoch (thread-safe)
-                with self._state_lock:
-                    try:
-                        metrics = self._model_handler.train_epoch()
-                        logger.debug(f"Epoch {metrics.epoch} complete: "
-                                   f"loss={metrics.train_loss:.4f}, "
-                                   f"acc={metrics.train_accuracy:.4f}")
-                    except Exception as e:
-                        logger.error(f"Error during training epoch: {e}", exc_info=True)
-                        self._model_handler.world_state.phase = Phase.ERROR
-                        self._model_handler.world_state.error_message = str(e)
-                        break
-        
-        except Exception as e:
-            logger.error(f"Unexpected error in training thread: {e}", exc_info=True)
-            with self._state_lock:
-                self._model_handler.world_state.phase = Phase.ERROR
-                self._model_handler.world_state.error_message = f"Training thread error: {str(e)}"
-        
-        finally:
-            logger.info("Training thread finished")
-    
-    def is_training_active(self) -> bool:
-        """Check if training thread is currently running.
-        
-        Returns:
-            True if training thread is alive, False otherwise
-        """
-        return self._training_thread is not None and self._training_thread.is_alive()
-    
-    def wait_for_training(self, timeout: Optional[float] = None) -> bool:
-        """Wait for training thread to complete.
-        
-        Args:
-            timeout: Maximum time to wait in seconds (None = wait forever)
-        
-        Returns:
-            True if thread completed, False if timeout occurred
-        """
-        if self._training_thread is None:
-            return True
-        
-        self._training_thread.join(timeout=timeout)
-        return not self._training_thread.is_alive()
+        state = self._cached_state
+        return {
+            'experiment_id': state.experiment_id,
+            'experiment_name': state.experiment_name,
+            'phase': state.phase.value if state.phase else 'idle',
+            'current_cycle': state.current_cycle,
+            'total_cycles': state.total_cycles,
+            'current_epoch': state.current_epoch,
+            'epochs_per_cycle': state.epochs_per_cycle,
+            'labeled_count': state.labeled_count,
+            'unlabeled_count': state.unlabeled_count,
+            'error_message': state.error_message,
+            'config': None,  # TODO: Add config to WorldState
+            'current_cycle_epochs': state.epoch_metrics,
+            'queried_images': state.queried_images,
+            'probe_images': state.probe_images
+        }

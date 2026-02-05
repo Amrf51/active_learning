@@ -151,8 +151,8 @@ This plan implements the MVC architecture for the Active Learning Dashboard usin
     (provide the testing files but dont run the commands, i will test them manually)
     - **Validates: Requirements 3.1, 7.2, 8.2**
 
-- [ ] 7. Update ExperimentController for Multiprocessing
-  - [ ] 7.1 Refactor ExperimentController to use BackgroundWorker
+- [x] 7. Update ExperimentController for Multiprocessing
+  - [x] 7.1 Refactor ExperimentController to use BackgroundWorker
     - Replace direct ModelHandler with BackgroundWorker
     - Add `_cached_state: WorldState` for fast local reads
     - Update `dispatch()` to use `worker.send_event()`
@@ -162,12 +162,12 @@ This plan implements the MVC architecture for the Active Learning Dashboard usin
     - Add `shutdown()` for graceful service termination
     - _Requirements: 7.2, 8.2_
   
-  - [ ] 7.2 Add service health monitoring
+  - [x] 7.2 Add service health monitoring
     - Implement `is_service_alive()` check
     - Set error state if service dies unexpectedly
     - _Requirements: 7.5_
   
-  - [ ] 7.3 Remove threading code
+  - [x] 7.3 Remove threading code
     - Remove `_training_thread` and related methods
     - Remove `_state_lock` (no longer needed with process isolation)
     - Training now runs in service process, not thread
