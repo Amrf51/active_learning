@@ -266,17 +266,22 @@ This plan implements the MVC architecture for the Active Learning Dashboard usin
   - [x] 13.4 Check the whole project to ensure that readme.md is fulfilled
   
 
-- [ ] 15. Update Dashboard Entry Point
-  - [ ] 15.1 Add service lifecycle management
+- [x] 14. Update Dashboard Entry Point
+
+ 
+  - [x] 14.1 Add service lifecycle management
     - Initialize controller on app start
     - Add cleanup on app shutdown (atexit handler)
     - Handle service restart if it dies
     - _Requirements: 3.1_
   
-  - [ ] 15.2 Add service health indicator
+  - [x] 14.2 Add service health indicator
     - Show service status in sidebar
     - Display error if service is not alive
     - _Requirements: 7.5_
+
+  - [x] 14.3 Check dashboard.py to find any matching or import errors accros with the mvc as well as the integration
+
 
 
 ## Notes

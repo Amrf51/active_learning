@@ -26,7 +26,9 @@ sys.path.insert(0, str(project_root))
 # NEW: Import MVC controller factory
 from controller.controller_factory import (
     get_controller,
-    update_session_heartbeat
+    update_session_heartbeat,
+    ensure_service_alive,
+    shutdown_controller
 )
 from model.schemas import ExperimentPhase
 
@@ -44,7 +46,12 @@ st.set_page_config(
 
 # Initialize controller (FIRST THING - before any other code)
 # This creates the controller instance if it doesn't exist
-get_controller()
+# Also registers atexit cleanup handler and handles service restart
+controller = get_controller()
+
+# Ensure service is alive (auto-restart if needed)
+if not ensure_service_alive():
+    st.error("⚠️ Failed to start background service. Please refresh the page.")
 
 # Update session heartbeat to prevent timeout
 update_session_heartbeat()
@@ -130,6 +137,9 @@ def display_experiment_status():
     """Display current experiment status in sidebar using Controller."""
     ctrl = get_controller()
     
+    # Display service health indicator first (always visible)
+    display_service_health_indicator(ctrl)
+    
     # Get current status from Controller (fast, in-memory read)
     status = ctrl.get_status()
     
@@ -171,12 +181,6 @@ def display_experiment_status():
             st.sidebar.write(f"**Labeled:** {labeled_count:,}")
             st.sidebar.write(f"**Unlabeled:** {unlabeled_count:,}")
         
-        # Service status
-        if ctrl.is_service_alive():
-            st.sidebar.success("🟢 Service Active")
-        else:
-            st.sidebar.warning("🟡 Service Inactive")
-        
         # Error message
         error_message = status.get('error_message')
         if error_message:
@@ -185,6 +189,45 @@ def display_experiment_status():
     except Exception as e:
         st.sidebar.error(f"❌ Error reading status: {str(e)}")
         logger.error(f"Error in display_experiment_status: {e}")
+
+
+def display_service_health_indicator(ctrl):
+    """Display service health status in sidebar.
+    
+    Shows whether the background service process is running and healthy.
+    Provides restart button if service is not alive.
+    
+    Args:
+        ctrl: ExperimentController instance
+    """
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🔧 Service Status")
+    
+    if ctrl.is_service_alive():
+        st.sidebar.success("🟢 Service Running")
+        
+        # Show process info if available
+        worker = ctrl._worker
+        if worker.process_id:
+            st.sidebar.caption(f"PID: {worker.process_id}")
+    else:
+        st.sidebar.error("🔴 Service Not Running")
+        
+        # Check if there's an error message
+        state = ctrl.get_state()
+        if state.error_message:
+            st.sidebar.warning(f"⚠️ {state.error_message}")
+        
+        # Provide restart button
+        if st.sidebar.button("🔄 Restart Service", key="restart_service_btn"):
+            with st.spinner("Restarting service..."):
+                if ctrl.restart_service_if_dead():
+                    st.sidebar.success("✅ Service restarted successfully!")
+                    st.rerun()
+                else:
+                    st.sidebar.error("❌ Failed to restart service. Please refresh the page.")
+    
+    st.sidebar.markdown("---")
 
 
 def display_navigation_info():
