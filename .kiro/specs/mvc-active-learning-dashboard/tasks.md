@@ -109,20 +109,22 @@ This plan implements the MVC architecture for the Active Learning Dashboard usin
 - [ ] 5. Checkpoint - Ensure model layer tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. Implement Multiprocessing Infrastructure (NEW)
-  - [ ] 6.1 Update WorldState for picklability
+- [x] 6. Implement Multiprocessing Infrastructure (NEW)
+  - [x] 6.1 Update WorldState for picklability
     - Add `updated_at: float` field for state versioning
     - Ensure all fields are picklable (no lambdas, no open handles)
     - Add unit test to verify WorldState is picklable
+    (provide the file to test but dont run the commands, i will test them manually)
     - _Requirements: 7.1_
   
-  - [ ] 6.2 Update Event system for picklability
+  - [x] 6.2 Update Event system for picklability
     - Add `timestamp: float` field to Event dataclass
     - Add SHUTDOWN event type for graceful service termination
     - Add unit test to verify Event is picklable
+    (provide the file to test but dont run the commands, i will test them manually)
     - _Requirements: 8.1_
   
-  - [ ] 6.3 Create BackgroundWorker class
+  - [x] 6.3 Create BackgroundWorker class
     - Create `controller/background_worker.py`
     - Implement `start()`: spawn service process with Pipe
     - Implement `send_event()`: write event to pipe
@@ -131,7 +133,7 @@ This plan implements the MVC architecture for the Active Learning Dashboard usin
     - Implement `shutdown()`: graceful termination with timeout
     - _Requirements: 3.1_
   
-  - [ ] 6.4 Create ActiveLearningService class
+  - [x] 6.4 Create ActiveLearningService class
     - Create `services/__init__.py`
     - Create `services/active_learning_service.py`
     - Implement `run_service_loop()`: entry point for Process
