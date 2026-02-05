@@ -189,22 +189,23 @@ This plan implements the MVC architecture for the Active Learning Dashboard usin
     - Read state via controller.get_state() for UI updates
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 8.4_
 
-- [ ] 10. Update Active Learning Page for Multiprocessing
-  - [ ] 10.1 Update training controls with events
+- [x] 10. Update Active Learning Page for Multiprocessing
+  - [x] 10.1 Update training controls with events
     - Start button: dispatch START_CYCLE event (training runs in service process)
     - Pause button: dispatch PAUSE event
     - Stop button: dispatch STOP event
     - Remove `start_training_async()` call (no longer needed)
     - _Requirements: 3.1, 5.1, 5.2, 8.4_
   
-  - [ ] 10.2 Implement live metrics display via state polling
-    - Call `controller.poll_updates()` before `get_state()`
-    - Display epoch_metrics as loss/accuracy curves
-    - Show current_cycle, current_epoch progress
-    - Use `st.rerun()` with delay for live updates during training
+  - [x] 10.2 Implement live metrics display via state polling
+    - Use `@st.fragment(run_every=2.0)` decorator for efficient auto-refresh during training
+    - Call `controller.poll_updates()` before `get_state()` inside the fragment
+    - Display epoch_metrics as loss/accuracy curves using st.line_chart or plotly
+    - Show current_cycle, current_epoch progress with st.metric
+    - Fragment auto-refreshes only the metrics section, avoiding full page flicker
     - _Requirements: 3.2, 3.6_
   
-  - [ ] 10.3 Implement annotation interface
+  - [x] 10.3 Implement annotation interface
     - Display queried_images from WorldState in grid
     - Collect annotations and dispatch SUBMIT_ANNOTATIONS event
     - _Requirements: 4.1, 4.5_
