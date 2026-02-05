@@ -84,7 +84,8 @@ class ExperimentManager:
         
         Args:
             config: Experiment configuration dictionary containing:
-                - name: Experiment name
+                - experiment_name: Experiment name (top-level)
+                - name: Experiment name (fallback, inside config)
                 - dataset_path: Path to dataset
                 - model_name: Model architecture name
                 - strategy: Active learning strategy
@@ -103,6 +104,18 @@ class ExperimentManager:
         (exp_dir / "queries").mkdir(exist_ok=True)
         (exp_dir / "results").mkdir(exist_ok=True)
         
+        # Get experiment name - check top-level first, then inside nested config
+        experiment_name = config.get('experiment_name')
+        if not experiment_name:
+            nested_config = config.get('config', {})
+            experiment_name = nested_config.get('name', config.get('name', 'Unnamed Experiment'))
+        
+        # Get other config values - check nested config first
+        nested_config = config.get('config', {})
+        dataset_path = nested_config.get('dataset_path') or config.get('dataset_path')
+        model_name = nested_config.get('model_name') or config.get('model_name')
+        strategy = nested_config.get('sampling_strategy') or nested_config.get('strategy') or config.get('strategy')
+        
         # Insert into database
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -112,11 +125,11 @@ class ExperimentManager:
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
             exp_id,
-            config.get('name', 'Unnamed Experiment'),
+            experiment_name,
             json.dumps(config),
-            config.get('dataset_path'),
-            config.get('model_name'),
-            config.get('strategy')
+            dataset_path,
+            model_name,
+            strategy
         ))
         
         conn.commit()

@@ -1093,8 +1093,28 @@ def initialize_experiment():
         with st.spinner("🔄 Creating experiment..."):
             event = Event(EventType.CREATE_EXPERIMENT, payload=payload)
             ctrl.dispatch(event)
+            
+            # Wait for service to process the event and send back updated state
+            # The service sends WorldState via pipe after processing each event
+            import time
+            max_wait = 30.0  # Maximum wait time in seconds
+            poll_interval = 0.1  # Poll every 100ms
+            waited = 0.0
+            
+            while waited < max_wait:
+                # Poll for state updates from service
+                if ctrl.poll_updates():
+                    state = ctrl.get_state()
+                    # Check if we got a response (either success or error)
+                    if state.experiment_id is not None or state.error_message is not None:
+                        break
+                time.sleep(poll_interval)
+                waited += poll_interval
+            else:
+                # Timeout - drain any remaining updates
+                state = ctrl.drain_updates()
         
-        # Read state via controller.get_state() for UI updates
+        # Read final state
         state = ctrl.get_state()
         
         # Check if experiment was created successfully
