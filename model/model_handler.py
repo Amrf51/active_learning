@@ -436,11 +436,12 @@ class ModelHandler:
         
         # 4. Create ALDataManager
         logger.info("Creating ALDataManager...")
+        folder_name = self.exp_manager._get_folder_name(exp_id)
         data_manager = ALDataManager(
             dataset=train_dataset,
             initial_pool_size=config.get('initial_pool_size', 50),
             seed=config.get('seed', 42),
-            exp_dir=self.experiments_dir / exp_id
+            exp_dir=self.experiments_dir / folder_name
         )
         
         # 5. Create BackendConfig adapter
@@ -458,7 +459,7 @@ class ModelHandler:
         trainer = Trainer(
             model=model,
             config=backend_config,
-            exp_dir=self.experiments_dir / exp_id,
+            exp_dir=self.experiments_dir / folder_name,
             device=device
         )
         
@@ -477,7 +478,7 @@ class ModelHandler:
             strategy=strategy,
             val_loader=val_loader,
             test_loader=test_loader,
-            exp_dir=self.experiments_dir / exp_id,
+            exp_dir=self.experiments_dir / folder_name,
             config=backend_config,
             class_names=class_names
         )

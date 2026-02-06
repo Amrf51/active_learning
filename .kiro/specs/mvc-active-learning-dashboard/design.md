@@ -361,6 +361,8 @@ class ModelHandler:
 
 Handles persistence: SQLite for metadata, folders for artifacts.
 
+**Experiment Folder Naming**: Experiment folders are named using the user-provided experiment name (e.g., "mvc_test2") instead of the auto-generated UUID. The UUID is still used as the primary key in the database for uniqueness, but the folder structure uses the human-readable name for easier navigation.
+
 ```python
 class ExperimentManager:
     def __init__(self, experiments_dir: Path):
@@ -417,7 +419,7 @@ project_root/
 │   └── trainer.py
 └── experiments/                    # Experiment storage
     ├── experiments.db              # SQLite: metadata, cycle results
-    └── {experiment_id}/            # Per-experiment folder
+    └── {experiment_name}/          # Per-experiment folder (named by user, e.g., "mvc_test2")
         ├── config.yaml
         ├── checkpoints/
         │   └── cycle_{n}.pth

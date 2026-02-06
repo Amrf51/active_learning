@@ -2,6 +2,7 @@
 
 import sqlite3
 import json
+import re
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from datetime import datetime
@@ -79,8 +80,66 @@ class ExperimentManager:
         conn.commit()
         conn.close()
 
+    def _sanitize_folder_name(self, name: str) -> str:
+        """Sanitize experiment name for filesystem use.
+        
+        Removes or replaces special characters that are invalid in folder names.
+        
+        Args:
+            name: Raw experiment name
+        
+        Returns:
+            Sanitized folder name safe for filesystem use
+        """
+        # Replace spaces with underscores
+        sanitized = name.replace(' ', '_')
+        
+        # Remove or replace invalid characters for Windows/Unix filesystems
+        # Invalid: < > : " / \ | ? *
+        sanitized = re.sub(r'[<>:"/\\|?*]', '', sanitized)
+        
+        # Remove leading/trailing dots and spaces (Windows doesn't like these)
+        sanitized = sanitized.strip('. ')
+        
+        # Ensure name is not empty
+        if not sanitized:
+            sanitized = 'experiment'
+        
+        # Limit length to avoid filesystem issues (255 chars is common limit)
+        if len(sanitized) > 200:
+            sanitized = sanitized[:200]
+        
+        return sanitized
+
+    def _get_unique_folder_name(self, base_name: str) -> str:
+        """Get a unique folder name by appending suffix if needed.
+        
+        Args:
+            base_name: Base folder name (already sanitized)
+        
+        Returns:
+            Unique folder name that doesn't exist yet
+        """
+        folder_path = self.experiments_dir / base_name
+        
+        # If folder doesn't exist, use base name
+        if not folder_path.exists():
+            return base_name
+        
+        # Append numeric suffix until we find a unique name
+        counter = 1
+        while True:
+            candidate = f"{base_name}_{counter}"
+            if not (self.experiments_dir / candidate).exists():
+                return candidate
+            counter += 1
+
     def create_experiment(self, config: Dict[str, Any]) -> str:
         """Create a new experiment with unique ID and folder structure.
+        
+        The experiment folder is named using the user-provided experiment_name
+        (sanitized for filesystem use) instead of the UUID. The UUID is still
+        used as the database primary key.
         
         Args:
             config: Experiment configuration dictionary containing:
@@ -92,17 +151,10 @@ class ExperimentManager:
                 - Other training parameters
         
         Returns:
-            Unique experiment ID
+            Unique experiment ID (UUID)
         """
-        # Generate unique experiment ID
+        # Generate unique experiment ID (used as database key)
         exp_id = str(uuid.uuid4())
-        
-        # Create experiment folder structure
-        exp_dir = self.experiments_dir / exp_id
-        exp_dir.mkdir(parents=True, exist_ok=True)
-        (exp_dir / "checkpoints").mkdir(exist_ok=True)
-        (exp_dir / "queries").mkdir(exist_ok=True)
-        (exp_dir / "results").mkdir(exist_ok=True)
         
         # Get experiment name - check top-level first, then inside nested config
         experiment_name = config.get('experiment_name')
@@ -110,11 +162,27 @@ class ExperimentManager:
             nested_config = config.get('config', {})
             experiment_name = nested_config.get('name', config.get('name', 'Unnamed Experiment'))
         
+        # Sanitize experiment name for filesystem use
+        sanitized_name = self._sanitize_folder_name(experiment_name)
+        
+        # Get unique folder name (handle collisions)
+        folder_name = self._get_unique_folder_name(sanitized_name)
+        
+        # Create experiment folder structure using sanitized name
+        exp_dir = self.experiments_dir / folder_name
+        exp_dir.mkdir(parents=True, exist_ok=True)
+        (exp_dir / "checkpoints").mkdir(exist_ok=True)
+        (exp_dir / "queries").mkdir(exist_ok=True)
+        (exp_dir / "results").mkdir(exist_ok=True)
+        
         # Get other config values - check nested config first
         nested_config = config.get('config', {})
         dataset_path = nested_config.get('dataset_path') or config.get('dataset_path')
         model_name = nested_config.get('model_name') or config.get('model_name')
         strategy = nested_config.get('sampling_strategy') or nested_config.get('strategy') or config.get('strategy')
+        
+        # Store the folder name in config for later retrieval
+        config['folder_name'] = folder_name
         
         # Insert into database
         conn = sqlite3.connect(self.db_path)
@@ -157,6 +225,37 @@ class ExperimentManager:
         conn.close()
         
         return [dict(row) for row in rows]
+
+    def _get_folder_name(self, exp_id: str) -> str:
+        """Get the folder name for an experiment.
+        
+        Args:
+            exp_id: Experiment ID
+        
+        Returns:
+            Folder name for the experiment
+        
+        Raises:
+            ValueError: If experiment not found
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT config FROM experiments WHERE id = ?", (exp_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row is None:
+            raise ValueError(f"Experiment {exp_id} not found")
+        
+        config = json.loads(row[0])
+        
+        # Check if folder_name is stored in config (new experiments)
+        if 'folder_name' in config:
+            return config['folder_name']
+        
+        # Fallback for old experiments that used UUID as folder name
+        return exp_id
     
     def load_experiment(self, exp_id: str) -> Dict[str, Any]:
         """Load experiment by ID.
@@ -213,16 +312,16 @@ class ExperimentManager:
         Returns:
             True if deleted successfully, False if not found
         """
-        # Check if experiment exists
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT id FROM experiments WHERE id = ?", (exp_id,))
-        if cursor.fetchone() is None:
-            conn.close()
+        # Check if experiment exists and get folder name
+        try:
+            folder_name = self._get_folder_name(exp_id)
+        except ValueError:
             return False
         
         # Delete from database
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
         cursor.execute("DELETE FROM epoch_metrics WHERE experiment_id = ?", (exp_id,))
         cursor.execute("DELETE FROM cycle_results WHERE experiment_id = ?", (exp_id,))
         cursor.execute("DELETE FROM experiments WHERE id = ?", (exp_id,))
@@ -230,8 +329,8 @@ class ExperimentManager:
         conn.commit()
         conn.close()
         
-        # Delete experiment folder
-        exp_dir = self.experiments_dir / exp_id
+        # Delete experiment folder using folder_name
+        exp_dir = self.experiments_dir / folder_name
         if exp_dir.exists():
             import shutil
             shutil.rmtree(exp_dir)
@@ -411,7 +510,8 @@ class ExperimentManager:
         """
         import torch
         
-        checkpoint_dir = self.experiments_dir / exp_id / "checkpoints"
+        folder_name = self._get_folder_name(exp_id)
+        checkpoint_dir = self.experiments_dir / folder_name / "checkpoints"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         
         checkpoint_path = checkpoint_dir / f"cycle_{cycle}.pth"
@@ -434,7 +534,8 @@ class ExperimentManager:
         """
         import torch
         
-        checkpoint_path = self.experiments_dir / exp_id / "checkpoints" / f"cycle_{cycle}.pth"
+        folder_name = self._get_folder_name(exp_id)
+        checkpoint_path = self.experiments_dir / folder_name / "checkpoints" / f"cycle_{cycle}.pth"
         
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
@@ -454,7 +555,8 @@ class ExperimentManager:
         """
         import numpy as np
         
-        results_dir = self.experiments_dir / exp_id / "results"
+        folder_name = self._get_folder_name(exp_id)
+        results_dir = self.experiments_dir / folder_name / "results"
         results_dir.mkdir(parents=True, exist_ok=True)
         
         cm_path = results_dir / f"confusion_matrix_{cycle}.npy"
@@ -477,7 +579,8 @@ class ExperimentManager:
         """
         import numpy as np
         
-        cm_path = self.experiments_dir / exp_id / "results" / f"confusion_matrix_{cycle}.npy"
+        folder_name = self._get_folder_name(exp_id)
+        cm_path = self.experiments_dir / folder_name / "results" / f"confusion_matrix_{cycle}.npy"
         
         if not cm_path.exists():
             raise FileNotFoundError(f"Confusion matrix not found: {cm_path}")

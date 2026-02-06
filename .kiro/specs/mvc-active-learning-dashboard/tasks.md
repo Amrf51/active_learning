@@ -33,6 +33,14 @@ This plan implements the MVC architecture for the Active Learning Dashboard usin
     - Create experiment folder structure on creation
     - _Requirements: 1.1, 1.2, 2.1, 2.2, 2.3_
   
+  - [ ] 2.2.1 Update experiment folder naming to use user-provided name
+    - Modify `create_experiment()` to use experiment_name for folder instead of UUID
+    - Update `delete_experiment()` to use experiment_name for folder lookup
+    - Update all methods that reference experiment folders (save_checkpoint, save_confusion_matrix, etc.)
+    - Ensure experiment_name is sanitized for filesystem use (remove special characters)
+    - Handle potential name collisions (append suffix if folder exists)
+    - _Requirements: 1.3, 9.3, 9.4_
+  
   - [ ]* 2.3 Write property tests for experiment management
     - **Property 1: Experiment ID Uniqueness**
     - **Property 2: Experiment Persistence Round-Trip**
@@ -51,7 +59,7 @@ This plan implements the MVC architecture for the Active Learning Dashboard usin
   
   - [x] 2.6 Implement artifact persistence (checkpoints, confusion matrices)
     - Implement `save_checkpoint()`, `load_checkpoint()`, `save_confusion_matrix()`, `load_confusion_matrix()`
-    - Use folder-based storage: experiments/{id}/checkpoints/, experiments/{id}/results/
+    - Use folder-based storage: experiments/{experiment_name}/checkpoints/, experiments/{experiment_name}/results/
     - _Requirements: 9.2, 9.3, 9.4_
   
   - [ ]* 2.7 Write property tests for artifact persistence

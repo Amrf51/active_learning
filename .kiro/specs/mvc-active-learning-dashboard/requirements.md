@@ -26,10 +26,11 @@ This document defines the requirements for the MVC Architecture implementation o
 
 1. WHEN a user provides experiment configuration (dataset path, model, strategy, parameters) THEN THE ExperimentController SHALL create a new experiment with a unique ID
 2. WHEN an experiment is created THEN THE ExperimentManager SHALL persist the configuration to SQLite and create the experiment folder structure
-3. WHEN a user selects a dataset path THEN THE Configuration_Page SHALL scan and display available images
-4. THE Configuration_Page SHALL provide dropdown selection for model architecture (ResNet-18, ResNet-50, MobileNetV2)
-5. THE Configuration_Page SHALL provide dropdown selection for AL strategy (Random, Uncertainty, Entropy, Margin)
-6. WHEN experiment creation fails THEN THE WorldState SHALL contain an error message describing the failure
+3. WHEN an experiment is created THEN THE experiment folder SHALL be named using the user-provided experiment name (e.g., "mvc_test2") instead of the auto-generated UUID
+4. WHEN a user selects a dataset path THEN THE Configuration_Page SHALL scan and display available images
+5. THE Configuration_Page SHALL provide dropdown selection for model architecture (ResNet-18, ResNet-50, MobileNetV2)
+6. THE Configuration_Page SHALL provide dropdown selection for AL strategy (Random, Uncertainty, Entropy, Margin)
+7. WHEN experiment creation fails THEN THE WorldState SHALL contain an error message describing the failure
 
 ### Requirement 2: Experiment Loading and Management
 
@@ -120,8 +121,8 @@ This document defines the requirements for the MVC Architecture implementation o
 
 1. THE ExperimentManager SHALL use SQLite for metadata and cycle results
 2. THE ExperimentManager SHALL use folder-based storage for large artifacts (checkpoints, confusion matrices)
-3. WHEN a checkpoint is saved THEN THE ExperimentManager SHALL write it to experiments/{id}/checkpoints/cycle_{n}.pth
-4. WHEN a confusion matrix is saved THEN THE ExperimentManager SHALL write it to experiments/{id}/results/confusion_matrix_{n}.npy
+3. WHEN a checkpoint is saved THEN THE ExperimentManager SHALL write it to experiments/{experiment_name}/checkpoints/cycle_{n}.pth
+4. WHEN a confusion matrix is saved THEN THE ExperimentManager SHALL write it to experiments/{experiment_name}/results/confusion_matrix_{n}.npy
 5. THE SQLite schema SHALL include tables for experiments, cycle_results, and epoch_metrics
 
 ### Requirement 10: Scalability for Large Datasets
