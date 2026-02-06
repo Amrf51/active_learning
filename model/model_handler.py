@@ -96,7 +96,7 @@ class ModelHandler:
         self.world_state.experiment_name = experiment_name
         self.world_state.total_cycles = config.get('num_cycles', 0)
         self.world_state.epochs_per_cycle = config.get('epochs_per_cycle', 0)
-        self.world_state.current_cycle = 0
+        self.world_state.current_cycle = 1  # Ready to execute cycle 1
         self.world_state.current_epoch = 0
         self.world_state.phase = Phase.IDLE
         self.world_state.error_message = None
@@ -143,7 +143,7 @@ class ModelHandler:
         
         # Load cycle results to determine current cycle
         cycle_results = self.exp_manager.get_cycle_results(exp_id)
-        self.world_state.current_cycle = len(cycle_results)
+        self.world_state.current_cycle = len(cycle_results) + 1  # Next cycle to execute
         
         logger.info(f"Experiment loaded: {exp_id}, current cycle: {self.world_state.current_cycle}")
     
@@ -158,7 +158,10 @@ class ModelHandler:
         if self._active_loop is None:
             raise RuntimeError("ActiveLearningLoop not initialized. Create or load experiment first.")
         
-        logger.info(f"Starting cycle {self.world_state.current_cycle + 1}")
+        # Use current_cycle directly (it already points to the next cycle to execute)
+        cycle_num = self.world_state.current_cycle
+        
+        logger.info(f"Starting cycle {cycle_num}")
         
         # Set phase to TRAINING
         self.world_state.phase = Phase.TRAINING
@@ -166,7 +169,6 @@ class ModelHandler:
         self.world_state.epoch_metrics = []
         
         # Prepare cycle in ActiveLearningLoop
-        cycle_num = self.world_state.current_cycle + 1
         cycle_info = self._active_loop.prepare_cycle(cycle_num)
         
         # Update pool sizes
@@ -298,12 +300,12 @@ class ModelHandler:
         self.world_state.queried_images = []
         
         # Check if all cycles are completed
-        if self.world_state.current_cycle >= self.world_state.total_cycles:
+        if self.world_state.current_cycle > self.world_state.total_cycles:
             self.world_state.phase = Phase.COMPLETED
             logger.info("All cycles completed")
         else:
             self.world_state.phase = Phase.IDLE
-            logger.info(f"Cycle {cycle_metrics.cycle} complete, ready for next cycle")
+            logger.info(f"Cycle {cycle_metrics.cycle} complete, ready for cycle {self.world_state.current_cycle}")
         
         logger.info(f"Annotations processed: {annotation_result['moved_count']} samples added to labeled pool")
     

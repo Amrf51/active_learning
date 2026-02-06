@@ -62,7 +62,7 @@ class WorldState:
     phase: Phase = Phase.IDLE
     
     # Progress
-    current_cycle: int = 0
+    current_cycle: int = 1  # Next cycle to execute (1-indexed)
     total_cycles: int = 0
     current_epoch: int = 0
     epochs_per_cycle: int = 0
@@ -94,7 +94,7 @@ class WorldState:
         self.experiment_id = None
         self.experiment_name = None
         self.phase = Phase.IDLE
-        self.current_cycle = 0
+        self.current_cycle = 1  # Ready to execute cycle 1
         self.total_cycles = 0
         self.current_epoch = 0
         self.epochs_per_cycle = 0
