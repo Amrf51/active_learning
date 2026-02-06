@@ -239,7 +239,7 @@ class ModelHandler:
         increments cycle counter, and transitions to COMPLETED if final cycle.
         
         Args:
-            payload: Dictionary containing 'annotations' list
+            payload: Dictionary containing 'annotations' list or AnnotationSubmission object
         """
         if self._active_loop is None:
             raise RuntimeError("ActiveLearningLoop not initialized")
@@ -247,7 +247,15 @@ class ModelHandler:
         if self.world_state.phase != Phase.AWAITING_ANNOTATION:
             raise RuntimeError(f"Cannot submit annotations in phase {self.world_state.phase}")
         
-        annotations = payload.get('annotations', [])
+        # Handle both AnnotationSubmission object and raw dict/list
+        annotations = payload
+        if hasattr(payload, 'annotations'):
+            # It's an AnnotationSubmission object
+            annotations = payload.annotations
+        elif isinstance(payload, dict):
+            # It's a dict, extract annotations list
+            annotations = payload.get('annotations', [])
+        
         if not annotations:
             raise ValueError("No annotations provided")
         
