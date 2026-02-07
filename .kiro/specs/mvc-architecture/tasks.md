@@ -72,17 +72,17 @@ Transform the existing monolithic backend into an MVC + multiprocessing architec
 
 ## Phase 4: MVC Core Components
 
-- [ ] 7. Create controller.py (State Machine + Dispatch)
-  - [ ] 7.1 Define AppState enum (IDLE, INITIALIZING, TRAINING, QUERYING, ANNOTATING, ERROR)
-  - [ ] 7.2 Create Controller class with state machine logic
-  - [ ] 7.3 Implement `dispatch_init_model(config_overrides)` - sends INIT_MODEL to worker
-  - [ ] 7.4 Implement `dispatch_run_cycle(cycle_num)` - sends RUN_CYCLE to worker
-  - [ ] 7.5 Implement `dispatch_query()` - sends QUERY to worker
-  - [ ] 7.6 Implement `dispatch_annotate(annotations)` - sends ANNOTATE to worker
-  - [ ] 7.7 Implement `dispatch_stop()` - sets stop_requested event
-  - [ ] 7.8 Implement `poll_results()` - non-blocking check of result_queue
-  - [ ] 7.9 Implement `save_state()` / `load_state()` for state.json persistence
-  - [ ] 7.10 Implement state transition validation (e.g., can't train while querying)
+- [x] 7. Create controller.py (State Machine + Dispatch)
+  - [x] 7.1 Define AppState enum (IDLE, INITIALIZING, TRAINING, QUERYING, ANNOTATING, ERROR)
+  - [x] 7.2 Create Controller class with state machine logic
+  - [x] 7.3 Implement `dispatch_init_model(config_overrides)` - sends INIT_MODEL to worker
+  - [x] 7.4 Implement `dispatch_run_cycle(cycle_num)` - sends RUN_CYCLE to worker
+  - [x] 7.5 Implement `dispatch_query()` - sends QUERY to worker
+  - [x] 7.6 Implement `dispatch_annotate(annotations)` - sends ANNOTATE to worker
+  - [x] 7.7 Implement `dispatch_stop()` - sets stop_requested event
+  - [x] 7.8 Implement `poll_results()` - non-blocking check of result_queue
+  - [x] 7.9 Implement `save_state()` / `load_state()` for state.json persistence
+  - [x] 7.10 Implement state transition validation (e.g., can't train while querying)
 
 - [ ] 8. Create worker.py (Worker Process)
   - [ ] 8.1 Create `worker_loop(task_queue, result_queue, events, config_dict)` main loop
