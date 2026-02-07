@@ -75,6 +75,9 @@ class ALDataManager:
         
         self.total_samples = len(dataset)
         
+        # Label cache for efficient class-based operations
+        self._label_cache = {}
+        
         np.random.seed(seed)
         
         all_indices = np.arange(self.total_samples)
@@ -92,6 +95,24 @@ class ALDataManager:
         logger.info(f"  Total samples: {self.total_samples}")
         logger.info(f"  Initial labeled: {len(self._labeled_list)}")
         logger.info(f"  Initial unlabeled: {len(self._unlabeled_list)}")
+    
+    def _get_label(self, idx: int) -> int:
+        """
+        Get label for a dataset index with caching.
+        
+        This avoids loading images when we only need labels for
+        class distribution calculations.
+        
+        Args:
+            idx: Absolute index in the dataset
+            
+        Returns:
+            Label as integer
+        """
+        if idx not in self._label_cache:
+            _, label = self.dataset[idx]
+            self._label_cache[idx] = int(label)
+        return self._label_cache[idx]
     
     def get_pool_info(self) -> Dict:
         """Get current pool statistics."""
@@ -337,8 +358,7 @@ class ALDataManager:
         
         by_class = {}
         for idx in indices:
-            _, label = self.dataset[idx]
-            label = int(label)
+            label = self._get_label(idx)
             if label not in by_class:
                 by_class[label] = []
             by_class[label].append(idx)

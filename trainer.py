@@ -127,7 +127,15 @@ class Trainer:
         
         if mode == "pretrained":
             logger.info("Reset mode: pretrained - reloading ImageNet weights")
-            self.model = get_model(self.config.model, device=self.device)
+            model_name = self.config.model.name
+            num_classes = self.config.model.num_classes
+            pretrained = self.config.model.pretrained
+            self.model = get_model(
+                name=model_name,
+                num_classes=num_classes,
+                pretrained=pretrained,
+                device=self.device
+            )
             self.optimizer = self._create_optimizer()
             self._reset_tracking()
             logger.info("Model reset to pretrained state complete")

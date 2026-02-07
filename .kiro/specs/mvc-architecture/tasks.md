@@ -46,13 +46,13 @@ Transform the existing monolithic backend into an MVC + multiprocessing architec
 
 - [-] 4. Update state.py dataclasses
   - [x] 4.1 Ensure all dataclasses have `to_dict()` or `model_dump()` methods for queue serialization
-  - [ ] 4.2 Verify EpochMetrics, CycleMetrics, QueriedImage, ProbeImage all serialize correctly
+  - [x] 4.2 Verify EpochMetrics, CycleMetrics, QueriedImage, ProbeImage all serialize correctly
 
-- [ ] 5. Update data_manager.py and trainer.py
-  - [ ] 5.1 Add `_label_cache` dict to data_manager `__init__`
-  - [ ] 5.2 Add `_get_label(idx)` method with caching
-  - [ ] 5.3 Update `get_samples_by_class()` to use cached labels instead of loading images
-  - [ ] 5.4 Update trainer.py `reset_model_weights()` to use new `get_model()` signature
+- [x] 5. Update data_manager.py and trainer.py
+  - [x] 5.1 Add `_label_cache` dict to data_manager `__init__`
+  - [x] 5.2 Add `_get_label(idx)` method with caching
+  - [x] 5.3 Update `get_samples_by_class()` to use cached labels instead of loading images
+  - [x] 5.4 Update trainer.py `reset_model_weights()` to use new `get_model()` signature
 
 ---
 
