@@ -58,15 +58,15 @@ Transform the existing monolithic backend into an MVC + multiprocessing architec
 
 ## Phase 3: Application Skeleton (Entry Point)
 
-- [ ] 6. Create app.py skeleton (Entry Point) — MUST BE BEFORE Controller/Model
-  - [ ] 6.1 Initialize multiprocessing context (spawn method for CUDA compatibility)
-  - [ ] 6.2 Create mp.Event dict for all events using protocol helper
-  - [ ] 6.3 Create task_queue and result_queue
-  - [ ] 6.4 Placeholder for Controller initialization (filled in Phase 4)
-  - [ ] 6.5 Placeholder for worker process spawn (filled in Phase 4)
-  - [ ] 6.6 Store queues and events in st.session_state
-  - [ ] 6.7 Basic Streamlit page config and layout structure
-  - [ ] 6.8 Handle graceful shutdown on app close
+- [x] 6. Create app.py skeleton (Entry Point) — MUST BE BEFORE Controller/Model
+  - [x] 6.1 Initialize multiprocessing context (spawn method for CUDA compatibility)
+  - [x] 6.2 Create mp.Event dict for all events using protocol helper
+  - [x] 6.3 Create task_queue and result_queue
+  - [x] 6.4 Placeholder for Controller initialization (filled in Phase 4)
+  - [x] 6.5 Placeholder for worker process spawn (filled in Phase 4)
+  - [x] 6.6 Store queues and events in st.session_state
+  - [x] 6.7 Basic Streamlit page config and layout structure
+  - [x] 6.8 Handle graceful shutdown on app close
 
 ---
 
