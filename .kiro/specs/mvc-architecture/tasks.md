@@ -44,8 +44,8 @@ Transform the existing monolithic backend into an MVC + multiprocessing architec
   - [x] 3.3 Add `get_model_families()` returning curated model groups for UI dropdown
   - [x] 3.4 Add `get_model_card(model_name)` returning parameter count and pretrained status
 
-- [ ] 4. Update state.py dataclasses
-  - [ ] 4.1 Ensure all dataclasses have `to_dict()` or `model_dump()` methods for queue serialization
+- [-] 4. Update state.py dataclasses
+  - [x] 4.1 Ensure all dataclasses have `to_dict()` or `model_dump()` methods for queue serialization
   - [ ] 4.2 Verify EpochMetrics, CycleMetrics, QueriedImage, ProbeImage all serialize correctly
 
 - [ ] 5. Update data_manager.py and trainer.py

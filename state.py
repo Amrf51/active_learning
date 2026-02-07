@@ -89,6 +89,21 @@ class QueriedImage:
     predicted_confidence: float
     uncertainty_score: float
     selection_reason: str
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary for serialization."""
+        return {
+            "image_id": self.image_id,
+            "image_path": self.image_path,
+            "display_path": self.display_path,
+            "ground_truth": self.ground_truth,
+            "ground_truth_name": self.ground_truth_name,
+            "model_probabilities": self.model_probabilities,
+            "predicted_class": self.predicted_class,
+            "predicted_confidence": self.predicted_confidence,
+            "uncertainty_score": self.uncertainty_score,
+            "selection_reason": self.selection_reason
+        }
 
 
 @dataclass
@@ -106,3 +121,15 @@ class ProbeImage:
     true_class_idx: int
     probe_type: str
     predictions_by_cycle: dict
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary for serialization."""
+        return {
+            "image_id": self.image_id,
+            "image_path": self.image_path,
+            "display_path": self.display_path,
+            "true_class": self.true_class,
+            "true_class_idx": self.true_class_idx,
+            "probe_type": self.probe_type,
+            "predictions_by_cycle": self.predictions_by_cycle
+        }
