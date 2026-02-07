@@ -9,11 +9,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def get_model(config, device: str = "cpu") -> nn.Module:
+def get_model(name: str, num_classes: int, pretrained: bool = True, device: str = "cpu") -> nn.Module:
     """Load model from TIMM library.
     
     Args:
-        config: ModelConfig object with name, pretrained, num_classes
+        name: Model name (e.g., "resnet50", "mobilenetv3_large_100")
+        num_classes: Number of output classes
+        pretrained: Whether to load pretrained weights
         device: Device to put model on ("cpu" or "cuda")
         
     Returns:
@@ -21,14 +23,14 @@ def get_model(config, device: str = "cpu") -> nn.Module:
     """
     try:
         model = timm.create_model(
-            config.name,
-            pretrained=config.pretrained,
-            num_classes=config.num_classes
+            name,
+            pretrained=pretrained,
+            num_classes=num_classes
         )
-        logger.info(f"Loaded model: {config.name} (pretrained={config.pretrained}, "
-                   f"num_classes={config.num_classes})")
+        logger.info(f"Loaded model: {name} (pretrained={pretrained}, "
+                   f"num_classes={num_classes})")
     except Exception as e:
-        logger.error(f"Failed to load model {config.name}: {e}")
+        logger.error(f"Failed to load model {name}: {e}")
         raise
     
     model = model.to(device)
@@ -125,3 +127,83 @@ def list_available_models() -> dict:
         Dictionary of available architectures
     """
     return AVAILABLE_ARCHITECTURES
+
+
+def search_timm_models(query: str = "", pretrained_only: bool = True) -> list:
+    """Search TIMM model registry for UI dropdown.
+    
+    Args:
+        query: Search term (e.g., "resnet", "mobile", "efficient")
+        pretrained_only: Only show models with pretrained weights
+        
+    Returns:
+        List of model name strings (capped at 50 results for UI performance)
+    """
+    pattern = f"*{query}*" if query else "*"
+    results = timm.list_models(pattern, pretrained=pretrained_only)
+    return results[:50]  # cap for UI dropdown performance
+
+
+def get_model_families() -> dict:
+    """Get curated model families for UI dropdown groups.
+    
+    Returns:
+        Dictionary mapping family names to lists of model names
+    """
+    return {
+        "ResNet (Recommended)": [
+            "resnet18", "resnet34", "resnet50", "resnet101", "resnet152"
+        ],
+        "MobileNet (Lightweight)": [
+            "mobilenetv2_100", "mobilenetv3_small_100", "mobilenetv3_large_100"
+        ],
+        "EfficientNet": [
+            "efficientnet_b0", "efficientnet_b1", "efficientnet_b2", "efficientnet_b3"
+        ],
+        "DenseNet": [
+            "densenet121", "densenet169", "densenet201"
+        ],
+        "VGG": [
+            "vgg11", "vgg13", "vgg16", "vgg19"
+        ],
+    }
+
+
+def get_model_card(model_name: str) -> dict:
+    """Get info about a TIMM model for UI display.
+    
+    Useful for showing parameter count before the user commits to a model.
+    
+    Args:
+        model_name: Name of the TIMM model
+        
+    Returns:
+        Dictionary with model information:
+        - name: Model name
+        - parameters: Total parameter count
+        - parameters_human: Human-readable parameter count (e.g., "25.6M")
+        - has_pretrained: Whether pretrained weights are available
+        - error: Error message if model info couldn't be retrieved
+    """
+    try:
+        # Create a temporary model to get parameter count
+        model = timm.create_model(model_name, pretrained=False, num_classes=10)
+        total_params = sum(p.numel() for p in model.parameters())
+        del model  # free memory immediately
+        
+        # Check if pretrained weights are available
+        pretrained_models = timm.list_models(pretrained=True)
+        has_pretrained = model_name in pretrained_models
+        
+        return {
+            "name": model_name,
+            "parameters": total_params,
+            "parameters_human": f"{total_params / 1e6:.1f}M",
+            "has_pretrained": has_pretrained,
+        }
+    except Exception as e:
+        logger.warning(f"Could not get model card for {model_name}: {e}")
+        return {
+            "name": model_name,
+            "error": str(e)
+        }

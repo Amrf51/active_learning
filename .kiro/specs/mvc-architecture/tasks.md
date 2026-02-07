@@ -38,11 +38,11 @@ Transform the existing monolithic backend into an MVC + multiprocessing architec
 
 ## Phase 2: Backend Modifications (Minimal Changes)
 
-- [ ] 3. Update models.py for MVC compatibility
-  - [ ] 3.1 Modify `get_model()` to accept flat args instead of config object: `get_model(name, num_classes, pretrained=True, device="cpu")`
-  - [ ] 3.2 Add `search_timm_models(query, pretrained_only=True)` for UI model browser
-  - [ ] 3.3 Add `get_model_families()` returning curated model groups for UI dropdown
-  - [ ] 3.4 Add `get_model_card(model_name)` returning parameter count and pretrained status
+- [x] 3. Update models.py for MVC compatibility
+  - [x] 3.1 Modify `get_model()` to accept flat args instead of config object: `get_model(name, num_classes, pretrained=True, device="cpu")`
+  - [x] 3.2 Add `search_timm_models(query, pretrained_only=True)` for UI model browser
+  - [x] 3.3 Add `get_model_families()` returning curated model groups for UI dropdown
+  - [x] 3.4 Add `get_model_card(model_name)` returning parameter count and pretrained status
 
 - [ ] 4. Update state.py dataclasses
   - [ ] 4.1 Ensure all dataclasses have `to_dict()` or `model_dump()` methods for queue serialization
