@@ -1,16 +1,16 @@
 """
-controller.py â€” State Machine and Dispatch Logic for MVC Architecture.
+controller.py - State Machine and Dispatch Logic for MVC Architecture.
 
 The Controller manages:
-- Application state transitions (IDLE â†’ INITIALIZING â†’ TRAINING â†’ QUERYING â†’ ANNOTATING)
+- Application state transitions (IDLE -> TRAINING -> QUERYING -> ANNOTATING)
 - Dispatching commands to the worker process via task_queue
 - Polling results from the worker process via result_queue
 - State persistence (save/load state.json)
 - State transition validation
 
 Usage:
-    controller = Controller(task_queue, result_queue, events)
-    controller.dispatch_init_model(config_overrides)
+    controller = Controller(task_queue, result_queue, events, config)
+    controller.dispatch_run_cycle(cycle_num)
     result = controller.poll_results()
 """
 
@@ -23,13 +23,11 @@ from queue import Empty
 import multiprocessing as mp
 
 from protocol import (
-    build_init_model_message,
     build_run_cycle_message,
     build_query_message,
     build_annotate_message,
     build_shutdown_message,
     STOP_REQUESTED,
-    INIT_MODEL,
     RUN_CYCLE,
     QUERY,
     ANNOTATE,
@@ -53,16 +51,14 @@ class AppState(Enum):
     Application state machine states.
     
     State transitions:
-    - IDLE â†’ INITIALIZING (when init_model is dispatched)
-    - INITIALIZING â†’ TRAINING (when model is ready)
-    - TRAINING â†’ QUERYING (when training completes)
-    - QUERYING â†’ ANNOTATING (when query completes)
-    - ANNOTATING â†’ TRAINING (when annotations submitted)
-    - ANY â†’ ERROR (when error occurs)
-    - ERROR â†’ IDLE (when reset)
+    - IDLE -> TRAINING (when run_cycle is dispatched)
+    - TRAINING -> QUERYING (when training completes)
+    - QUERYING -> ANNOTATING (when query completes)
+    - ANNOTATING -> TRAINING (when annotations submitted)
+    - ANY -> ERROR (when error occurs)
+    - ERROR -> IDLE (when reset)
     """
     IDLE = "idle"
-    INITIALIZING = "initializing"
     TRAINING = "training"
     QUERYING = "querying"
     ANNOTATING = "annotating"
@@ -90,6 +86,7 @@ class Controller:
         task_queue: mp.Queue,
         result_queue: mp.Queue,
         events: Dict[str, mp.Event],
+        config,
         state_file: str = "state.json"
     ):
         """
@@ -99,6 +96,7 @@ class Controller:
             task_queue: Queue for sending commands to worker
             result_queue: Queue for receiving results from worker
             events: Dictionary of multiprocessing events
+            config: Config object
             state_file: Path to state persistence file
         """
         self.task_queue = task_queue
@@ -106,16 +104,19 @@ class Controller:
         self.events = events
         self.state_file = Path(state_file)
         
+        # Store config
+        self.config = config
+        self.experiment_config: Dict[str, Any] = config.to_dict() if config else {}
+        self.total_cycles = config.active_learning.num_cycles if config else 0
+        
         # Application state
         self.current_state = AppState.IDLE
         self.current_cycle = 0
         self.current_epoch = 0
-        self.total_cycles = 0
         
         # Metrics and history
         self.metrics_history: List[Dict[str, Any]] = []
         self.queried_images: List[Dict[str, Any]] = []
-        self.experiment_config: Dict[str, Any] = {}
         
         # Error tracking
         self.last_error: Optional[Dict[str, Any]] = None
@@ -135,7 +136,7 @@ class Controller:
         """
         old_state = self.current_state
         self.current_state = new_state
-        logger.info(f"State transition: {old_state.value} â†’ {new_state.value}")
+        logger.info(f"State transition: {old_state.value} -> {new_state.value}")
 
     # ========================================================================
     # SUBTASK 7.10: Implement state transition validation
@@ -153,8 +154,7 @@ class Controller:
         """
         # Define valid transitions
         valid_transitions = {
-            AppState.IDLE: [AppState.INITIALIZING],
-            AppState.INITIALIZING: [AppState.TRAINING, AppState.ERROR],
+            AppState.IDLE: [AppState.TRAINING],  # Direct to TRAINING (worker already ready)
             AppState.TRAINING: [AppState.QUERYING, AppState.ERROR, AppState.IDLE],
             AppState.QUERYING: [AppState.ANNOTATING, AppState.ERROR, AppState.IDLE],
             AppState.ANNOTATING: [AppState.TRAINING, AppState.ERROR, AppState.IDLE],
@@ -176,46 +176,8 @@ class Controller:
         """
         if not self._can_transition_to(target_state):
             raise ValueError(
-                f"Invalid state transition: {self.current_state.value} â†’ {target_state.value}"
+                f"Invalid state transition: {self.current_state.value} -> {target_state.value}"
             )
-    
-    # ========================================================================
-    # SUBTASK 7.3: Implement dispatch_init_model
-    # ========================================================================
-    
-    def dispatch_init_model(self, config_overrides: Optional[Dict[str, Any]] = None) -> None:
-        """
-        Dispatch INIT_MODEL command to worker.
-        
-        This initializes the model, data manager, trainer, and active learning loop
-        in the worker process.
-        
-        Args:
-            config_overrides: Optional configuration overrides (e.g., from UI)
-            
-        Raises:
-            ValueError: If not in IDLE state
-        """
-        # Validate state transition
-        self._validate_transition(AppState.INITIALIZING)
-        
-        # Build config dict
-        from config import load_config
-        config = load_config(overrides=config_overrides)
-        config_dict = config.to_dict()
-        
-        # Store experiment config
-        self.experiment_config = config_dict
-        self.total_cycles = config_dict["active_learning"]["num_cycles"]
-        
-        # Build and send message
-        message = build_init_model_message(config_dict)
-        self.task_queue.put(message)
-        
-        # Update state
-        self._set_state(AppState.INITIALIZING)
-        
-        logger.info(f"Dispatched INIT_MODEL with config: {config.experiment.name}")
     
     # ========================================================================
     # SUBTASK 7.4: Implement dispatch_run_cycle
@@ -233,11 +195,11 @@ class Controller:
         Raises:
             ValueError: If not in appropriate state
         """
-        # Can run cycle from INITIALIZING (first cycle) or ANNOTATING (subsequent cycles)
-        if self.current_state not in [AppState.INITIALIZING, AppState.ANNOTATING]:
+        # Can run cycle from IDLE (first cycle) or ANNOTATING (subsequent cycles)
+        if self.current_state not in [AppState.IDLE, AppState.ANNOTATING]:
             raise ValueError(
                 f"Cannot run cycle from state {self.current_state.value}. "
-                f"Must be in INITIALIZING or ANNOTATING state."
+                f"Must be in IDLE or ANNOTATING state."
             )
         
         # Build and send message
@@ -531,10 +493,9 @@ class Controller:
         Check if controller is in a busy state.
         
         Returns:
-            True if in INITIALIZING, TRAINING, or QUERYING state
+            True if in TRAINING or QUERYING state
         """
         return self.current_state in [
-            AppState.INITIALIZING,
             AppState.TRAINING,
             AppState.QUERYING,
         ]

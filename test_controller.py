@@ -14,7 +14,7 @@ def test_controller_initialization():
     result_queue = mp_context.Queue()
     events = create_event_dict(mp_context)
     
-    controller = Controller(task_queue, result_queue, events)
+    controller = Controller(task_queue, result_queue, events, config=None)
     
     assert controller.get_state() == AppState.IDLE
     assert controller.current_cycle == 0
@@ -30,16 +30,16 @@ def test_state_transitions():
     result_queue = mp_context.Queue()
     events = create_event_dict(mp_context)
     
-    controller = Controller(task_queue, result_queue, events)
+    controller = Controller(task_queue, result_queue, events, config=None)
     
-    # Test valid transition: IDLE -> INITIALIZING
-    assert controller._can_transition_to(AppState.INITIALIZING)
-    
-    # Test invalid transition: IDLE -> TRAINING
-    assert not controller._can_transition_to(AppState.TRAINING)
+    # Test valid transition: IDLE -> TRAINING (direct, worker already ready)
+    assert controller._can_transition_to(AppState.TRAINING)
     
     # Test invalid transition: IDLE -> QUERYING
     assert not controller._can_transition_to(AppState.QUERYING)
+    
+    # Test invalid transition: IDLE -> ANNOTATING
+    assert not controller._can_transition_to(AppState.ANNOTATING)
     
     print("✓ State transition validation test passed")
 
@@ -51,7 +51,7 @@ def test_dispatch_methods():
     result_queue = mp_context.Queue()
     events = create_event_dict(mp_context)
     
-    controller = Controller(task_queue, result_queue, events)
+    controller = Controller(task_queue, result_queue, events, config=None)
     
     # Test dispatch_stop (should work from any state)
     controller.dispatch_stop()
@@ -69,7 +69,7 @@ def test_state_persistence():
     result_queue = mp_context.Queue()
     events = create_event_dict(mp_context)
     
-    controller = Controller(task_queue, result_queue, events, state_file="test_state.json")
+    controller = Controller(task_queue, result_queue, events, config=None, state_file="test_state.json")
     
     # Set some state
     controller.current_cycle = 5
@@ -80,7 +80,7 @@ def test_state_persistence():
     controller.save_state()
     
     # Create new controller and load state
-    controller2 = Controller(task_queue, result_queue, events, state_file="test_state.json")
+    controller2 = Controller(task_queue, result_queue, events, config=None, state_file="test_state.json")
     loaded = controller2.load_state()
     
     assert loaded
@@ -102,7 +102,7 @@ def test_utility_methods():
     result_queue = mp_context.Queue()
     events = create_event_dict(mp_context)
     
-    controller = Controller(task_queue, result_queue, events)
+    controller = Controller(task_queue, result_queue, events, config=None)
     
     # Test get_progress
     progress = controller.get_progress()

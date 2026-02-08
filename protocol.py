@@ -17,7 +17,7 @@ import multiprocessing as mp
 # ============================================================================
 
 # Worker initialization and lifecycle
-INIT_MODEL = "init_model"
+# INIT_MODEL removed - worker initializes at spawn time
 SHUTDOWN = "shutdown"
 
 # Active learning cycle operations
@@ -85,19 +85,6 @@ def build_message(msg_type: str, payload: Optional[Dict[str, Any]] = None) -> Di
         "type": msg_type,
         "payload": payload or {}
     }
-
-
-def build_init_model_message(config_dict: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Build INIT_MODEL message.
-    
-    Args:
-        config_dict: Configuration dictionary for model initialization
-        
-    Returns:
-        Message dictionary
-    """
-    return build_message(INIT_MODEL, {"config": config_dict})
 
 
 def build_run_cycle_message(cycle_num: int) -> Dict[str, Any]:

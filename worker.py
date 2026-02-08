@@ -23,7 +23,7 @@ from torch.utils.data import DataLoader
 from config import Config, load_config
 from protocol import (
     # Message types
-    INIT_MODEL, RUN_CYCLE, QUERY, ANNOTATE, SHUTDOWN,
+    RUN_CYCLE, QUERY, ANNOTATE, SHUTDOWN,
     PROGRESS_UPDATE, TRAIN_COMPLETE, QUERY_COMPLETE,
     ANNOTATE_COMPLETE, CYCLE_COMPLETE, ERROR,
     # Event names
@@ -46,13 +46,34 @@ from state import QueriedImage
 logger = logging.getLogger(__name__)
 
 
-def worker_loop(task_queue, result_queue, events: Dict, config_dict: Dict[str, Any]) -> None:
+def _dict_to_config(config_dict: Dict[str, Any]) -> Config:
     """
-    Main worker process loop.
+    Rebuild Config object from dictionary.
     
-    Runs in a separate process and handles all backend operations.
-    Listens for commands from the Controller via task_queue and sends
-    results back via result_queue.
+    Used by worker to reconstruct config without file I/O.
+    """
+    from config import (
+        Config, ExperimentConfig, DataConfig, ModelConfig,
+        TrainingConfig, ALConfig, CheckpointConfig, LoggingConfig
+    )
+    
+    return Config(
+        experiment=ExperimentConfig(**config_dict.get("experiment", {})),
+        data=DataConfig(**config_dict.get("data", {})),
+        model=ModelConfig(**config_dict.get("model", {})),
+        training=TrainingConfig(**config_dict.get("training", {})),
+        active_learning=ALConfig(**config_dict.get("active_learning", {})),
+        checkpoint=CheckpointConfig(**config_dict.get("checkpoint", {})),
+        logging=LoggingConfig(**config_dict.get("logging", {})),
+    )
+
+
+def worker_main(task_queue, result_queue, events: Dict, config_dict: Dict[str, Any]) -> None:
+    """
+    Worker process main function.
+    
+    Builds all AL components at startup (eager initialization),
+    then enters command loop to handle messages from controller.
     
     Args:
         task_queue: Multiprocessing queue for receiving commands
@@ -60,13 +81,35 @@ def worker_loop(task_queue, result_queue, events: Dict, config_dict: Dict[str, A
         events: Dictionary of multiprocessing.Event objects
         config_dict: Configuration dictionary (serialized Config object)
     """
-    # Initialize worker state
-    al_loop: Optional[ActiveLearningLoop] = None
-    config: Optional[Config] = None
+    logger.info("Worker process starting...")
     
-    logger.info("Worker process started")
-    events[WORKER_INITIALIZED].set()
+    try:
+        # 1. Rebuild config from dict (no file I/O needed)
+        config = _dict_to_config(config_dict)
+        logger.info(f"Config loaded: {config.experiment.name}")
+        
+        # 2. Build all AL components (one-time setup)
+        al_loop = _build_al_loop({}, config)
+        logger.info("AL loop built successfully")
+        
+        # 3. Signal ready to main process
+        events[WORKER_INITIALIZED].set()
+        logger.info("Worker initialized and ready")
+        
+    except Exception as e:
+        error_msg = f"Worker initialization failed: {str(e)}"
+        tb = traceback.format_exc()
+        logger.error(f"{error_msg}\n{tb}")
+        events[WORKER_ERROR].set()
+        result_queue.put(build_error_message(
+            error_type="worker_init_error",
+            error_msg=error_msg,
+            traceback=tb
+        ))
+        events[WORKER_INITIALIZED].set()  # Unblock main process
+        return  # Exit worker
     
+    # 4. Enter command loop
     try:
         while True:
             # Check for stop request
@@ -87,13 +130,9 @@ def worker_loop(task_queue, result_queue, events: Dict, config_dict: Dict[str, A
             logger.info(f"Worker received message: {msg_type}")
             
             try:
-                # Handle different message types
-                if msg_type == INIT_MODEL:
-                    al_loop, config = _handle_init_model(
-                        payload, result_queue, events
-                    )
-                
-                elif msg_type == RUN_CYCLE:
+                # INIT_MODEL removed - AL components built at startup
+
+                if msg_type == RUN_CYCLE:
                     _handle_run_cycle(
                         al_loop, payload, result_queue, events
                     )
@@ -144,51 +183,6 @@ def worker_loop(task_queue, result_queue, events: Dict, config_dict: Dict[str, A
     finally:
         logger.info("Worker process exiting")
         events[SHUTDOWN_COMPLETE].set()
-
-
-def _handle_init_model(
-    payload: Dict[str, Any],
-    result_queue,
-    events: Dict
-) -> tuple:
-    """
-    Handle INIT_MODEL message.
-    
-    Builds model, data_manager, trainer, and ActiveLearningLoop.
-    
-    Args:
-        payload: Message payload with config dict
-        result_queue: Queue for sending results
-        events: Event dictionary
-        
-    Returns:
-        Tuple of (al_loop, config)
-    """
-    logger.info("Initializing model and AL loop...")
-    
-    # Load configuration
-    config_overrides = payload.get("config", {})
-    config = load_config(overrides=config_overrides)
-    
-    # Build AL loop
-    al_loop = _build_al_loop(payload, config)
-    
-    # Signal completion
-    events[MODEL_READY].set()
-    
-    result_queue.put(build_message(
-        "init_complete",
-        {
-            "model_name": config.model.name,
-            "num_classes": config.model.num_classes,
-            "device": config.experiment.device,
-            "pool_info": al_loop.get_current_pool_info()
-        }
-    ))
-    
-    logger.info("Model initialization complete")
-    
-    return al_loop, config
 
 
 def _build_al_loop(payload: Dict[str, Any], config: Config) -> ActiveLearningLoop:

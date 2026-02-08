@@ -23,7 +23,7 @@ from protocol import create_event_dict
 
 # Import Controller and Worker (Phase 4)
 from controller import Controller
-from worker import worker_loop
+from worker import worker_main
 
 # Logging setup
 logging.basicConfig(
@@ -90,27 +90,41 @@ def init_session_state():
     st.session_state.result_queue = result_queue
     logger.info("Created task_queue (maxsize=10) and result_queue (maxsize=100)")
     
+    # Load config at startup (single source of truth)
+    from config import load_config
+    config = load_config()  # Loads default.yaml, validates, resolves device
+    config_dict = config.to_dict()
+
+    # Store config in session state for UI access
+    st.session_state.config = config
+
     # Subtask 9.1: Initialize Controller with queues and events
-    controller = Controller(task_queue, result_queue, events)
+    controller = Controller(task_queue, result_queue, events, config)
     st.session_state.controller = controller
     logger.info("Controller initialized")
     
-    # Subtask 9.2: Start worker process with daemon=True
-    # Note: Worker needs config_dict, but we'll pass an empty dict for now
-    # The actual config will be sent via INIT_MODEL message when user starts experiment
+    # Start worker process with config passed at spawn time
     worker = mp_context.Process(
-        target=worker_loop,
-        args=(task_queue, result_queue, events, {}),
+        target=worker_main,
+        args=(task_queue, result_queue, events, config_dict),
         daemon=True,
         name="ALWorker"
     )
     worker.start()
     st.session_state.worker = worker
     logger.info(f"Worker process started (PID: {worker.pid})")
+
+    # Wait for worker to initialize AL components (blocking with timeout)
+    if not events['worker_initialized'].wait(timeout=60):
+        logger.error("Worker failed to initialize within 60 seconds")
+        st.error("❌ Worker initialization timeout. Check logs for details.")
+        raise RuntimeError("Worker initialization timeout")
+
+    logger.info("Worker initialized and ready")
     
     # Subtask 6.6: Store queues and events in st.session_state (already done above)
     # Additional session state for application state
-    st.session_state.app_state = "IDLE"  # IDLE, INITIALIZING, TRAINING, QUERYING, ANNOTATING, ERROR
+    st.session_state.app_state = "IDLE"  # IDLE, TRAINING, QUERYING, ANNOTATING, ERROR (no INITIALIZING - worker ready at startup)
     st.session_state.current_cycle = 0
     st.session_state.current_epoch = 0
     st.session_state.metrics_history = []
