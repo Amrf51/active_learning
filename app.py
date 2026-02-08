@@ -21,6 +21,10 @@ from pathlib import Path
 # Import protocol for event creation
 from protocol import create_event_dict
 
+# Import Controller and Worker (Phase 4)
+from controller import Controller
+from worker import worker_loop
+
 # Logging setup
 logging.basicConfig(
     level=logging.INFO,
@@ -86,27 +90,23 @@ def init_session_state():
     st.session_state.result_queue = result_queue
     logger.info("Created task_queue (maxsize=10) and result_queue (maxsize=100)")
     
-    # Subtask 6.4: Placeholder for Controller initialization (filled in Phase 4)
-    # TODO: Initialize Controller with queues and events
-    # from controller import Controller
-    # controller = Controller(task_queue, result_queue, events)
-    # st.session_state.controller = controller
-    st.session_state.controller = None  # Placeholder
-    logger.info("Controller placeholder initialized (to be implemented in Phase 4)")
+    # Subtask 9.1: Initialize Controller with queues and events
+    controller = Controller(task_queue, result_queue, events)
+    st.session_state.controller = controller
+    logger.info("Controller initialized")
     
-    # Subtask 6.5: Placeholder for worker process spawn (filled in Phase 4)
-    # TODO: Start worker process
-    # from worker import worker_loop
-    # worker = mp_context.Process(
-    #     target=worker_loop,
-    #     args=(task_queue, result_queue, events, config_dict),
-    #     daemon=True,
-    #     name="ALWorker"
-    # )
-    # worker.start()
-    # st.session_state.worker = worker
-    st.session_state.worker = None  # Placeholder
-    logger.info("Worker process placeholder initialized (to be implemented in Phase 4)")
+    # Subtask 9.2: Start worker process with daemon=True
+    # Note: Worker needs config_dict, but we'll pass an empty dict for now
+    # The actual config will be sent via INIT_MODEL message when user starts experiment
+    worker = mp_context.Process(
+        target=worker_loop,
+        args=(task_queue, result_queue, events, {}),
+        daemon=True,
+        name="ALWorker"
+    )
+    worker.start()
+    st.session_state.worker = worker
+    logger.info(f"Worker process started (PID: {worker.pid})")
     
     # Subtask 6.6: Store queues and events in st.session_state (already done above)
     # Additional session state for application state
@@ -144,12 +144,17 @@ def shutdown_handler():
     
     try:
         # Signal worker to stop if it exists
-        if st.session_state.worker is not None:
+        if st.session_state.worker is not None and st.session_state.worker.is_alive():
             logger.info("Terminating worker process...")
-            # TODO: Send shutdown message to worker (Phase 4)
-            # from protocol import build_shutdown_message
-            # st.session_state.task_queue.put(build_shutdown_message())
-            # st.session_state.events['shutdown_complete'].wait(timeout=5)
+            
+            # Send shutdown message to worker
+            from protocol import build_shutdown_message
+            try:
+                st.session_state.task_queue.put(build_shutdown_message(), timeout=1)
+                # Wait for shutdown to complete
+                st.session_state.events['shutdown_complete'].wait(timeout=5)
+            except:
+                pass  # Timeout or queue full, proceed with termination
             
             # Terminate worker process
             if st.session_state.worker.is_alive():
@@ -210,22 +215,38 @@ def main():
         with st.expander("🔧 Debug Info"):
             st.write(f"App State: {st.session_state.app_state}")
             st.write(f"Current Cycle: {st.session_state.current_cycle}")
-            st.write(f"Controller: {'✅ Ready' if st.session_state.controller else '⏳ Pending (Phase 4)'}")
-            st.write(f"Worker: {'✅ Running' if st.session_state.worker else '⏳ Pending (Phase 4)'}")
+            st.write(f"Controller: {'✅ Ready' if st.session_state.controller else '❌ Not initialized'}")
+            st.write(f"Worker: {'✅ Running (PID: ' + str(st.session_state.worker.pid) + ')' if st.session_state.worker and st.session_state.worker.is_alive() else '❌ Not running'}")
+            
+            # Show queue sizes
+            if st.session_state.controller:
+                st.write(f"Task Queue: {st.session_state.task_queue.qsize()} messages")
+                st.write(f"Result Queue: {st.session_state.result_queue.qsize()} messages")
     
     # Main content area
     st.divider()
     
+    # Subtask 9.4: Call view.render() for UI
+    # TODO: Phase 5 - Implement views and replace placeholder
+    # from views.router import render
+    # render(st.session_state.controller, st.session_state.app_state)
+    
     # Placeholder for view rendering (to be implemented in Phase 5)
-    st.info("📋 **Status:** Application skeleton initialized")
-    st.write("**Next Steps:**")
+    st.info("📋 **Status:** MVC Core Components Wired Up")
+    st.write("**Progress:**")
     st.markdown("""
     - ✅ Phase 1: Configuration & Protocol Infrastructure (Complete)
     - ✅ Phase 2: Backend Modifications (Complete)
-    - ✅ Phase 3: Application Skeleton (Current - Task 6)
-    - ⏳ Phase 4: MVC Core Components (Controller & Worker)
-    - ⏳ Phase 5: Streamlit Views
+    - ✅ Phase 3: Application Skeleton (Complete)
+    - ✅ Phase 4: MVC Core Components (Complete - Task 9)
+    - ⏳ Phase 5: Streamlit Views (Next)
     """)
+    
+    # Show controller status
+    if st.session_state.controller:
+        st.success("✅ Controller initialized and ready")
+        progress_info = st.session_state.controller.get_progress()
+        st.json(progress_info)
     
     # TODO: Phase 5 - Replace with actual view rendering
     # from views.router import render

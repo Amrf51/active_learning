@@ -84,23 +84,23 @@ Transform the existing monolithic backend into an MVC + multiprocessing architec
   - [x] 7.9 Implement `save_state()` / `load_state()` for state.json persistence
   - [x] 7.10 Implement state transition validation (e.g., can't train while querying)
 
-- [ ] 8. Create worker.py (Worker Process)
-  - [ ] 8.1 Create `worker_loop(task_queue, result_queue, events, config_dict)` main loop
-  - [ ] 8.2 Implement `_build_al_loop(payload, config)` - initializes ActiveLearningLoop inside worker
-  - [ ] 8.3 Implement INIT_MODEL handler - builds model, data_manager, trainer, AL loop
-  - [ ] 8.4 Implement RUN_CYCLE handler - calls AL loop step methods with queue progress reporting
-  - [ ] 8.5 Implement QUERY handler - calls `al_loop.query_samples()`, converts QueriedImage to dicts
-  - [ ] 8.6 Implement ANNOTATE handler - calls `al_loop.receive_annotations()`
-  - [ ] 8.7 Implement SHUTDOWN handler for graceful termination
-  - [ ] 8.8 Add stop_requested event checking in training loop
-  - [ ] 8.9 Add error handling with worker_error event and error messages to queue
-  - [ ] 8.10 Create `_queried_to_dict(img)` helper for QueriedImage serialization
+- [x] 8. Create worker.py (Worker Process)
+  - [x] 8.1 Create `worker_loop(task_queue, result_queue, events, config_dict)` main loop
+  - [x] 8.2 Implement `_build_al_loop(payload, config)` - initializes ActiveLearningLoop inside worker
+  - [x] 8.3 Implement INIT_MODEL handler - builds model, data_manager, trainer, AL loop
+  - [x] 8.4 Implement RUN_CYCLE handler - calls AL loop step methods with queue progress reporting
+  - [x] 8.5 Implement QUERY handler - calls `al_loop.query_samples()`, converts QueriedImage to dicts
+  - [x] 8.6 Implement ANNOTATE handler - calls `al_loop.receive_annotations()`
+  - [x] 8.7 Implement SHUTDOWN handler for graceful termination
+  - [x] 8.8 Add stop_requested event checking in training loop
+  - [x] 8.9 Add error handling with worker_error event and error messages to queue
+  - [x] 8.10 Create `_queried_to_dict(img)` helper for QueriedImage serialization
 
-- [ ] 9. Wire up app.py with Controller and Worker
-  - [ ] 9.1 Import and initialize Controller with queues and events
-  - [ ] 9.2 Start worker process with daemon=True
-  - [ ] 9.3 Store controller in st.session_state
-  - [ ] 9.4 Call view.render() for UI
+- [x] 9. Wire up app.py with Controller and Worker
+  - [x] 9.1 Import and initialize Controller with queues and events
+  - [x] 9.2 Start worker process with daemon=True
+  - [x] 9.3 Store controller in st.session_state
+  - [x] 9.4 Call view.render() for UI
 
 ---
 
