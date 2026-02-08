@@ -9,7 +9,7 @@ experiment:
   exp_dir: "experiments/"
 
 data:
-  data_dir: "data/raw/stanford_cars"
+  data_dir: "data/raw"
   val_split: 0.15
   test_split: 0.15
   augmentation: true

@@ -30,7 +30,7 @@ class ExperimentConfig:
 
 @dataclass
 class DataConfig:
-    data_dir: str = "data/raw/stanford_cars"
+    data_dir: str = "data/raw"
     val_split: float = 0.15
     test_split: float = 0.15
     augmentation: bool = True
