@@ -24,7 +24,7 @@ from typing import Dict, List, Callable, Optional, Tuple
 from torch.utils.data import DataLoader
 import logging
 
-from .state import (
+from state import (
     EpochMetrics,
     CycleMetrics,
     QueriedImage,

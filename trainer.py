@@ -20,8 +20,8 @@ from typing import Dict, Tuple, Optional, List, Callable
 import logging
 
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
-from .models import get_model
-from .state import EpochMetrics
+from models import get_model
+from state import EpochMetrics
 
 logger = logging.getLogger(__name__)
 
