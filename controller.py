@@ -1,8 +1,8 @@
 """
-controller.py — State Machine and Dispatch Logic for MVC Architecture.
+controller.py â€” State Machine and Dispatch Logic for MVC Architecture.
 
 The Controller manages:
-- Application state transitions (IDLE → INITIALIZING → TRAINING → QUERYING → ANNOTATING)
+- Application state transitions (IDLE â†’ INITIALIZING â†’ TRAINING â†’ QUERYING â†’ ANNOTATING)
 - Dispatching commands to the worker process via task_queue
 - Polling results from the worker process via result_queue
 - State persistence (save/load state.json)
@@ -53,13 +53,13 @@ class AppState(Enum):
     Application state machine states.
     
     State transitions:
-    - IDLE → INITIALIZING (when init_model is dispatched)
-    - INITIALIZING → TRAINING (when model is ready)
-    - TRAINING → QUERYING (when training completes)
-    - QUERYING → ANNOTATING (when query completes)
-    - ANNOTATING → TRAINING (when annotations submitted)
-    - ANY → ERROR (when error occurs)
-    - ERROR → IDLE (when reset)
+    - IDLE â†’ INITIALIZING (when init_model is dispatched)
+    - INITIALIZING â†’ TRAINING (when model is ready)
+    - TRAINING â†’ QUERYING (when training completes)
+    - QUERYING â†’ ANNOTATING (when query completes)
+    - ANNOTATING â†’ TRAINING (when annotations submitted)
+    - ANY â†’ ERROR (when error occurs)
+    - ERROR â†’ IDLE (when reset)
     """
     IDLE = "idle"
     INITIALIZING = "initializing"
@@ -135,7 +135,7 @@ class Controller:
         """
         old_state = self.current_state
         self.current_state = new_state
-        logger.info(f"State transition: {old_state.value} → {new_state.value}")
+        logger.info(f"State transition: {old_state.value} â†’ {new_state.value}")
 
     # ========================================================================
     # SUBTASK 7.10: Implement state transition validation
@@ -176,7 +176,7 @@ class Controller:
         """
         if not self._can_transition_to(target_state):
             raise ValueError(
-                f"Invalid state transition: {self.current_state.value} → {target_state.value}"
+                f"Invalid state transition: {self.current_state.value} â†’ {target_state.value}"
             )
     
     # ========================================================================
@@ -282,14 +282,15 @@ class Controller:
     # SUBTASK 7.6: Implement dispatch_annotate
     # ========================================================================
     
-    def dispatch_annotate(self, annotations: Dict[int, int]) -> None:
+    def dispatch_annotate(self, annotations: List[Dict[str, int]]) -> None:
         """
         Dispatch ANNOTATE command to worker.
         
         This sends user annotations to the worker to update the labeled pool.
         
         Args:
-            annotations: Dictionary mapping image indices to class labels
+            annotations: List of dicts with 'image_id' and 'user_label' keys
+                         e.g., [{"image_id": 5, "user_label": 3}, ...]
             
         Raises:
             ValueError: If not in ANNOTATING state

@@ -8,7 +8,7 @@ This module defines:
 - Helper to initialize multiprocessing.Event dictionary
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import multiprocessing as mp
 
 
@@ -129,12 +129,13 @@ def build_query_message(query_size: Optional[int] = None) -> Dict[str, Any]:
     return build_message(QUERY, payload)
 
 
-def build_annotate_message(annotations: Dict[int, int]) -> Dict[str, Any]:
+def build_annotate_message(annotations: List[Dict[str, int]]) -> Dict[str, Any]:
     """
     Build ANNOTATE message.
     
     Args:
-        annotations: Dictionary mapping image indices to class labels
+        annotations: List of dicts with 'image_id' and 'user_label' keys
+                     e.g., [{"image_id": 5, "user_label": 3}, ...]
         
     Returns:
         Message dictionary

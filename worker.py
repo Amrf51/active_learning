@@ -1,5 +1,5 @@
 """
-worker.py — Worker process for Active Learning backend.
+worker.py â€” Worker process for Active Learning backend.
 
 This module runs in a separate process and handles:
 - Model initialization
@@ -39,7 +39,7 @@ from models import get_model
 from data_manager import ALDataManager
 from trainer import Trainer
 from active_loop import ActiveLearningLoop
-from dataloader import get_dataloaders
+from dataloader import get_datasets
 from strategies import get_strategy
 from state import QueriedImage
 
@@ -206,16 +206,34 @@ def _build_al_loop(payload: Dict[str, Any], config: Config) -> ActiveLearningLoo
     exp_dir = Path(config.experiment.exp_dir) / config.experiment.name
     exp_dir.mkdir(parents=True, exist_ok=True)
     
-    # Get dataloaders
-    train_dataset, val_loader, test_loader, class_names = get_dataloaders(
+    # Get datasets (returns dict with train_dataset, val_dataset, test_dataset, class_names, etc.)
+    datasets = get_datasets(
         data_dir=config.data.data_dir,
-        batch_size=config.training.batch_size,
         val_split=config.data.val_split,
         test_split=config.data.test_split,
-        num_workers=config.data.num_workers,
         augmentation=config.data.augmentation,
-        image_size=config.data.image_size,
         seed=config.experiment.seed
+    )
+    
+    # Extract what we need
+    train_dataset = datasets["train_dataset"]
+    class_names = datasets["class_names"]
+    
+    # Create val/test DataLoaders from datasets
+    pin = torch.cuda.is_available()
+    val_loader = DataLoader(
+        datasets["val_dataset"],
+        batch_size=config.training.batch_size,
+        shuffle=False,
+        num_workers=config.data.num_workers,
+        pin_memory=pin
+    )
+    test_loader = DataLoader(
+        datasets["test_dataset"],
+        batch_size=config.training.batch_size,
+        shuffle=False,
+        num_workers=config.data.num_workers,
+        pin_memory=pin
     )
     
     # Set num_classes if not specified
