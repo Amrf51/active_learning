@@ -253,7 +253,7 @@ def main():
     # render(st.session_state.controller, st.session_state.app_state)
     
     st.divider()
-    st.caption("Active Learning Framework v0.1 | Bachelor Thesis Project")
+    st.caption("Active Learning Framework v1.0 | Bachelor Thesis Project")
 
 
 # ============================================================================
