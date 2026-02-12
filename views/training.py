@@ -40,7 +40,7 @@ def render_epoch_progress(controller: Controller, config_overrides: Dict[str, An
     
     # Calculate progress percentage
     if total_epochs > 0:
-        epoch_progress = current_epoch / total_epochs
+        epoch_progress = min(1.0, current_epoch / total_epochs)
     else:
         epoch_progress = 0.0
     
