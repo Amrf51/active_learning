@@ -76,12 +76,20 @@ def render_metrics_table(controller: Controller) -> None:
         total_labeled = metrics_history[-1].get("labeled_pool_size", 0)
         total_unlabeled = metrics_history[-1].get("unlabeled_pool_size", 0)
         total_samples = total_labeled + total_unlabeled
-        
-        st.caption(
-            f"📈 Total samples: {total_samples} | "
-            f"Labeled: {total_labeled} ({total_labeled/total_samples*100:.1f}%) | "
-            f"Unlabeled: {total_unlabeled} ({total_unlabeled/total_samples*100:.1f}%)"
-        )
+
+        # Only show percentage if we have samples (avoid division by zero)
+        if total_samples > 0:
+            st.caption(
+                f"📈 Total samples: {total_samples} | "
+                f"Labeled: {total_labeled} ({total_labeled/total_samples*100:.1f}%) | "
+                f"Unlabeled: {total_unlabeled} ({total_unlabeled/total_samples*100:.1f}%)"
+            )
+        else:
+            st.caption(
+                f"📈 Total samples: {total_samples} | "
+                f"Labeled: {total_labeled} | "
+                f"Unlabeled: {total_unlabeled}"
+            )
 
 
 # ============================================================================

@@ -344,9 +344,8 @@ class Controller:
         
         elif msg_type == TRAIN_COMPLETE:
             # Training complete, transition to QUERYING
-            metrics = payload.get("metrics", {})
-            self.metrics_history.append(metrics)
             logger.info(f"Training complete for cycle {self.current_cycle}")
+            # Note: metrics_history is updated in CYCLE_COMPLETE with complete metrics
             # State will transition to QUERYING when dispatch_query is called
         
         elif msg_type == QUERY_COMPLETE:
@@ -363,9 +362,10 @@ class Controller:
             # State will transition to TRAINING when dispatch_run_cycle is called
         
         elif msg_type == CYCLE_COMPLETE:
-            # Full cycle complete
+            # Full cycle complete - store complete metrics with pool sizes
             cycle_num = payload.get("cycle_num")
             metrics = payload.get("metrics", {})
+            self.metrics_history.append(metrics)
             logger.info(f"Cycle {cycle_num} complete")
         
         elif msg_type == ERROR:
