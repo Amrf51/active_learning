@@ -15,6 +15,8 @@ Usage:
 import multiprocessing as mp
 import streamlit as st
 import atexit
+import signal
+import sys
 import logging
 from pathlib import Path
 
@@ -104,10 +106,10 @@ def init_session_state():
     logger.info("Controller initialized")
     
     # Start worker process with config passed at spawn time
+    # Note: Not using daemon=True to allow worker to spawn DataLoader subprocesses
     worker = mp_context.Process(
         target=worker_main,
         args=(task_queue, result_queue, events, config_dict),
-        daemon=True,
         name="ALWorker"
     )
     worker.start()
@@ -191,6 +193,33 @@ def shutdown_handler():
 
 # Register shutdown handler
 atexit.register(shutdown_handler)
+
+
+# ============================================================================
+# SIGNAL HANDLERS (for Ctrl+C and termination)
+# ============================================================================
+
+def signal_handler(signum, frame):
+    """
+    Handle interrupt signals (Ctrl+C, SIGTERM) for graceful shutdown.
+
+    This ensures the worker process is properly cleaned up when:
+    - User presses Ctrl+C
+    - JupyterHub kills the session
+    - System sends termination signal
+
+    Args:
+        signum: Signal number
+        frame: Current stack frame
+    """
+    logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+    shutdown_handler()
+    sys.exit(0)
+
+
+# Register signal handlers for graceful shutdown
+signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
+signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
 
 
 # ============================================================================
