@@ -8,8 +8,54 @@ from torchvision.datasets import ImageFolder
 from pathlib import Path
 from typing import Dict, Tuple, List
 import logging
+import os
 
 logger = logging.getLogger(__name__)
+
+
+def find_classes(directory: str) -> Tuple[List[str], Dict[str, int]]:
+    """
+    Find class folders in directory, filtering out hidden/system folders.
+
+    Filters out:
+    - Hidden directories (starting with '.')
+    - System directories like __pycache__
+
+    Args:
+        directory: Root directory path
+
+    Returns:
+        Tuple of (class_names, class_to_idx)
+    """
+    classes = []
+    for entry in os.scandir(directory):
+        # Skip non-directories
+        if not entry.is_dir():
+            continue
+        # Skip hidden directories (., .ipynb_checkpoints, etc.)
+        if entry.name.startswith('.'):
+            continue
+        # Skip system directories
+        if entry.name in ['__pycache__', '__MACOSX']:
+            continue
+        classes.append(entry.name)
+
+    classes.sort()
+    class_to_idx = {cls_name: i for i, cls_name in enumerate(classes)}
+    return classes, class_to_idx
+
+
+class FilteredImageFolder(ImageFolder):
+    """
+    ImageFolder that filters out hidden and system directories.
+
+    This prevents errors when directories like .ipynb_checkpoints, .DS_Store,
+    or __pycache__ exist in the data directory.
+    """
+
+    def find_classes(self, directory: str) -> Tuple[List[str], Dict[str, int]]:
+        """Override find_classes to filter unwanted directories."""
+        return find_classes(directory)
 
 
 def get_transforms(augmentation: bool = True, phase: str = "train"):
@@ -62,13 +108,13 @@ class ImageFolderWithIndex(Dataset):
         train_transform,
         eval_transform
     ):
-        self.dataset = ImageFolder(root=root)
+        self.dataset = FilteredImageFolder(root=root)
         self.train_indices_set = set(train_indices)
         self.val_indices_set = set(val_indices)
         self.test_indices_set = set(test_indices)
         self.train_transform = train_transform
         self.eval_transform = eval_transform
-        
+
         # Store all indices for full dataset access
         self.all_indices = train_indices + val_indices + test_indices
     
@@ -136,9 +182,9 @@ def get_datasets(
     data_path = Path(data_dir)
     if not data_path.exists():
         raise FileNotFoundError(f"Data directory not found: {data_path}")
-    
+
     # First, get dataset size
-    temp_dataset = ImageFolder(root=str(data_path))
+    temp_dataset = FilteredImageFolder(root=str(data_path))
     total_size = len(temp_dataset)
     class_names = temp_dataset.classes
     
@@ -273,13 +319,13 @@ def get_dataloaders(
 
 def get_class_names(data_dir: str) -> List[str]:
     """Get class names from data directory."""
-    dataset = ImageFolder(root=data_dir)
+    dataset = FilteredImageFolder(root=data_dir)
     return dataset.classes
 
 
 def get_dataset_info(data_dir: str) -> Dict:
     """Get information about dataset."""
-    dataset = ImageFolder(root=data_dir)
+    dataset = FilteredImageFolder(root=data_dir)
     
     class_counts = {}
     for _, label in dataset.samples:
