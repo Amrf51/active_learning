@@ -21,9 +21,9 @@ from pathlib import Path
 # Import protocol for event creation
 from protocol import create_event_dict
 
-# Import Controller and Worker (Phase 4)
+# Import Controller (Phase 4)
 from controller import Controller
-from worker import worker_main
+# Note: worker_main imported inside init_session_state to avoid spawn issues
 
 # Logging setup
 logging.basicConfig(
@@ -47,9 +47,15 @@ def init_multiprocessing():
     Returns:
         Multiprocessing context object
     """
-    # Use spawn method for CUDA compatibility
-    mp_context = mp.get_context('spawn')
-    logger.info("Multiprocessing context initialized with 'spawn' method")
+    # Try forkserver first (works better with NFS/restricted filesystems)
+    # Falls back to spawn if forkserver unavailable
+    try:
+        mp_context = mp.get_context('forkserver')
+        logger.info("Multiprocessing context initialized with 'forkserver' method")
+    except ValueError:
+        # forkserver not available on Windows, use spawn
+        mp_context = mp.get_context('spawn')
+        logger.info("Multiprocessing context initialized with 'spawn' method")
     return mp_context
 
 
@@ -102,7 +108,10 @@ def init_session_state():
     controller = Controller(task_queue, result_queue, events, config)
     st.session_state.controller = controller
     logger.info("Controller initialized")
-    
+
+    # Import worker_main here to avoid multiprocessing spawn issues
+    from worker import worker_main
+
     # Start worker process with config passed at spawn time
     # Note: Not using daemon=True to allow worker to spawn DataLoader subprocesses
     worker = mp_context.Process(
