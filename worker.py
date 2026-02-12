@@ -17,36 +17,19 @@ import traceback
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
-import torch
-from torch.utils.data import DataLoader
 
-from config import Config, load_config
-from protocol import (
-    # Message types
-    RUN_CYCLE, QUERY, ANNOTATE, SHUTDOWN,
-    PROGRESS_UPDATE, TRAIN_COMPLETE, QUERY_COMPLETE,
-    ANNOTATE_COMPLETE, CYCLE_COMPLETE, ERROR,
-    # Event names
-    MODEL_READY, WORKER_INITIALIZED, TRAINING_STARTED, TRAINING_DONE,
-    QUERY_STARTED, QUERY_DONE, ANNOTATION_STARTED, ANNOTATION_DONE,
-    STOP_REQUESTED, WORKER_ERROR, SHUTDOWN_COMPLETE,
-    # Message builders
-    build_message, build_progress_update_message, build_train_complete_message,
-    build_query_complete_message, build_annotate_complete_message,
-    build_cycle_complete_message, build_error_message
-)
-from models import get_model
-from data_manager import ALDataManager
-from trainer import Trainer
-from active_loop import ActiveLearningLoop
-from dataloader import get_datasets
-from strategies import get_strategy
-from state import QueriedImage
+# NOTE: All project-local imports (models, trainer, data_manager, etc.) are
+# deferred to inside function bodies.  This is required because Python's
+# multiprocessing "spawn" method re-imports the worker module in the child
+# process.  On FUSE-mounted filesystems (university clusters) the child
+# process may not yet have valid FUSE credentials when top-level imports
+# execute, causing PermissionError (Errno 1).  Deferring imports to
+# function bodies ensures they only run after the child is fully alive.
 
 logger = logging.getLogger(__name__)
 
 
-def _dict_to_config(config_dict: Dict[str, Any]) -> Config:
+def _dict_to_config(config_dict: Dict[str, Any]):
     """
     Rebuild Config object from dictionary.
     
@@ -81,6 +64,13 @@ def worker_main(task_queue, result_queue, events: Dict, config_dict: Dict[str, A
         events: Dictionary of multiprocessing.Event objects
         config_dict: Configuration dictionary (serialized Config object)
     """
+    # Deferred imports — must happen inside the child process, not at module level
+    from protocol import (
+        RUN_CYCLE, QUERY, ANNOTATE, SHUTDOWN,
+        WORKER_INITIALIZED, STOP_REQUESTED, WORKER_ERROR, SHUTDOWN_COMPLETE,
+        build_message, build_error_message,
+    )
+
     logger.info("Worker process starting...")
     
     try:
@@ -185,7 +175,7 @@ def worker_main(task_queue, result_queue, events: Dict, config_dict: Dict[str, A
         events[SHUTDOWN_COMPLETE].set()
 
 
-def _build_al_loop(payload: Dict[str, Any], config: Config) -> ActiveLearningLoop:
+def _build_al_loop(payload: Dict[str, Any], config) -> 'ActiveLearningLoop':
     """
     Build ActiveLearningLoop with all dependencies.
     
@@ -196,6 +186,14 @@ def _build_al_loop(payload: Dict[str, Any], config: Config) -> ActiveLearningLoo
     Returns:
         Initialized ActiveLearningLoop
     """
+    import torch
+    from torch.utils.data import DataLoader
+    from models import get_model
+    from data_manager import ALDataManager
+    from trainer import Trainer
+    from active_loop import ActiveLearningLoop
+    from dataloader import get_datasets
+    from strategies import get_strategy
     # Set up experiment directory
     exp_dir = Path(config.experiment.exp_dir) / config.experiment.name
     exp_dir.mkdir(parents=True, exist_ok=True)
@@ -283,7 +281,7 @@ def _build_al_loop(payload: Dict[str, Any], config: Config) -> ActiveLearningLoo
 
 
 def _handle_run_cycle(
-    al_loop: Optional[ActiveLearningLoop],
+    al_loop,
     payload: Dict[str, Any],
     result_queue,
     events: Dict
@@ -299,6 +297,11 @@ def _handle_run_cycle(
         result_queue: Queue for sending results
         events: Event dictionary
     """
+    from protocol import (
+        TRAINING_STARTED, TRAINING_DONE, STOP_REQUESTED,
+        build_message, build_progress_update_message,
+        build_train_complete_message, build_cycle_complete_message,
+    )
     if al_loop is None:
         raise RuntimeError("AL loop not initialized")
     
@@ -359,7 +362,7 @@ def _handle_run_cycle(
 
 
 def _handle_query(
-    al_loop: Optional[ActiveLearningLoop],
+    al_loop,
     payload: Dict[str, Any],
     result_queue,
     events: Dict
@@ -375,6 +378,8 @@ def _handle_query(
         result_queue: Queue for sending results
         events: Event dictionary
     """
+    from protocol import QUERY_STARTED, QUERY_DONE, build_query_complete_message
+    from state import QueriedImage
     if al_loop is None:
         raise RuntimeError("AL loop not initialized")
     
@@ -394,7 +399,7 @@ def _handle_query(
     logger.info(f"Query complete: {len(queried_images)} samples")
 
 
-def _queried_to_dict(img: QueriedImage) -> Dict[str, Any]:
+def _queried_to_dict(img) -> Dict[str, Any]:
     """
     Convert QueriedImage to dictionary for serialization.
     
@@ -408,7 +413,7 @@ def _queried_to_dict(img: QueriedImage) -> Dict[str, Any]:
 
 
 def _handle_annotate(
-    al_loop: Optional[ActiveLearningLoop],
+    al_loop,
     payload: Dict[str, Any],
     result_queue,
     events: Dict
@@ -424,6 +429,10 @@ def _handle_annotate(
         result_queue: Queue for sending results
         events: Event dictionary
     """
+    from protocol import (
+        ANNOTATION_STARTED, ANNOTATION_DONE,
+        build_message, build_annotate_complete_message,
+    )
     if al_loop is None:
         raise RuntimeError("AL loop not initialized")
     
@@ -457,6 +466,7 @@ def _handle_shutdown(result_queue, events: Dict) -> None:
         result_queue: Queue for sending results
         events: Event dictionary
     """
+    from protocol import SHUTDOWN_COMPLETE, build_message
     logger.info("Shutdown requested")
     
     # Perform any cleanup here
