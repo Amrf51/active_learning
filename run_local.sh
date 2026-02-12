@@ -2,27 +2,20 @@
 # ===========================================================================
 # run_local.sh — Launch the app from local disk to avoid FUSE permission errors
 #
-# Problem: FUSE-mounted home directories on university clusters intermittently
-#          deny read access (EPERM / Errno 1) to both the main process and
-#          spawned child processes.  This affects .py source files AND compiled
-#          .so extensions inside the virtualenv.
-#
-# Solution: Copy the project + virtualenv to node-local storage (/tmp) where
-#           the filesystem is a real ext4/xfs mount, then run from there.
-#           A symlink keeps experiment outputs on the persistent FUSE volume.
+# Copies project + virtualenv to /tmp (node-local storage), symlinks data/
+# and experiments/ back to FUSE so results persist.
 #
 # Usage:
 #   chmod +x run_local.sh
-#   ./run_local.sh                    # uses default config
-#   ./run_local.sh quick_test.yaml    # uses configs/quick_test.yaml
+#   ./run_local.sh
 # ===========================================================================
 
 set -euo pipefail
 
 # --- Configuration --------------------------------------------------------
-FUSE_PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"   # where this script lives
-FUSE_VENV_DIR="$HOME/al_env"                         # your virtualenv on FUSE
-LOCAL_BASE="/tmp/${USER}_al"                          # local scratch area
+FUSE_PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+FUSE_VENV_DIR="$HOME/al_env"
+LOCAL_BASE="/tmp/${USER}_al"
 LOCAL_PROJECT="$LOCAL_BASE/active-learning"
 LOCAL_VENV="$LOCAL_BASE/al_env"
 # --------------------------------------------------------------------------
@@ -32,36 +25,36 @@ echo "FUSE project : $FUSE_PROJECT_DIR"
 echo "Local copy   : $LOCAL_PROJECT"
 echo ""
 
-# 1. Sync project source to local disk (fast incremental copy)
-echo "[1/4] Syncing project to local disk..."
+# 1. Copy project source to local disk
+echo "[1/4] Copying project to local disk..."
+rm -rf "$LOCAL_PROJECT"
 mkdir -p "$LOCAL_PROJECT"
-rsync -a --delete \
-    --exclude '.git' \
-    --exclude '__pycache__' \
-    --exclude '*.pyc' \
-    --exclude 'experiments/' \
-    --exclude 'state.json' \
-    "$FUSE_PROJECT_DIR/" "$LOCAL_PROJECT/"
+cd "$FUSE_PROJECT_DIR"
+# Copy everything except heavy/generated dirs
+for item in *; do
+    case "$item" in
+        .git|__pycache__|experiments|data) continue ;;
+        *) cp -r "$item" "$LOCAL_PROJECT/" ;;
+    esac
+done
+# Copy hidden files (.gitignore, .kiro, etc.)
+cp -r .gitignore "$LOCAL_PROJECT/" 2>/dev/null || true
+cp -r .kiro "$LOCAL_PROJECT/" 2>/dev/null || true
 
-# 2. Sync virtualenv to local disk
-echo "[2/4] Syncing virtualenv to local disk..."
-mkdir -p "$LOCAL_VENV"
-rsync -a --delete \
-    "$FUSE_VENV_DIR/" "$LOCAL_VENV/"
+# 2. Copy virtualenv to local disk
+echo "[2/4] Copying virtualenv to local disk..."
+if [ ! -d "$LOCAL_VENV" ]; then
+    cp -r "$FUSE_VENV_DIR" "$LOCAL_VENV"
+    echo "    (full copy — first run takes a moment)"
+else
+    echo "    (reusing existing local venv)"
+fi
 
-# 3. Symlink experiment output back to FUSE (so results persist)
-echo "[3/4] Linking experiment output to persistent storage..."
-FUSE_EXPERIMENTS="$FUSE_PROJECT_DIR/experiments"
-LOCAL_EXPERIMENTS="$LOCAL_PROJECT/experiments"
-mkdir -p "$FUSE_EXPERIMENTS"
-# Remove local experiments dir/link if it exists, then symlink
-rm -rf "$LOCAL_EXPERIMENTS"
-ln -s "$FUSE_EXPERIMENTS" "$LOCAL_EXPERIMENTS"
-
-# Also symlink data directory to avoid copying large image files
-LOCAL_DATA="$LOCAL_PROJECT/data"
-rm -rf "$LOCAL_DATA"
-ln -s "$FUSE_PROJECT_DIR/data" "$LOCAL_DATA"
+# 3. Symlink data + experiments back to FUSE
+echo "[3/4] Linking data and experiments to persistent storage..."
+mkdir -p "$FUSE_PROJECT_DIR/experiments"
+ln -sfn "$FUSE_PROJECT_DIR/experiments" "$LOCAL_PROJECT/experiments"
+ln -sfn "$FUSE_PROJECT_DIR/data" "$LOCAL_PROJECT/data"
 
 # 4. Launch from local disk
 echo "[4/4] Launching Streamlit from local disk..."
