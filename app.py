@@ -15,8 +15,6 @@ Usage:
 import multiprocessing as mp
 import streamlit as st
 import atexit
-import signal
-import sys
 import logging
 from pathlib import Path
 
@@ -192,34 +190,9 @@ def shutdown_handler():
 
 
 # Register shutdown handler
+# Note: atexit handles most cleanup cases in Streamlit
+# Signal handlers (SIGINT/SIGTERM) cannot be used because Streamlit doesn't run in main thread
 atexit.register(shutdown_handler)
-
-
-# ============================================================================
-# SIGNAL HANDLERS (for Ctrl+C and termination)
-# ============================================================================
-
-def signal_handler(signum, frame):
-    """
-    Handle interrupt signals (Ctrl+C, SIGTERM) for graceful shutdown.
-
-    This ensures the worker process is properly cleaned up when:
-    - User presses Ctrl+C
-    - JupyterHub kills the session
-    - System sends termination signal
-
-    Args:
-        signum: Signal number
-        frame: Current stack frame
-    """
-    logger.info(f"Received signal {signum}, initiating graceful shutdown...")
-    shutdown_handler()
-    sys.exit(0)
-
-
-# Register signal handlers for graceful shutdown
-signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
-signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
 
 
 # ============================================================================
