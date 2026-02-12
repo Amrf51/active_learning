@@ -117,6 +117,7 @@ class Controller:
         # Metrics and history
         self.metrics_history: List[Dict[str, Any]] = []
         self.queried_images: List[Dict[str, Any]] = []
+        self.epoch_metrics: List[Dict[str, Any]] = []  # Store epoch-level metrics for current cycle
         
         # Error tracking
         self.last_error: Optional[Dict[str, Any]] = None
@@ -201,6 +202,9 @@ class Controller:
                 f"Cannot run cycle from state {self.current_state.value}. "
                 f"Must be in IDLE or ANNOTATING state."
             )
+        
+        # Clear epoch metrics for new cycle
+        self.epoch_metrics = []
         
         # Build and send message
         message = build_run_cycle_message(cycle_num)
@@ -331,8 +335,12 @@ class Controller:
             logger.debug(f"Progress: {stage} {current}/{total}")
             
             # Update current epoch if in training
-            if stage == "training" and "epoch" in payload.get("details", {}):
-                self.current_epoch = payload["details"]["epoch"]
+            if stage == "training" and "details" in payload:
+                details = payload["details"]
+                if "epoch" in details:
+                    self.current_epoch = details["epoch"]
+                    # Store epoch metrics for live visualization
+                    self.epoch_metrics.append(details)
         
         elif msg_type == TRAIN_COMPLETE:
             # Training complete, transition to QUERYING
@@ -390,6 +398,7 @@ class Controller:
         - Current state and cycle
         - Metrics history
         - Queried images
+        - Epoch metrics
         - Experiment configuration
         """
         state_data = {
@@ -399,6 +408,7 @@ class Controller:
             "total_cycles": self.total_cycles,
             "metrics_history": self.metrics_history,
             "queried_images": self.queried_images,
+            "epoch_metrics": self.epoch_metrics,
             "experiment_config": self.experiment_config,
             "last_error": self.last_error,
         }
@@ -430,6 +440,7 @@ class Controller:
             self.total_cycles = state_data["total_cycles"]
             self.metrics_history = state_data["metrics_history"]
             self.queried_images = state_data["queried_images"]
+            self.epoch_metrics = state_data.get("epoch_metrics", [])
             self.experiment_config = state_data["experiment_config"]
             self.last_error = state_data.get("last_error")
             
@@ -452,6 +463,7 @@ class Controller:
         self.total_cycles = 0
         self.metrics_history = []
         self.queried_images = []
+        self.epoch_metrics = []
         self.experiment_config = {}
         self.last_error = None
         

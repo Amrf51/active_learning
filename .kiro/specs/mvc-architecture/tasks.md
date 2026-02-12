@@ -121,41 +121,41 @@ Transform the existing monolithic backend into an MVC + multiprocessing architec
 
 ---
 
-- [-] 10. Create views/ directory structure
-  - [ ] 10.1 Create `views/__init__.py`
-  - [ ] 10.2 Create `views/router.py` — main render() function that dispatches to state-specific views
+- [x] 10. Create views/ directory structure
+  - [x] 10.1 Create `views/__init__.py`
+  - [x] 10.2 Create `views/router.py` — main render() function that dispatches to state-specific views
 
-- [ ] 11. Implement sidebar configuration (views/sidebar.py)
-  - [ ] 11.1 Model selection dropdown (curated families: ResNet, MobileNet, EfficientNet)
-  - [ ] 11.2 Strategy dropdown (entropy, margin, least_confidence, random)
-  - [ ] 11.3 Training hyperparameters (epochs slider, batch_size, learning_rate)
-  - [ ] 11.4 AL settings (query size slider, num_cycles)
-  - [ ] 11.5 Start Experiment button (dispatches first cycle)
-  - [ ] 11.6 Stop button (sets stop_requested event)
+- [x] 11. Implement sidebar configuration (views/sidebar.py)
+  - [x] 11.1 Model selection dropdown (curated families: ResNet, MobileNet, EfficientNet)
+  - [x] 11.2 Strategy dropdown (entropy, margin, least_confidence, random)
+  - [x] 11.3 Training hyperparameters (epochs slider, batch_size, learning_rate)
+  - [x] 11.4 AL settings (query size slider, num_cycles)
+  - [x] 11.5 Start Experiment button (dispatches first cycle)
+  - [x] 11.6 Stop button (sets stop_requested event)
 
-- [ ] 12. Implement training visualization (views/training.py)
-  - [ ] 12.1 Progress bar for current epoch within cycle
-  - [ ] 12.2 Cycle progress indicator (Cycle X/N)
-  - [ ] 12.3 Live loss/accuracy line chart (updates each epoch via polling)
-  - [ ] 12.4 Pool statistics display (labeled/unlabeled counts)
-  - [ ] 12.5 Current metrics display (train_loss, train_acc, val_acc)
+- [x] 12. Implement training visualization (views/training.py)
+  - [x] 12.1 Progress bar for current epoch within cycle
+  - [x] 12.2 Cycle progress indicator (Cycle X/N)
+  - [x] 12.3 Live loss/accuracy line chart (updates each epoch via polling)
+  - [x] 12.4 Pool statistics display (labeled/unlabeled counts)
+  - [x] 12.5 Current metrics display (train_loss, train_acc, val_acc)
 
-- [ ] 13. Implement "Gallery of Uncertainty" (views/gallery.py)
-  - [ ] 13.1 Grid display of queried images (3-4 columns)
-  - [ ] 13.2 Per-image card: image thumbnail, prediction, confidence %, uncertainty score
-  - [ ] 13.3 "Auto-label All (Ground Truth)" button for batch simulation
-  - [ ] 13.4 Submit annotations button (dispatches ANNOTATE, triggers next cycle)
-  - [ ] 13.5 Annotation feedback after submission (X/Y correct)
+- [x] 13. Implement "Gallery of Uncertainty" (views/gallery.py)
+  - [x] 13.1 Grid display of queried images (3-4 columns)
+  - [x] 13.2 Per-image card: image thumbnail, prediction, confidence %, uncertainty score
+  - [x] 13.3 "Auto-label All (Ground Truth)" button for batch simulation
+  - [x] 13.4 Submit annotations button (dispatches ANNOTATE, triggers next cycle)
+  - [x] 13.5 Annotation feedback after submission (X/Y correct)
 
-- [ ] 14. Implement results dashboard (views/results.py)
-  - [ ] 14.1 Cycle-by-cycle metrics table (Cycle, Labeled, Val Acc, Test Acc, F1)
-  - [ ] 14.2 Test accuracy progression line chart
-  - [ ] 14.3 Best cycle highlight with summary
+- [x] 14. Implement results dashboard (views/results.py)
+  - [x] 14.1 Cycle-by-cycle metrics table (Cycle, Labeled, Val Acc, Test Acc, F1)
+  - [x] 14.2 Test accuracy progression line chart
+  - [x] 14.3 Best cycle highlight with summary
 
-- [ ] 15. Wire up app.py with view router
-  - [ ] 15.1 Import and call `views.router.render()` in main()
-  - [ ] 15.2 Pass controller and session state to router
-  - [ ] 15.3 Implement polling loop for progress updates during training
+- [x] 15. Wire up app.py with view router
+  - [x] 15.1 Import and call `views.router.render()` in main()
+  - [x] 15.2 Pass controller and session state to router
+  - [x] 15.3 Implement polling loop for progress updates during training
 
 ---
 

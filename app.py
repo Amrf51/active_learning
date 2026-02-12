@@ -197,11 +197,42 @@ atexit.register(shutdown_handler)
 # MAIN APPLICATION
 # ============================================================================
 
+@st.fragment(run_every="2s")
+def live_update_fragment():
+    """
+    Fragment that auto-reruns every 2 seconds to poll for updates.
+    
+    This fragment:
+    - Polls the result queue for new messages from the worker
+    - Updates the controller state based on received messages
+    - Only reruns this fragment, not the entire page (more efficient)
+    
+    Subtask 15.3: Implement polling loop for progress updates during training
+    """
+    controller = st.session_state.controller
+    
+    # Poll multiple times to drain the queue of any pending messages
+    messages_processed = 0
+    max_messages = 50  # Prevent infinite loop if worker is sending too many messages
+    while messages_processed < max_messages:
+        message = controller.poll_results(timeout=0.01)
+        if message is None:
+            break
+        messages_processed += 1
+    
+    # Render the current view based on state
+    from views.router import render
+    render()
+
+
 def main():
     """
     Main application entry point.
     
     Subtask 6.7: Basic Streamlit page config and layout structure.
+    Subtask 15.1: Import and call views.router.render() in main()
+    Subtask 15.2: Pass controller and session state to router (via st.session_state)
+    Subtask 15.3: Implement polling loop for progress updates during training (using st.fragment)
     """
     # Streamlit page configuration
     st.set_page_config(
@@ -214,56 +245,23 @@ def main():
     # Initialize session state (runs once)
     init_session_state()
     
+    # Get controller from session state
+    controller = st.session_state.controller
+    
+    # Render sidebar (Phase 5)
+    from views.sidebar import render_sidebar
+    render_sidebar(controller)
+    
     # Main layout structure
     st.title("🎯 Active Learning Framework")
     st.caption("Visual and Interactive Active Learning for Vehicle Image Classification")
     
-    # Sidebar placeholder (to be implemented in Phase 5)
-    with st.sidebar:
-        st.header("⚙️ Configuration")
-        st.info("Configuration controls will be added in Phase 5")
-        
-        # Debug info
-        with st.expander("🔧 Debug Info"):
-            controller = st.session_state.controller
-            st.write(f"App State: {controller.get_state().value if controller else 'N/A'}")
-            st.write(f"Current Cycle: {controller.current_cycle if controller else 'N/A'}")
-            st.write(f"Controller: {'✅ Ready' if controller else '❌ Not initialized'}")
-            st.write(f"Worker: {'✅ Running (PID: ' + str(st.session_state.worker.pid) + ')' if st.session_state.worker and st.session_state.worker.is_alive() else '❌ Not running'}")
-            
-            # Show queue sizes
-            if controller:
-                st.write(f"Task Queue: {st.session_state.task_queue.qsize()} messages")
-                st.write(f"Result Queue: {st.session_state.result_queue.qsize()} messages")
-    
     # Main content area
     st.divider()
     
-    # Subtask 9.4: Call view.render() for UI
-    # TODO: Phase 5 - Implement views and replace placeholder
-    # from views.router import render
-    # render(st.session_state.controller, st.session_state.app_state)
-    
-    # Placeholder for view rendering (to be implemented in Phase 5)
-    st.info("📋 **Status:** MVC Core Components Wired Up")
-    st.write("**Progress:**")
-    st.markdown("""
-    - ✅ Phase 1: Configuration & Protocol Infrastructure (Complete)
-    - ✅ Phase 2: Backend Modifications (Complete)
-    - ✅ Phase 3: Application Skeleton (Complete)
-    - ✅ Phase 4: MVC Core Components (Complete - Task 9)
-    - ⏳ Phase 5: Streamlit Views (Next)
-    """)
-    
-    # Show controller status
-    if st.session_state.controller:
-        st.success("✅ Controller initialized and ready")
-        progress_info = st.session_state.controller.get_progress()
-        st.json(progress_info)
-    
-    # TODO: Phase 5 - Replace with actual view rendering
-    # from views.router import render
-    # render(st.session_state.controller, st.session_state.app_state)
+    # Subtask 15.1 & 15.3: Render views with auto-updating fragment
+    # The fragment polls every 2 seconds and updates only the view area
+    live_update_fragment()
     
     st.divider()
     st.caption("Active Learning Framework v1.0 | Bachelor Thesis Project")
