@@ -104,117 +104,104 @@ Transform the existing monolithic backend into an MVC + multiprocessing architec
 
 ---
 
-## Phase 5: Streamlit Views
+## Phase 5: Streamlit Views (MWP Scope)
 
-- [ ] 10. Create views/ directory structure
+**Goal:** Get one full AL experiment running end-to-end with visualization.
+
+**MWP Scope:**
+- sidebar.py → Config controls (model, strategy, epochs, query size)
+- training.py → Progress bar + live loss/accuracy chart
+- gallery.py → Image grid with predictions + annotation submit
+- results.py → Simple table of cycle metrics
+
+**Deferred (not essential for thesis demo):**
+- comparison.py → Run one strategy at a time, compare manually
+- explorer.py → Not essential for thesis demo
+- Error handling UI → Let it crash, fix later
+
+---
+
+- [-] 10. Create views/ directory structure
   - [ ] 10.1 Create `views/__init__.py`
   - [ ] 10.2 Create `views/router.py` — main render() function that dispatches to state-specific views
 
 - [ ] 11. Implement sidebar configuration (views/sidebar.py)
-  - [ ] 11.1 Model selection with curated families dropdown
-  - [ ] 11.2 TIMM model search expander with text input
-  - [ ] 11.3 Model info display (parameters, pretrained status)
-  - [ ] 11.4 Training hyperparameters (epochs, batch_size, learning_rate sliders)
-  - [ ] 11.5 AL settings (strategy dropdown, query size slider, reset mode)
-  - [ ] 11.6 Data settings (data directory input, split ratios)
+  - [ ] 11.1 Model selection dropdown (curated families: ResNet, MobileNet, EfficientNet)
+  - [ ] 11.2 Strategy dropdown (entropy, margin, least_confidence, random)
+  - [ ] 11.3 Training hyperparameters (epochs slider, batch_size, learning_rate)
+  - [ ] 11.4 AL settings (query size slider, num_cycles)
+  - [ ] 11.5 Start Experiment button (dispatches first cycle)
+  - [ ] 11.6 Stop button (sets stop_requested event)
 
-- [ ] 12. Implement state-specific views (views/states.py)
-  - [ ] 12.1 `render_idle_view()` - start experiment button, config display
-  - [ ] 12.2 `render_initializing_view()` - loading spinner, model info
-  - [ ] 12.3 `render_querying_view()` - query progress indicator
-  - [ ] 12.4 `render_error_view()` - error display with retry option
+- [ ] 12. Implement training visualization (views/training.py)
+  - [ ] 12.1 Progress bar for current epoch within cycle
+  - [ ] 12.2 Cycle progress indicator (Cycle X/N)
+  - [ ] 12.3 Live loss/accuracy line chart (updates each epoch via polling)
+  - [ ] 12.4 Pool statistics display (labeled/unlabeled counts)
+  - [ ] 12.5 Current metrics display (train_loss, train_acc, val_acc)
 
-- [ ] 13. Implement training visualization (views/training.py) — THESIS REQUIREMENT
-  - [ ] 13.1 Real-time loss/accuracy line charts using st.line_chart or plotly
-  - [ ] 13.2 Progress bar for epochs within cycle
-  - [ ] 13.3 Cycle progress indicator
-  - [ ] 13.4 Pool statistics display (labeled/unlabeled counts)
-  - [ ] 13.5 Best model metrics display
-  - [ ] 13.6 Stop training button
+- [ ] 13. Implement "Gallery of Uncertainty" (views/gallery.py)
+  - [ ] 13.1 Grid display of queried images (3-4 columns)
+  - [ ] 13.2 Per-image card: image thumbnail, prediction, confidence %, uncertainty score
+  - [ ] 13.3 "Auto-label All (Ground Truth)" button for batch simulation
+  - [ ] 13.4 Submit annotations button (dispatches ANNOTATE, triggers next cycle)
+  - [ ] 13.5 Annotation feedback after submission (X/Y correct)
 
-- [ ] 14. Implement "Gallery of Uncertainty" (views/gallery.py) — THESIS REQUIREMENT
-  - [ ] 14.1 Grid display of queried images (3-4 columns) with uncertainty ranking
-  - [ ] 14.2 Per-image card showing: image, model prediction, confidence %, uncertainty score, selection reason
-  - [ ] 14.3 Visual uncertainty indicator (color-coded border or badge based on uncertainty level)
-  - [ ] 14.4 Class selection dropdown for each image (all 196 Stanford Cars classes)
-  - [ ] 14.5 "Use Model Prediction" quick button
-  - [ ] 14.6 "Use Ground Truth" button (for simulation mode)
-  - [ ] 14.7 "Auto-label All" button for batch simulation
-  - [ ] 14.8 Submit annotations button
-  - [ ] 14.9 Annotation accuracy feedback after submission (correct/incorrect count)
+- [ ] 14. Implement results dashboard (views/results.py)
+  - [ ] 14.1 Cycle-by-cycle metrics table (Cycle, Labeled, Val Acc, Test Acc, F1)
+  - [ ] 14.2 Test accuracy progression line chart
+  - [ ] 14.3 Best cycle highlight with summary
 
-- [ ] 15. Implement results dashboard (views/results.py) — THESIS REQUIREMENT
-  - [ ] 15.1 Cycle-by-cycle metrics table (Accuracy, F1-Score, Precision, Recall)
-  - [ ] 15.2 Test accuracy progression line chart
-  - [ ] 15.3 F1-Score progression line chart
-  - [ ] 15.4 Pool size progression chart (labeled vs unlabeled over cycles)
-  - [ ] 15.5 Best cycle highlight with metrics summary
-  - [ ] 15.6 Per-class performance breakdown (expandable section)
-  - [ ] 15.7 Export results button (JSON download with all metrics)
-  - [ ] 15.8 Probe image tracker — show how predictions change across cycles for fixed validation images
-  - [ ] 15.9 Confusion matrix heatmap (top-20 most confused class pairs)
-
-- [ ] 16. Implement Strategy Comparison View (views/comparison.py) — THESIS REQUIREMENT
-  - [ ] 16.1 Multi-experiment tracking in session state
-  - [ ] 16.2 Side-by-side comparison table (Random vs Entropy vs Margin vs LC)
-  - [ ] 16.3 Overlay line chart comparing accuracy curves across strategies
-  - [ ] 16.4 Statistical summary (final accuracy, improvement %, cycles to reach threshold)
-  - [ ] 16.5 Export comparison report (CSV/JSON)
-
-- [ ] 17. Implement Dataset Explorer (views/explorer.py) — THESIS REQUIREMENT
-  - [ ] 17.1 Browse labeled pool by class
-  - [ ] 17.2 Browse unlabeled pool samples
-  - [ ] 17.3 View queried images history per cycle
-  - [ ] 17.4 Filter by uncertainty score range
-  - [ ] 17.5 Display image metadata (path, true label, predicted label, confidence)
-  - [ ] 17.6 Visualize class distribution in labeled/unlabeled pools (bar chart)
+- [ ] 15. Wire up app.py with view router
+  - [ ] 15.1 Import and call `views.router.render()` in main()
+  - [ ] 15.2 Pass controller and session state to router
+  - [ ] 15.3 Implement polling loop for progress updates during training
 
 ---
 
-## Phase 6: Session State Management
+## Phase 6: End-to-End Testing (MWP Validation)
 
-- [ ] 18. Session state management
-  - [ ] 18.1 Initialize session state on first run
-  - [ ] 18.2 Store current_cycle, current_epoch, metrics_history
-  - [ ] 18.3 Store queried_images for annotation view
-  - [ ] 18.4 Store experiment_config for persistence
-  - [ ] 18.5 Store experiment_history for strategy comparison (multiple runs)
-  - [ ] 18.6 Implement session state reset for new experiment
-
----
-
-## Phase 7: Integration & Testing
-
-- [ ] 19. Integration testing
-  - [ ] 19.1 Test config loading with overrides
-  - [ ] 19.2 Test worker process startup and shutdown
-  - [ ] 19.3 Test message passing through queues
-  - [ ] 19.4 Test event signaling (stop, completion)
-  - [ ] 19.5 Test state persistence and resume
-
-- [ ] 20. End-to-end workflow testing
-  - [ ] 20.1 Test full cycle: init → train → query → annotate → next cycle
-  - [ ] 20.2 Test stop button during training
-  - [ ] 20.3 Test error recovery
-  - [ ] 20.4 Test with quick_test.yaml config
-  - [ ] 20.5 Test strategy comparison workflow (run multiple experiments)
+- [ ] 16. Manual end-to-end testing
+  - [ ] 16.1 Start app with `streamlit run app.py`
+  - [ ] 16.2 Configure experiment via sidebar
+  - [ ] 16.3 Click Start → verify training progress updates
+  - [ ] 16.4 After training → verify gallery shows queried images
+  - [ ] 16.5 Click Auto-label → Submit → verify next cycle starts
+  - [ ] 16.6 Complete 3+ cycles → verify results table populates
+  - [ ] 16.7 Test with quick_test.yaml config for fast iteration
 
 ---
 
-## Phase 8: Polish & Documentation
+## Phase 7: Post-MWP Enhancements (DEFERRED)
 
-- [ ] 21. Error handling improvements
-  - [ ] 21.1 Add timeout handling for worker responses
-  - [ ] 21.2 Add worker health check mechanism
-  - [ ] 21.3 Add graceful degradation for GPU unavailability
-  - [ ] 21.4 Add user-friendly error messages in UI
+These tasks are deferred until MWP is working:
 
-- [ ] 22. Documentation
-  - [ ] 22.1 Update README with new architecture overview
-  - [ ] 22.2 Add docstrings to all new modules
-  - [ ] 22.3 Create usage guide for Streamlit dashboard
-  - [ ] 22.4 Document configuration options
-  - [ ] 22.5 Add screenshots of key UI features for thesis
+- [ ]* 17. Strategy Comparison View (views/comparison.py)
+  - [ ]* 17.1 Multi-experiment tracking in session state
+  - [ ]* 17.2 Side-by-side comparison table
+  - [ ]* 17.3 Overlay line chart comparing strategies
+
+- [ ]* 18. Dataset Explorer (views/explorer.py)
+  - [ ]* 18.1 Browse labeled/unlabeled pools by class
+  - [ ]* 18.2 View queried images history per cycle
+  - [ ]* 18.3 Class distribution visualization
+
+- [ ]* 19. Advanced Results Features
+  - [ ]* 19.1 Probe image tracker
+  - [ ]* 19.2 Confusion matrix heatmap
+  - [ ]* 19.3 Per-class performance breakdown
+  - [ ]* 19.4 Export results button (JSON download)
+
+- [ ]* 20. Error Handling & Polish
+  - [ ]* 20.1 Timeout handling for worker responses
+  - [ ]* 20.2 Worker health check mechanism
+  - [ ]* 20.3 User-friendly error messages in UI
+  - [ ]* 20.4 Graceful degradation for GPU unavailability
+
+- [ ]* 21. Documentation
+  - [ ]* 21.1 Update README with architecture overview
+  - [ ]* 21.2 Usage guide for Streamlit dashboard
+  - [ ]* 21.3 Screenshots for thesis
 
 
 ---
