@@ -13,7 +13,7 @@ data:
   val_split: 0.15
   test_split: 0.15
   augmentation: true
-  num_workers: 4
+  num_workers: 0  # Set to 0 to avoid multiprocessing issues
   image_size: 224
 
 model:

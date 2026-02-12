@@ -1,0 +1,34 @@
+# ========================================
+# Active Learning Car Classification
+# Python 3.10+ Required
+# ========================================
+
+# Core Deep Learning
+torch>=2.0.0,<3.0.0
+torchvision>=0.15.0,<1.0.0
+timm>=0.9.0                     # PyTorch Image Models
+
+# Scientific Computing
+numpy>=1.24.0,<2.0.0
+scipy>=1.10.0                   # Required by sklearn
+
+# Machine Learning
+scikit-learn>=1.3.0             # Metrics (accuracy, precision, recall, confusion matrix)
+
+# Web Interface
+streamlit>=1.28.0               # Main UI framework
+
+# Data Processing
+pandas>=2.0.0                   # Results visualization
+Pillow>=10.0.0                  # Image processing (PIL)
+PyYAML>=6.0                     # Configuration file parsing
+
+# Logging & Utilities
+# (All standard library: logging, json, pathlib, dataclasses, multiprocessing, etc.)
+
+# ========================================
+# Optional: Development Tools
+# ========================================
+# pytest>=7.4.0                 # Testing framework
+# black>=23.0.0                 # Code formatting
+# flake8>=6.0.0                 # Linting
