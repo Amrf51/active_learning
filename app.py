@@ -123,14 +123,12 @@ def init_session_state():
     logger.info("Worker initialized and ready")
     
     # Subtask 6.6: Store queues and events in st.session_state (already done above)
-    # Additional session state for application state
-    st.session_state.app_state = "IDLE"  # IDLE, TRAINING, QUERYING, ANNOTATING, ERROR (no INITIALIZING - worker ready at startup)
-    st.session_state.current_cycle = 0
-    st.session_state.current_epoch = 0
-    st.session_state.metrics_history = []
-    st.session_state.queried_images = []
-    st.session_state.experiment_config = {}
-    st.session_state.experiment_history = []  # For strategy comparison
+    # Note: Application state (app_state, current_cycle, current_epoch, metrics_history,
+    # queried_images, experiment_config) is owned by the Controller - access via
+    # st.session_state.controller to avoid duplication.
+    
+    # Only keep state that's truly View-specific (not owned by Controller)
+    st.session_state.experiment_history = []  # For strategy comparison (View-specific)
     
     # Mark as initialized
     st.session_state.initialized = True
@@ -227,13 +225,14 @@ def main():
         
         # Debug info
         with st.expander("🔧 Debug Info"):
-            st.write(f"App State: {st.session_state.app_state}")
-            st.write(f"Current Cycle: {st.session_state.current_cycle}")
-            st.write(f"Controller: {'✅ Ready' if st.session_state.controller else '❌ Not initialized'}")
+            controller = st.session_state.controller
+            st.write(f"App State: {controller.get_state().value if controller else 'N/A'}")
+            st.write(f"Current Cycle: {controller.current_cycle if controller else 'N/A'}")
+            st.write(f"Controller: {'✅ Ready' if controller else '❌ Not initialized'}")
             st.write(f"Worker: {'✅ Running (PID: ' + str(st.session_state.worker.pid) + ')' if st.session_state.worker and st.session_state.worker.is_alive() else '❌ Not running'}")
             
             # Show queue sizes
-            if st.session_state.controller:
+            if controller:
                 st.write(f"Task Queue: {st.session_state.task_queue.qsize()} messages")
                 st.write(f"Result Queue: {st.session_state.result_queue.qsize()} messages")
     
