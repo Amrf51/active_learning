@@ -40,22 +40,21 @@ logger = logging.getLogger(__name__)
 def init_multiprocessing():
     """
     Initialize multiprocessing context with spawn method for CUDA compatibility.
-    
+
     The 'spawn' method is required when using CUDA/GPU in worker processes
-    to avoid issues with forked processes and CUDA context.
-    
+    to avoid issues with forked processes and CUDA context. It's also more
+    reliable with Streamlit and FUSE/network filesystems.
+
     Returns:
         Multiprocessing context object
     """
-    # Try forkserver first (works better with NFS/restricted filesystems)
-    # Falls back to spawn if forkserver unavailable
-    try:
-        mp_context = mp.get_context('forkserver')
-        logger.info("Multiprocessing context initialized with 'forkserver' method")
-    except ValueError:
-        # forkserver not available on Windows, use spawn
-        mp_context = mp.get_context('spawn')
-        logger.info("Multiprocessing context initialized with 'spawn' method")
+    # Use spawn method for maximum compatibility:
+    # - CUDA-safe (avoids GPU context corruption)
+    # - Streamlit-compatible (avoids state interference)
+    # - Works with FUSE/network filesystems
+    # - Cross-platform (Windows + Linux)
+    mp_context = mp.get_context('spawn')
+    logger.info("Multiprocessing context initialized with 'spawn' method")
     return mp_context
 
 
