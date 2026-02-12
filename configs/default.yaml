@@ -36,6 +36,7 @@ active_learning:
   sampling_strategy: "entropy" # "entropy", "margin", "least_confidence", "random"
   uncertainty_method: "entropy"
   reset_mode: "pretrained"    # "pretrained", "head_only", "none"
+  auto_annotate: true         # Auto-annotate with ground truth for simulation
 
 checkpoint:
   save_best_model: true

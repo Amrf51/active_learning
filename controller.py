@@ -121,7 +121,10 @@ class Controller:
         
         # Error tracking
         self.last_error: Optional[Dict[str, Any]] = None
-        
+
+        # Pool size tracking for auto-dispatch decisions
+        self.unlabeled_pool_size = 0
+
         logger.info("Controller initialized")
     
     def get_state(self) -> AppState:
@@ -343,10 +346,20 @@ class Controller:
                     self.epoch_metrics.append(details)
         
         elif msg_type == TRAIN_COMPLETE:
-            # Training complete, transition to QUERYING
+            # Training complete, automatically dispatch query if not last cycle
             logger.info(f"Training complete for cycle {self.current_cycle}")
-            # Note: metrics_history is updated in CYCLE_COMPLETE with complete metrics
-            # State will transition to QUERYING when dispatch_query is called
+
+            # Auto-dispatch query for next cycle if conditions are met
+            if self.current_cycle < self.total_cycles and self.unlabeled_pool_size > 0:
+                logger.info(f"Auto-dispatching query for cycle {self.current_cycle}")
+                self.dispatch_query()
+            else:
+                if self.current_cycle >= self.total_cycles:
+                    logger.info(f"All {self.total_cycles} cycles complete")
+                elif self.unlabeled_pool_size == 0:
+                    logger.warning("Cannot query: unlabeled pool is empty")
+                # Return to IDLE state
+                self._set_state(AppState.IDLE)
         
         elif msg_type == QUERY_COMPLETE:
             # Query complete, transition to ANNOTATING
@@ -354,19 +367,42 @@ class Controller:
             self.queried_images = queried_images
             self._set_state(AppState.ANNOTATING)
             logger.info(f"Query complete: {len(queried_images)} images selected")
+
+            # Auto-annotate with ground truth (simulated annotation)
+            if queried_images:
+                annotations = [
+                    {"image_id": img["image_id"], "user_label": img["ground_truth"]}
+                    for img in queried_images
+                ]
+                logger.info(f"Auto-annotating {len(annotations)} images with ground truth")
+                self.dispatch_annotate(annotations)
+            else:
+                logger.warning("No images queried, skipping annotation")
         
         elif msg_type == ANNOTATE_COMPLETE:
-            # Annotation complete, ready for next cycle
+            # Annotation complete, automatically dispatch next cycle
             num_annotated = payload.get("num_annotated", 0)
             logger.info(f"Annotation complete: {num_annotated} images labeled")
-            # State will transition to TRAINING when dispatch_run_cycle is called
+
+            # Auto-dispatch next training cycle
+            next_cycle = self.current_cycle + 1
+            if next_cycle <= self.total_cycles:
+                logger.info(f"Auto-dispatching training cycle {next_cycle}")
+                self.dispatch_run_cycle(next_cycle)
+            else:
+                # All cycles complete
+                logger.info(f"All {self.total_cycles} cycles complete")
+                self._set_state(AppState.IDLE)
         
         elif msg_type == CYCLE_COMPLETE:
             # Full cycle complete - store complete metrics with pool sizes
             cycle_num = payload.get("cycle_num")
             metrics = payload.get("metrics", {})
             self.metrics_history.append(metrics)
-            logger.info(f"Cycle {cycle_num} complete")
+
+            # Track pool size for decision-making in auto-dispatch
+            self.unlabeled_pool_size = metrics.get("unlabeled_pool_size", 0)
+            logger.info(f"Cycle {cycle_num} complete, unlabeled pool: {self.unlabeled_pool_size}")
         
         elif msg_type == ERROR:
             # Error occurred, transition to ERROR state

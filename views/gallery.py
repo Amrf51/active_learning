@@ -442,9 +442,8 @@ def render_gallery_view(controller: Controller) -> None:
         # Submit button (Subtask 13.4)
         submitted = render_submit_button(controller, queried_images)
         if submitted:
-            # Dispatch next cycle
-            next_cycle = controller.current_cycle + 1
-            controller.dispatch_run_cycle(next_cycle)
+            # Controller will automatically dispatch next cycle after annotation completes
+            st.success("✓ Annotations submitted. Controller will proceed to next cycle automatically.")
             st.rerun()
     
     # Instructions

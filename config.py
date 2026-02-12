@@ -63,6 +63,7 @@ class ALConfig:
     sampling_strategy: str = "entropy"
     uncertainty_method: str = "entropy"
     reset_mode: str = "pretrained"
+    auto_annotate: bool = True  # Auto-annotate with ground truth for simulation
 
 
 @dataclass
