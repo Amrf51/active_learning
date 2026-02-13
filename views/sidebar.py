@@ -14,7 +14,8 @@ The sidebar collects user configuration and dispatches commands to the Controlle
 import streamlit as st
 from typing import Dict, Any, Optional
 import logging
-from controller import Controller, AppState
+from controller import Controller
+from experiment_state import AppState
 from models import get_model_families, get_model_card
 
 logger = logging.getLogger(__name__)
@@ -248,7 +249,7 @@ def render_al_settings() -> Dict[str, Any]:
 # SUBTASK 11.5 & 11.6: Start/Stop buttons
 # ============================================================================
 
-def render_experiment_controls(controller: Controller) -> None:
+def render_experiment_controls(controller: Controller, snap: Dict[str, Any]) -> None:
     """
     Render experiment control buttons (Start/Stop).
     
@@ -258,23 +259,26 @@ def render_experiment_controls(controller: Controller) -> None:
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🎮 Experiment Controls")
     
-    current_state = controller.get_state()
+    current_state = snap["app_state"]
     
     # Show current state
     state_emoji = {
         AppState.IDLE: "🏁",
+        AppState.INITIALIZING: "⚙️",
         AppState.TRAINING: "🔄",
         AppState.QUERYING: "🔍",
         AppState.ANNOTATING: "🏷️",
-        AppState.ERROR: "❌"
+        AppState.STOPPING: "⏳",
+        AppState.ERROR: "❌",
+        AppState.FINISHED: "✅",
     }
     
     st.sidebar.info(
         f"{state_emoji.get(current_state, '❓')} **Status:** {current_state.value.upper()}"
     )
     
-    # Start button (only enabled in IDLE state)
-    start_disabled = current_state != AppState.IDLE
+    # Start button is enabled for non-running terminal states.
+    start_disabled = current_state not in {AppState.IDLE, AppState.FINISHED, AppState.ERROR}
     
     if st.sidebar.button(
         "Start Experiment",
@@ -284,41 +288,32 @@ def render_experiment_controls(controller: Controller) -> None:
         try:
             # Apply config overrides before starting
             config_overrides = st.session_state.get('config_overrides', {})
-            if config_overrides:
-                from config import load_config
-                new_config = load_config(overrides=config_overrides)
-                st.session_state.config = new_config
-                controller.config = new_config
-                controller.experiment_config = new_config.to_dict()
-                controller.total_cycles = new_config.active_learning.num_cycles
-                logger.info("Applied config overrides from sidebar")
+            from config import load_config
 
-                # Respawn worker with new config
-                spawn_fn = st.session_state.get('spawn_worker')
-                if spawn_fn:
-                    spawn_fn(new_config)
-                    logger.info("Worker respawned with new config")
+            new_config = load_config(overrides=config_overrides)
+            new_config.data.num_workers = 0
+            st.session_state.config = new_config
+            run_id = controller.start_experiment(new_config)
 
-            # Reset controller state for fresh experiment
-            controller.current_cycle = 0
-            controller.current_epoch = 0
-            controller.metrics_history = []
-            controller.epoch_metrics = []
-            controller.queried_images = []
-            controller.last_error = None
-            controller.unlabeled_pool_size = 0
+            # Clear run-scoped UI cache
+            st.session_state['active_run_id'] = run_id
+            st.session_state.annotations = {}
+            st.session_state.pop('last_annotation_feedback', None)
 
-            # Dispatch first cycle
-            controller.dispatch_run_cycle(cycle_num=1)
             st.sidebar.success("Experiment started!")
-            logger.info("User started experiment (Cycle 1)")
+            logger.info("User started experiment (run_id=%s)", run_id)
             st.rerun()
         except Exception as e:
             st.sidebar.error(f"Failed to start: {e}")
             logger.error(f"Failed to start experiment: {e}")
     
-    # Stop button (enabled when busy)
-    stop_disabled = not controller.is_busy()
+    stop_enabled_states = {
+        AppState.INITIALIZING,
+        AppState.TRAINING,
+        AppState.QUERYING,
+        AppState.ANNOTATING,
+    }
+    stop_disabled = current_state not in stop_enabled_states
     
     if st.sidebar.button(
         "⏹️ Stop",
@@ -326,7 +321,7 @@ def render_experiment_controls(controller: Controller) -> None:
         help="Stop the current operation" if not stop_disabled else "Nothing to stop"
     ):
         try:
-            controller.dispatch_stop()
+            controller.stop_experiment()
             st.sidebar.warning("⚠️ Stop requested...")
             logger.info("User requested stop")
             st.rerun()
@@ -336,11 +331,11 @@ def render_experiment_controls(controller: Controller) -> None:
     
     # Show progress if experiment is running
     if current_state != AppState.IDLE:
-        progress = controller.get_progress()
         st.sidebar.markdown("---")
         st.sidebar.markdown("### 📊 Progress")
-        st.sidebar.write(f"**Cycle:** {progress['current_cycle']} / {progress['total_cycles']}")
-        st.sidebar.write(f"**Completed Cycles:** {progress['cycles_completed']}")
+        st.sidebar.write(f"**Cycle:** {snap['current_cycle']} / {snap['total_cycles']}")
+        st.sidebar.write(f"**Completed Cycles:** {len(snap['metrics_history'])}")
+        st.sidebar.caption(snap.get("progress_detail", ""))
 
 
 # ============================================================================
@@ -369,7 +364,8 @@ def render_sidebar(controller: Controller) -> Dict[str, Any]:
     al_params = render_al_settings()
     
     # Render controls
-    render_experiment_controls(controller)
+    snap = controller.get_snapshot()
+    render_experiment_controls(controller, snap)
     
     # Build config overrides dictionary
     config_overrides = {

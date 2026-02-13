@@ -1,560 +1,192 @@
 """
-controller.py - State Machine and Dispatch Logic for MVC Architecture.
-
-The Controller manages:
-- Application state transitions (IDLE -> TRAINING -> QUERYING -> ANNOTATING)
-- Dispatching commands to the worker process via task_queue
-- Polling results from the worker process via result_queue
-- State persistence (save/load state.json)
-- State transition validation
-
-Usage:
-    controller = Controller(task_queue, result_queue, events, config)
-    controller.dispatch_run_cycle(cycle_num)
-    result = controller.poll_results()
+controller.py - Threaded controller for Streamlit Active Learning UI.
 """
+
+from __future__ import annotations
 
 import json
 import logging
-from enum import Enum
+import threading
+import time
 from pathlib import Path
-from typing import Dict, Any, Optional, List
-from queue import Empty
-import multiprocessing as mp
+from typing import Any, Dict, List, Optional
 
-from protocol import (
-    build_run_cycle_message,
-    build_query_message,
-    build_annotate_message,
-    build_shutdown_message,
-    STOP_REQUESTED,
-    RUN_CYCLE,
-    QUERY,
-    ANNOTATE,
-    PROGRESS_UPDATE,
-    TRAIN_COMPLETE,
-    QUERY_COMPLETE,
-    ANNOTATE_COMPLETE,
-    CYCLE_COMPLETE,
-    ERROR,
-)
+from al_thread import run_experiment
+from experiment_state import AppState, ExperimentState
 
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# SUBTASK 7.1: Define AppState enum
-# ============================================================================
-
-class AppState(Enum):
-    """
-    Application state machine states.
-    
-    State transitions:
-    - IDLE -> TRAINING (when run_cycle is dispatched)
-    - TRAINING -> QUERYING (when training completes)
-    - QUERYING -> ANNOTATING (when query completes)
-    - ANNOTATING -> TRAINING (when annotations submitted)
-    - ANY -> ERROR (when error occurs)
-    - ERROR -> IDLE (when reset)
-    """
-    IDLE = "idle"
-    TRAINING = "training"
-    QUERYING = "querying"
-    ANNOTATING = "annotating"
-    ERROR = "error"
-
-
-# ============================================================================
-# SUBTASK 7.2: Create Controller class with state machine logic
-# ============================================================================
-
 class Controller:
-    """
-    Controller manages application state and dispatches commands to worker.
-    
-    Responsibilities:
-    - Maintain current application state
-    - Validate state transitions
-    - Send commands to worker via task_queue
-    - Poll results from worker via result_queue
-    - Persist and restore application state
-    """
-    
-    def __init__(
-        self,
-        task_queue: mp.Queue,
-        result_queue: mp.Queue,
-        events: Dict[str, mp.Event],
-        config,
-        state_file: str = "state.json"
-    ):
-        """
-        Initialize Controller.
-        
-        Args:
-            task_queue: Queue for sending commands to worker
-            result_queue: Queue for receiving results from worker
-            events: Dictionary of multiprocessing events
-            config: Config object
-            state_file: Path to state persistence file
-        """
-        self.task_queue = task_queue
-        self.result_queue = result_queue
-        self.events = events
-        self.state_file = Path(state_file)
-        
-        # Store config
+    """Thin controller over a shared ExperimentState + background thread."""
+
+    def __init__(self, config: Any, state_file: str = "state.json") -> None:
         self.config = config
-        self.experiment_config: Dict[str, Any] = config.to_dict() if config else {}
-        self.total_cycles = config.active_learning.num_cycles if config else 0
-        
-        # Application state
-        self.current_state = AppState.IDLE
-        self.current_cycle = 0
-        self.current_epoch = 0
-        
-        # Metrics and history
-        self.metrics_history: List[Dict[str, Any]] = []
-        self.queried_images: List[Dict[str, Any]] = []
-        self.epoch_metrics: List[Dict[str, Any]] = []  # Store epoch-level metrics for current cycle
-        
-        # Error tracking
-        self.last_error: Optional[Dict[str, Any]] = None
+        self.state_file = Path(state_file)
+        self.state = ExperimentState()
 
-        # Pool size tracking for auto-dispatch decisions
-        self.unlabeled_pool_size = 0
+    def _enforce_ui_safety(self, config: Any) -> None:
+        # Streamlit mode should not spawn dataloader workers.
+        config.data.num_workers = 0
 
-        # Class names from dataset (populated by worker on cycle_prepared)
-        self.class_names: List[str] = []
+    def start_experiment(self, config: Any) -> str:
+        """Start a new backend run (stopping any previous run first)."""
+        self.stop_experiment(join_timeout=1.0)
+        self._enforce_ui_safety(config)
+        self.config = config
 
-        logger.info("Controller initialized")
-    
-    def get_state(self) -> AppState:
-        """Get current application state."""
-        return self.current_state
-    
-    def _set_state(self, new_state: AppState):
-        """
-        Internal method to set state.
-        
-        Args:
-            new_state: New application state
-        """
-        old_state = self.current_state
-        self.current_state = new_state
-        logger.info(f"State transition: {old_state.value} -> {new_state.value}")
+        run_id = self.state.reset(config)
+        self.state.update_for_run(
+            run_id,
+            app_state=AppState.INITIALIZING,
+            thread_status="starting",
+            progress_detail="Starting backend thread...",
+        )
 
-    # ========================================================================
-    # SUBTASK 7.10: Implement state transition validation
-    # ========================================================================
-    
-    def _can_transition_to(self, target_state: AppState) -> bool:
-        """
-        Validate if transition to target state is allowed.
-        
-        Args:
-            target_state: Desired target state
-            
-        Returns:
-            True if transition is valid, False otherwise
-        """
-        # Define valid transitions
-        valid_transitions = {
-            AppState.IDLE: [AppState.TRAINING],  # Direct to TRAINING (worker already ready)
-            AppState.TRAINING: [AppState.QUERYING, AppState.ERROR, AppState.IDLE],
-            AppState.QUERYING: [AppState.ANNOTATING, AppState.ERROR, AppState.IDLE],
-            AppState.ANNOTATING: [AppState.TRAINING, AppState.ERROR, AppState.IDLE],
-            AppState.ERROR: [AppState.IDLE],
-        }
-        
-        allowed = valid_transitions.get(self.current_state, [])
-        return target_state in allowed
-    
-    def _validate_transition(self, target_state: AppState) -> None:
-        """
-        Validate state transition and raise error if invalid.
-        
-        Args:
-            target_state: Desired target state
-            
-        Raises:
-            ValueError: If transition is not allowed
-        """
-        if not self._can_transition_to(target_state):
-            raise ValueError(
-                f"Invalid state transition: {self.current_state.value} -> {target_state.value}"
+        thread = threading.Thread(
+            target=run_experiment,
+            args=(self.state, config),
+            daemon=True,
+            name=f"ALThread-{run_id[:8]}",
+        )
+        self.state.update_for_run(run_id, thread=thread)
+        thread.start()
+        logger.info("Started run %s", run_id)
+        return run_id
+
+    def stop_experiment(self, join_timeout: float = 5.0) -> None:
+        """Signal backend thread to stop and best-effort join."""
+        snap = self.state.snapshot()
+        run_id = snap["run_id"]
+
+        if run_id:
+            self.state.update_for_run(
+                run_id,
+                app_state=AppState.STOPPING,
+                thread_status="stopping",
+                progress_detail="Stop requested...",
             )
-    
-    # ========================================================================
-    # SUBTASK 7.4: Implement dispatch_run_cycle
-    # ========================================================================
-    
-    def dispatch_run_cycle(self, cycle_num: int) -> None:
-        """
-        Dispatch RUN_CYCLE command to worker.
-        
-        This triggers a full training cycle in the worker process.
-        
-        Args:
-            cycle_num: Active learning cycle number
-            
-        Raises:
-            ValueError: If not in appropriate state
-        """
-        # Can run cycle from IDLE (first cycle) or ANNOTATING (subsequent cycles)
-        if self.current_state not in [AppState.IDLE, AppState.ANNOTATING]:
-            raise ValueError(
-                f"Cannot run cycle from state {self.current_state.value}. "
-                f"Must be in IDLE or ANNOTATING state."
-            )
-        
-        # Clear epoch metrics for new cycle
-        self.epoch_metrics = []
-        
-        # Build and send message
-        message = build_run_cycle_message(cycle_num)
-        self.task_queue.put(message)
-        
-        # Update state
-        self._set_state(AppState.TRAINING)
-        self.current_cycle = cycle_num
-        
-        logger.info(f"Dispatched RUN_CYCLE for cycle {cycle_num}")
-    
-    # ========================================================================
-    # SUBTASK 7.5: Implement dispatch_query
-    # ========================================================================
-    
-    def dispatch_query(self, query_size: Optional[int] = None) -> None:
-        """
-        Dispatch QUERY command to worker.
-        
-        This triggers sample selection for annotation.
-        
-        Args:
-            query_size: Optional number of samples to query (overrides config)
-            
-        Raises:
-            ValueError: If not in TRAINING state
-        """
-        # Validate state transition
-        self._validate_transition(AppState.QUERYING)
-        
-        # Build and send message
-        message = build_query_message(query_size)
-        self.task_queue.put(message)
-        
-        # Update state
-        self._set_state(AppState.QUERYING)
-        
-        logger.info(f"Dispatched QUERY (size={query_size or 'default'})")
-    
-    # ========================================================================
-    # SUBTASK 7.6: Implement dispatch_annotate
-    # ========================================================================
-    
-    def dispatch_annotate(self, annotations: List[Dict[str, int]]) -> None:
-        """
-        Dispatch ANNOTATE command to worker.
-        
-        This sends user annotations to the worker to update the labeled pool.
-        
-        Args:
-            annotations: List of dicts with 'image_id' and 'user_label' keys
-                         e.g., [{"image_id": 5, "user_label": 3}, ...]
-            
-        Raises:
-            ValueError: If not in ANNOTATING state
-        """
-        # Validate state
-        if self.current_state != AppState.ANNOTATING:
-            raise ValueError(
-                f"Cannot annotate from state {self.current_state.value}. "
-                f"Must be in ANNOTATING state."
-            )
-        
-        # Build and send message
-        message = build_annotate_message(annotations)
-        self.task_queue.put(message)
-        
-        logger.info(f"Dispatched ANNOTATE with {len(annotations)} annotations")
-    
-    # ========================================================================
-    # SUBTASK 7.7: Implement dispatch_stop
-    # ========================================================================
-    
-    def dispatch_stop(self) -> None:
-        """
-        Dispatch stop request to worker.
-        
-        This sets the stop_requested event to signal the worker to halt
-        the current operation gracefully.
-        """
-        self.events[STOP_REQUESTED].set()
-        logger.info("Dispatched STOP request")
-    
-    def clear_stop(self) -> None:
-        """Clear the stop_requested event."""
-        self.events[STOP_REQUESTED].clear()
-        logger.info("Cleared STOP request")
-    
-    # ========================================================================
-    # SUBTASK 7.8: Implement poll_results
-    # ========================================================================
-    
-    def poll_results(self, timeout: float = 0.01) -> Optional[Dict[str, Any]]:
-        """
-        Non-blocking check of result_queue.
-        
-        This method polls the result queue for messages from the worker.
-        It should be called regularly (e.g., in Streamlit's rerun loop).
-        
-        Args:
-            timeout: Timeout in seconds for queue.get (default: 0.01 for non-blocking)
-            
-        Returns:
-            Message dictionary if available, None otherwise
-        """
-        try:
-            message = self.result_queue.get(timeout=timeout)
-            self._handle_result_message(message)
-            return message
-        except Empty:
-            return None
-    
-    def _handle_result_message(self, message: Dict[str, Any]) -> None:
-        """
-        Handle result message from worker and update state accordingly.
-        
-        Args:
-            message: Message dictionary from worker
-        """
-        msg_type = message.get("type")
-        payload = message.get("payload", {})
-        
-        if msg_type == "cycle_prepared":
-            # Store class names if provided by worker
-            if "class_names" in payload:
-                self.class_names = payload["class_names"]
-                logger.info(f"Received {len(self.class_names)} class names from worker")
+        self.state.stop_event.set()
+        # Unblock annotation wait loops immediately.
+        self.state.annotations_ready.set()
 
-        elif msg_type == PROGRESS_UPDATE:
-            # Progress updates don't change state
-            stage = payload.get("stage")
-            current = payload.get("current")
-            total = payload.get("total")
-            logger.debug(f"Progress: {stage} {current}/{total}")
+        thread_obj = self.state.thread
+        if thread_obj is not None and thread_obj.is_alive():
+            thread_obj.join(timeout=join_timeout)
 
-            # Update current epoch if in training
-            if stage == "training" and "details" in payload:
-                details = payload["details"]
-                if "epoch" in details:
-                    self.current_epoch = details["epoch"]
-                    # Store epoch metrics for live visualization
-                    self.epoch_metrics.append(details)
-        
-        elif msg_type == TRAIN_COMPLETE:
-            # Training complete, automatically dispatch query if not last cycle
-            logger.info(f"Training complete for cycle {self.current_cycle}")
+        if run_id and self.state.is_run_active(run_id):
+            post = self.state.snapshot()
+            if not post["thread_alive"] and post["app_state"] == AppState.STOPPING:
+                self.state.update_for_run(
+                    run_id,
+                    app_state=AppState.IDLE,
+                    thread_status="finished",
+                    progress_detail="Stopped",
+                )
 
-            # Auto-dispatch query for next cycle if conditions are met
-            if self.current_cycle < self.total_cycles and self.unlabeled_pool_size > 0:
-                logger.info(f"Auto-dispatching query for cycle {self.current_cycle}")
-                self.dispatch_query()
-            else:
-                if self.current_cycle >= self.total_cycles:
-                    logger.info(f"All {self.total_cycles} cycles complete")
-                elif self.unlabeled_pool_size == 0:
-                    logger.warning("Cannot query: unlabeled pool is empty")
-                # Return to IDLE state
-                self._set_state(AppState.IDLE)
-        
-        elif msg_type == QUERY_COMPLETE:
-            # Query complete, transition to ANNOTATING
-            queried_images = payload.get("queried_images", [])
-            self.queried_images = queried_images
-            self._set_state(AppState.ANNOTATING)
-            logger.info(f"Query complete: {len(queried_images)} images selected")
+    def submit_annotations(self, annotations: List[Dict[str, Any]], run_id: str, cycle: int) -> bool:
+        """Submit human annotations only if run/cycle is still current."""
+        return self.state.set_annotations(run_id=run_id, cycle=cycle, annotations=annotations)
 
-            # Only auto-annotate if config says so; otherwise wait for gallery UI
-            if self.config.active_learning.auto_annotate and queried_images:
-                annotations = [
-                    {"image_id": img["image_id"], "user_label": img["ground_truth"]}
-                    for img in queried_images
-                ]
-                logger.info(f"Auto-annotating {len(annotations)} images with ground truth")
-                self.dispatch_annotate(annotations)
-            elif not queried_images:
-                logger.warning("No images queried, skipping annotation")
-            else:
-                logger.info("Manual annotation mode: waiting for user annotations via gallery")
-        
-        elif msg_type == ANNOTATE_COMPLETE:
-            # Annotation complete, automatically dispatch next cycle
-            num_annotated = payload.get("num_annotated", 0)
-            logger.info(f"Annotation complete: {num_annotated} images labeled")
+    def get_snapshot(self) -> Dict[str, Any]:
+        """Return atomic snapshot used by UI."""
+        return self.state.snapshot()
 
-            # Auto-dispatch next training cycle
-            next_cycle = self.current_cycle + 1
-            if next_cycle <= self.total_cycles:
-                logger.info(f"Auto-dispatching training cycle {next_cycle}")
-                self.dispatch_run_cycle(next_cycle)
-            else:
-                # All cycles complete
-                logger.info(f"All {self.total_cycles} cycles complete")
-                self._set_state(AppState.IDLE)
-        
-        elif msg_type == CYCLE_COMPLETE:
-            # Full cycle complete - store complete metrics with pool sizes
-            cycle_num = payload.get("cycle_num")
-            metrics = payload.get("metrics", {})
-            self.metrics_history.append(metrics)
+    def reset_to_idle(self, clear_history: bool = False) -> None:
+        """Return UI to IDLE and optionally clear accumulated history."""
+        self.stop_experiment(join_timeout=1.0)
+        with self.state._lock:  # pylint: disable=protected-access
+            self.state.last_error = None
+            self.state.progress_detail = "Idle"
+            self.state.app_state = AppState.IDLE
+            self.state.current_epoch = 0
+            self.state.queried_images = []
+            self.state.annotations_data = []
+            self.state.thread_status = "stopped"
+            self.state.heartbeat_ts = time.time()
+            if clear_history:
+                self.state.current_cycle = 0
+                self.state.metrics_history = []
+                self.state.epoch_metrics = []
+                self.state.class_names = []
+                self.state.unlabeled_pool_size = 0
+        self.state.stop_event.clear()
+        self.state.annotations_ready.clear()
 
-            # Track pool size for decision-making in auto-dispatch
-            self.unlabeled_pool_size = metrics.get("unlabeled_pool_size", 0)
-            logger.info(f"Cycle {cycle_num} complete, unlabeled pool: {self.unlabeled_pool_size}")
-        
-        elif msg_type == ERROR:
-            # Error occurred, transition to ERROR state
-            error_type = payload.get("error_type")
-            error_msg = payload.get("error_msg")
-            traceback = payload.get("traceback")
-            
-            self.last_error = {
-                "type": error_type,
-                "message": error_msg,
-                "traceback": traceback
-            }
-            
-            self._set_state(AppState.ERROR)
-            logger.error(f"Worker error: {error_type} - {error_msg}")
-        
-        else:
-            logger.warning(f"Unknown message type: {msg_type}")
-    
-    # ========================================================================
-    # SUBTASK 7.9: Implement save_state / load_state
-    # ========================================================================
-    
     def save_state(self) -> None:
-        """
-        Save current application state to state.json.
-        
-        This persists:
-        - Current state and cycle
-        - Metrics history
-        - Queried images
-        - Epoch metrics
-        - Experiment configuration
-        """
+        """Persist UI-visible state as JSON."""
+        snap = self.get_snapshot()
         state_data = {
-            "current_state": self.current_state.value,
-            "current_cycle": self.current_cycle,
-            "current_epoch": self.current_epoch,
-            "total_cycles": self.total_cycles,
-            "metrics_history": self.metrics_history,
-            "queried_images": self.queried_images,
-            "epoch_metrics": self.epoch_metrics,
-            "experiment_config": self.experiment_config,
-            "last_error": self.last_error,
+            "app_state": snap["app_state"].value,
+            "current_cycle": snap["current_cycle"],
+            "total_cycles": snap["total_cycles"],
+            "current_epoch": snap["current_epoch"],
+            "epoch_metrics": snap["epoch_metrics"],
+            "metrics_history": snap["metrics_history"],
+            "queried_images": snap["queried_images"],
+            "class_names": snap["class_names"],
+            "unlabeled_pool_size": snap["unlabeled_pool_size"],
+            "last_error": snap["last_error"],
+            "progress_detail": snap["progress_detail"],
+            "run_id": snap["run_id"],
+            "thread_status": snap["thread_status"],
+            "heartbeat_ts": snap["heartbeat_ts"],
         }
-        
-        with open(self.state_file, "w") as f:
+        with open(self.state_file, "w", encoding="utf-8") as f:
             json.dump(state_data, f, indent=2)
-        
-        logger.info(f"State saved to {self.state_file}")
-    
+
     def load_state(self) -> bool:
-        """
-        Load application state from state.json.
-        
-        Returns:
-            True if state was loaded successfully, False otherwise
-        """
+        """Load previously persisted UI-visible state."""
         if not self.state_file.exists():
-            logger.info(f"No state file found at {self.state_file}")
             return False
-        
         try:
-            with open(self.state_file, "r") as f:
+            with open(self.state_file, "r", encoding="utf-8") as f:
                 state_data = json.load(f)
-            
-            # Restore state
-            self.current_state = AppState(state_data["current_state"])
-            self.current_cycle = state_data["current_cycle"]
-            self.current_epoch = state_data["current_epoch"]
-            self.total_cycles = state_data["total_cycles"]
-            self.metrics_history = state_data["metrics_history"]
-            self.queried_images = state_data["queried_images"]
-            self.epoch_metrics = state_data.get("epoch_metrics", [])
-            self.experiment_config = state_data["experiment_config"]
-            self.last_error = state_data.get("last_error")
-            
-            logger.info(f"State loaded from {self.state_file}")
+
+            app_state_raw = state_data.get("app_state", AppState.IDLE.value)
+            app_state = AppState(app_state_raw)
+
+            with self.state._lock:  # pylint: disable=protected-access
+                self.state.app_state = app_state
+                self.state.current_cycle = int(state_data.get("current_cycle", 0))
+                self.state.total_cycles = int(state_data.get("total_cycles", 0))
+                self.state.current_epoch = int(state_data.get("current_epoch", 0))
+                self.state.epoch_metrics = state_data.get("epoch_metrics", [])
+                self.state.metrics_history = state_data.get("metrics_history", [])
+                self.state.queried_images = state_data.get("queried_images", [])
+                self.state.class_names = state_data.get("class_names", [])
+                self.state.unlabeled_pool_size = int(state_data.get("unlabeled_pool_size", 0))
+                self.state.last_error = state_data.get("last_error")
+                self.state.progress_detail = state_data.get("progress_detail", "Idle")
+                self.state.run_id = state_data.get("run_id", "")
+                self.state.thread_status = state_data.get("thread_status", "stopped")
+                self.state.heartbeat_ts = float(state_data.get("heartbeat_ts", time.time()))
+                self.state.thread = None
             return True
-        
-        except Exception as e:
-            logger.error(f"Failed to load state: {e}")
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("Failed to load controller state")
             return False
-    
-    def reset_state(self) -> None:
-        """
-        Reset controller to initial state.
-        
-        This clears all state and returns to IDLE.
-        """
-        self.current_state = AppState.IDLE
-        self.current_cycle = 0
-        self.current_epoch = 0
-        self.total_cycles = 0
-        self.metrics_history = []
-        self.queried_images = []
-        self.epoch_metrics = []
-        self.experiment_config = {}
-        self.last_error = None
-        
-        # Clear stop event
-        self.clear_stop()
-        
-        logger.info("Controller state reset")
-    
-    # ========================================================================
-    # UTILITY METHODS
-    # ========================================================================
-    
+
     def get_progress(self) -> Dict[str, Any]:
-        """
-        Get current progress information.
-        
-        Returns:
-            Dictionary with progress information
-        """
+        """Compatibility helper used by some views."""
+        snap = self.get_snapshot()
         return {
-            "state": self.current_state.value,
-            "current_cycle": self.current_cycle,
-            "total_cycles": self.total_cycles,
-            "current_epoch": self.current_epoch,
-            "cycles_completed": len(self.metrics_history),
+            "state": snap["app_state"].value,
+            "current_cycle": snap["current_cycle"],
+            "total_cycles": snap["total_cycles"],
+            "current_epoch": snap["current_epoch"],
+            "cycles_completed": len(snap["metrics_history"]),
         }
-    
+
     def get_last_error(self) -> Optional[Dict[str, Any]]:
-        """
-        Get last error information.
-        
-        Returns:
-            Error dictionary if error occurred, None otherwise
-        """
-        return self.last_error
-    
+        return self.get_snapshot()["last_error"]
+
     def is_busy(self) -> bool:
-        """
-        Check if controller is in a busy state.
-        
-        Returns:
-            True if in TRAINING or QUERYING state
-        """
-        return self.current_state in [
+        state = self.get_snapshot()["app_state"]
+        return state in {
+            AppState.INITIALIZING,
             AppState.TRAINING,
             AppState.QUERYING,
-        ]
+            AppState.ANNOTATING,
+            AppState.STOPPING,
+        }
