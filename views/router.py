@@ -13,7 +13,7 @@ from controller import Controller
 from experiment_state import AppState
 
 
-STALE_HEARTBEAT_SECONDS = 15.0
+STALE_HEARTBEAT_SECONDS = 60.0
 
 
 def render() -> None:
@@ -26,7 +26,7 @@ def render() -> None:
     snap = controller.get_snapshot()
     current_state = snap["app_state"]
 
-    if current_state in {AppState.INITIALIZING, AppState.TRAINING, AppState.QUERYING}:
+    if current_state in {AppState.INITIALIZING, AppState.QUERYING} and snap["thread_alive"]:
         age = time.time() - float(snap["heartbeat_ts"])
         if age > STALE_HEARTBEAT_SECONDS:
             st.warning(

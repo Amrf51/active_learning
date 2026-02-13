@@ -154,7 +154,9 @@ class ThreadOrchestrationTests(unittest.TestCase):
         state = ExperimentState()
         state.reset(config)
 
-        with patch("al_thread.build_al_loop", side_effect=RuntimeError("boom")):
+        with patch("al_thread.build_al_loop", side_effect=RuntimeError("boom")), patch(
+            "al_thread.logger.exception"
+        ):
             run_experiment(state, config)
 
         snap = state.snapshot()
