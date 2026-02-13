@@ -249,7 +249,11 @@ def render_al_settings() -> Dict[str, Any]:
 # SUBTASK 11.5 & 11.6: Start/Stop buttons
 # ============================================================================
 
-def render_experiment_controls(controller: Controller, snap: Dict[str, Any]) -> None:
+def render_experiment_controls(
+    controller: Controller,
+    snap: Dict[str, Any],
+    config_overrides: Dict[str, Any],
+) -> None:
     """
     Render experiment control buttons (Start/Stop).
     
@@ -286,8 +290,7 @@ def render_experiment_controls(controller: Controller, snap: Dict[str, Any]) -> 
         help="Start the first active learning cycle" if not start_disabled else "Cannot start from current state"
     ):
         try:
-            # Apply config overrides before starting
-            config_overrides = st.session_state.get('config_overrides', {})
+            # Use overrides computed from current sidebar widget values.
             from config import load_config
 
             new_config = load_config(overrides=config_overrides)
@@ -363,10 +366,6 @@ def render_sidebar(controller: Controller) -> Dict[str, Any]:
     training_params = render_training_hyperparameters()
     al_params = render_al_settings()
     
-    # Render controls
-    snap = controller.get_snapshot()
-    render_experiment_controls(controller, snap)
-    
     # Build config overrides dictionary
     config_overrides = {
         "model.name": model_name,
@@ -383,8 +382,12 @@ def render_sidebar(controller: Controller) -> Dict[str, Any]:
         "active_learning.reset_mode": al_params["reset_mode"],
         "active_learning.auto_annotate": al_params["auto_annotate"],
     }
-    
-    # Store in session state for access by other views
+
+    # Store current widget-derived overrides before controls run.
     st.session_state['config_overrides'] = config_overrides
+
+    # Render controls using current overrides (not previous rerun values).
+    snap = controller.get_snapshot()
+    render_experiment_controls(controller, snap, config_overrides)
     
     return config_overrides
