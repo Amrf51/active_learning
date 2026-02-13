@@ -312,6 +312,7 @@ def _handle_run_cycle(
     
     # Prepare cycle
     prep_info = al_loop.prepare_cycle(cycle_num)
+    prep_info["class_names"] = al_loop.class_names if hasattr(al_loop, 'class_names') else []
     result_queue.put(build_message("cycle_prepared", prep_info))
     
     # Training loop
@@ -344,20 +345,22 @@ def _handle_run_cycle(
     
     # Training complete
     events[TRAINING_DONE].set()
-    
+
     # Run evaluation
     test_metrics = al_loop.run_evaluation()
-    
-    result_queue.put(build_train_complete_message(test_metrics))
-    
-    # Finalize cycle
+
+    # Finalize cycle (computes pool sizes)
     cycle_metrics = al_loop.finalize_cycle(test_metrics)
-    
+
+    # CRITICAL: Send CYCLE_COMPLETE first so controller has pool sizes
+    # before processing TRAIN_COMPLETE (which triggers auto-dispatch query)
     result_queue.put(build_cycle_complete_message(
         cycle_num=cycle_num,
         metrics=cycle_metrics.model_dump()
     ))
-    
+
+    result_queue.put(build_train_complete_message(test_metrics))
+
     logger.info(f"Cycle {cycle_num} complete")
 
 

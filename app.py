@@ -59,6 +59,82 @@ def init_multiprocessing():
 
 
 # ============================================================================
+# WORKER PROCESS MANAGEMENT
+# ============================================================================
+
+def spawn_worker(config):
+    """
+    Spawn (or respawn) the worker process with given config.
+
+    Terminates any existing worker, resets events, and starts a new worker.
+    Blocks until the worker signals initialization complete.
+
+    Args:
+        config: Config object to pass to the worker
+    """
+    from protocol import WORKER_ERROR
+
+    mp_context = st.session_state.mp_context
+    task_queue = st.session_state.task_queue
+    result_queue = st.session_state.result_queue
+    events = st.session_state.events
+
+    # Terminate existing worker if any
+    old_worker = st.session_state.get('worker')
+    if old_worker is not None and old_worker.is_alive():
+        logger.info(f"Terminating old worker (PID: {old_worker.pid})")
+        old_worker.terminate()
+        old_worker.join(timeout=5)
+        if old_worker.is_alive():
+            old_worker.kill()
+            old_worker.join(timeout=2)
+
+    # Drain queues to avoid stale messages
+    for q in [task_queue, result_queue]:
+        while not q.empty():
+            try:
+                q.get_nowait()
+            except Exception:
+                break
+
+    # Reset events for fresh start
+    for event in events.values():
+        event.clear()
+
+    # Import worker_main here to avoid multiprocessing spawn issues
+    from worker import worker_main
+
+    worker = mp_context.Process(
+        target=worker_main,
+        args=(task_queue, result_queue, events, config.to_dict()),
+        name="ALWorker"
+    )
+    worker.start()
+    st.session_state.worker = worker
+    logger.info(f"Worker process started (PID: {worker.pid})")
+
+    # Wait for worker to initialize AL components (blocking with timeout)
+    if not events['worker_initialized'].wait(timeout=60):
+        logger.error("Worker failed to initialize within 60 seconds")
+        st.error("Worker initialization timeout. Check logs for details.")
+        raise RuntimeError("Worker initialization timeout")
+
+    # Check if worker reported an error during initialization
+    if events[WORKER_ERROR].is_set():
+        logger.error("Worker reported an error during initialization")
+        error_msg = "Unknown error"
+        try:
+            err = result_queue.get(timeout=1)
+            error_msg = err.get("payload", {}).get("error_msg", error_msg)
+        except Exception:
+            pass
+        st.error(f"Worker initialization failed: {error_msg}")
+        raise RuntimeError(f"Worker initialization failed: {error_msg}")
+
+    logger.info("Worker initialized and ready")
+
+
+# ============================================================================
 # SESSION STATE INITIALIZATION
 # ============================================================================
 
@@ -79,11 +155,9 @@ def init_session_state():
     
     logger.info("Initializing session state...")
     
-    # Subtask 6.1: Initialize multiprocessing context
     mp_context = init_multiprocessing()
     st.session_state.mp_context = mp_context
     
-    # Subtask 6.2: Create mp.Event dict for all events using protocol helper
     events = create_event_dict(mp_context)
     st.session_state.events = events
     logger.info(f"Created {len(events)} multiprocessing events")
@@ -108,36 +182,15 @@ def init_session_state():
     st.session_state.controller = controller
     logger.info("Controller initialized")
 
-    # Import worker_main here to avoid multiprocessing spawn issues
-    from worker import worker_main
+    # Spawn initial worker
+    spawn_worker(config)
 
-    # Start worker process with config passed at spawn time
-    # Note: Not using daemon=True to allow worker to spawn DataLoader subprocesses
-    worker = mp_context.Process(
-        target=worker_main,
-        args=(task_queue, result_queue, events, config_dict),
-        name="ALWorker"
-    )
-    worker.start()
-    st.session_state.worker = worker
-    logger.info(f"Worker process started (PID: {worker.pid})")
+    # Store spawn_worker in session state so sidebar can call it for respawn
+    st.session_state.spawn_worker = spawn_worker
 
-    # Wait for worker to initialize AL components (blocking with timeout)
-    if not events['worker_initialized'].wait(timeout=60):
-        logger.error("Worker failed to initialize within 60 seconds")
-        st.error("❌ Worker initialization timeout. Check logs for details.")
-        raise RuntimeError("Worker initialization timeout")
-
-    logger.info("Worker initialized and ready")
-    
-    # Subtask 6.6: Store queues and events in st.session_state (already done above)
-    # Note: Application state (app_state, current_cycle, current_epoch, metrics_history,
-    # queried_images, experiment_config) is owned by the Controller - access via
-    # st.session_state.controller to avoid duplication.
-    
     # Only keep state that's truly View-specific (not owned by Controller)
     st.session_state.experiment_history = []  # For strategy comparison (View-specific)
-    
+
     # Mark as initialized
     st.session_state.initialized = True
     logger.info("Session state initialization complete")

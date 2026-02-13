@@ -104,53 +104,67 @@ def render_image_card(image_data: Dict[str, Any], img_idx: int) -> None:
         st.caption(f"**Confidence:** {predicted_confidence * 100:.1f}%")
         st.caption(f"**Uncertainty:** {uncertainty_score:.3f}")
         
-        # Ground truth (for reference)
-        with st.expander("📋 Ground Truth"):
-            st.write(f"**True Label:** {ground_truth_name}")
-        
+        # Determine if we're in auto-annotate mode
+        is_auto = (
+            'config' in st.session_state
+            and st.session_state.config.active_learning.auto_annotate
+        )
+
+        # Ground truth (only visible in auto-annotate / simulation mode)
+        if is_auto:
+            with st.expander("Ground Truth"):
+                st.write(f"**True Label:** {ground_truth_name}")
+
         # Store annotation selection in session state
-        # This will be used when submitting annotations
         annotation_key = f"annotation_{img_idx}"
-        
-        # Get available classes from config or use ground truth as default
+
+        # Get available classes
         available_classes = get_available_classes()
-        
+
         # Annotation dropdown
+        default_idx = (
+            available_classes.index(ground_truth_name)
+            if ground_truth_name in available_classes else 0
+        )
         selected_label = st.selectbox(
             "Select Label",
             options=available_classes,
-            index=available_classes.index(ground_truth_name) if ground_truth_name in available_classes else 0,
+            index=default_idx if is_auto else 0,
             key=annotation_key,
             label_visibility="collapsed"
         )
-        
-        # Checkbox to use ground truth
-        use_gt_key = f"use_gt_{img_idx}"
-        use_ground_truth = st.checkbox(
-            "✓ Use GT",
-            value=True,
-            key=use_gt_key,
-            help="Use ground truth label for this image"
-        )
-        
+
+        # "Use GT" checkbox only in auto-annotate mode
+        use_ground_truth = False
+        if is_auto:
+            use_gt_key = f"use_gt_{img_idx}"
+            use_ground_truth = st.checkbox(
+                "Use GT",
+                value=True,
+                key=use_gt_key,
+                help="Use ground truth label for this image"
+            )
+
         # Store the annotation in session state
         if 'annotations' not in st.session_state:
             st.session_state.annotations = {}
-        
-        # If use_ground_truth is checked, use ground truth, otherwise use selected label
+
+        ground_truth_val = image_data.get('ground_truth', 0)
+
         if use_ground_truth:
             st.session_state.annotations[image_id] = {
                 'image_id': image_id,
-                'user_label': image_data.get('ground_truth', 0),
-                'label_name': ground_truth_name
+                'user_label': ground_truth_val,
+                'ground_truth': ground_truth_val,
+                'label_name': ground_truth_name,
             }
         else:
-            # Find the index of the selected label
-            label_idx = available_classes.index(selected_label)
+            label_idx = available_classes.index(selected_label) if selected_label in available_classes else 0
             st.session_state.annotations[image_id] = {
                 'image_id': image_id,
                 'user_label': label_idx,
-                'label_name': selected_label
+                'ground_truth': ground_truth_val,
+                'label_name': selected_label,
             }
 
 
@@ -195,20 +209,27 @@ def get_uncertainty_label(uncertainty_score: float) -> str:
 
 def get_available_classes() -> List[str]:
     """
-    Get list of available class names from config or dataset.
-    
+    Get list of available class names from controller or queried images.
+
     Returns:
         List of class names
     """
-    # Try to get from session state config
-    if 'config' in st.session_state:
-        config = st.session_state.config
-        # For Stanford Cars dataset, we would need to load class names
-        # For now, return a placeholder list
-        # TODO: Load actual class names from dataset
-        return [f"Class_{i}" for i in range(196)]  # Stanford Cars has 196 classes
-    
-    # Fallback to generic class names
+    # Try to get from controller (populated by worker's cycle_prepared message)
+    controller = st.session_state.get('controller')
+    if controller and getattr(controller, 'class_names', None):
+        return controller.class_names
+
+    # Fallback: extract unique names from queried images
+    if controller and controller.queried_images:
+        names = sorted(set(
+            img.get('ground_truth_name', '')
+            for img in controller.queried_images
+            if img.get('ground_truth_name')
+        ))
+        if names:
+            return names
+
+    # Last resort fallback
     return [f"Class_{i}" for i in range(10)]
 
 
@@ -244,11 +265,12 @@ def render_auto_label_button(queried_images: List[Dict[str, Any]]) -> bool:
             image_id = img_data.get('image_id')
             ground_truth = img_data.get('ground_truth', 0)
             ground_truth_name = img_data.get('ground_truth_name', 'Unknown')
-            
+
             st.session_state.annotations[image_id] = {
                 'image_id': image_id,
                 'user_label': ground_truth,
-                'label_name': ground_truth_name
+                'ground_truth': ground_truth,
+                'label_name': ground_truth_name,
             }
         
         st.success(f"✅ Auto-labeled {len(queried_images)} images with ground truth")

@@ -289,13 +289,16 @@ class ALDataManager:
             }
         
         image_ids = [a["image_id"] for a in annotations]
-        
+
+        # Build reverse index for O(1) lookups instead of O(n) list.index()
+        unlabeled_index = {idx: pos for pos, idx in enumerate(self._unlabeled_list)}
+
         query_indices = []
         for img_id in image_ids:
-            try:
-                rel_idx = self._unlabeled_list.index(img_id)
-                query_indices.append(rel_idx)
-            except ValueError:
+            pos = unlabeled_index.get(img_id)
+            if pos is not None:
+                query_indices.append(pos)
+            else:
                 logger.warning(f"Image {img_id} not in unlabeled pool, skipping")
         
         moved = self.update_labeled_pool(query_indices)

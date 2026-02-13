@@ -125,6 +125,9 @@ class Controller:
         # Pool size tracking for auto-dispatch decisions
         self.unlabeled_pool_size = 0
 
+        # Class names from dataset (populated by worker on cycle_prepared)
+        self.class_names: List[str] = []
+
         logger.info("Controller initialized")
     
     def get_state(self) -> AppState:
@@ -330,13 +333,19 @@ class Controller:
         msg_type = message.get("type")
         payload = message.get("payload", {})
         
-        if msg_type == PROGRESS_UPDATE:
+        if msg_type == "cycle_prepared":
+            # Store class names if provided by worker
+            if "class_names" in payload:
+                self.class_names = payload["class_names"]
+                logger.info(f"Received {len(self.class_names)} class names from worker")
+
+        elif msg_type == PROGRESS_UPDATE:
             # Progress updates don't change state
             stage = payload.get("stage")
             current = payload.get("current")
             total = payload.get("total")
             logger.debug(f"Progress: {stage} {current}/{total}")
-            
+
             # Update current epoch if in training
             if stage == "training" and "details" in payload:
                 details = payload["details"]
@@ -368,16 +377,18 @@ class Controller:
             self._set_state(AppState.ANNOTATING)
             logger.info(f"Query complete: {len(queried_images)} images selected")
 
-            # Auto-annotate with ground truth (simulated annotation)
-            if queried_images:
+            # Only auto-annotate if config says so; otherwise wait for gallery UI
+            if self.config.active_learning.auto_annotate and queried_images:
                 annotations = [
                     {"image_id": img["image_id"], "user_label": img["ground_truth"]}
                     for img in queried_images
                 ]
                 logger.info(f"Auto-annotating {len(annotations)} images with ground truth")
                 self.dispatch_annotate(annotations)
-            else:
+            elif not queried_images:
                 logger.warning("No images queried, skipping annotation")
+            else:
+                logger.info("Manual annotation mode: waiting for user annotations via gallery")
         
         elif msg_type == ANNOTATE_COMPLETE:
             # Annotation complete, automatically dispatch next cycle

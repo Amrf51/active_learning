@@ -208,8 +208,16 @@ def render_al_settings() -> Dict[str, Any]:
         help="Number of samples to query per cycle"
     )
     
+    # Auto-annotate toggle
+    auto_annotate = st.sidebar.checkbox(
+        "Auto-Annotate (Ground Truth)",
+        value=True,
+        help="If checked, images are auto-labeled with ground truth (simulation). "
+             "Uncheck for manual human-in-the-loop annotation."
+    )
+
     # Advanced AL settings
-    with st.sidebar.expander("🔧 Advanced AL Settings"):
+    with st.sidebar.expander("Advanced AL Settings"):
         initial_pool_size = st.number_input(
             "Initial Pool Size",
             min_value=10,
@@ -217,7 +225,7 @@ def render_al_settings() -> Dict[str, Any]:
             value=100,
             help="Number of labeled samples to start with"
         )
-        
+
         reset_mode = st.selectbox(
             "Model Reset Mode",
             ["pretrained", "head_only", "none"],
@@ -226,12 +234,13 @@ def render_al_settings() -> Dict[str, Any]:
                  "- head_only: Reset only classification head\n"
                  "- none: Continue training from previous cycle"
         )
-    
+
     return {
         "num_cycles": num_cycles,
         "batch_size_al": query_size,
         "initial_pool_size": initial_pool_size,
-        "reset_mode": reset_mode
+        "reset_mode": reset_mode,
+        "auto_annotate": auto_annotate,
     }
 
 
@@ -268,18 +277,44 @@ def render_experiment_controls(controller: Controller) -> None:
     start_disabled = current_state != AppState.IDLE
     
     if st.sidebar.button(
-        "▶️ Start Experiment",
+        "Start Experiment",
         disabled=start_disabled,
         help="Start the first active learning cycle" if not start_disabled else "Cannot start from current state"
     ):
         try:
+            # Apply config overrides before starting
+            config_overrides = st.session_state.get('config_overrides', {})
+            if config_overrides:
+                from config import load_config
+                new_config = load_config(overrides=config_overrides)
+                st.session_state.config = new_config
+                controller.config = new_config
+                controller.experiment_config = new_config.to_dict()
+                controller.total_cycles = new_config.active_learning.num_cycles
+                logger.info("Applied config overrides from sidebar")
+
+                # Respawn worker with new config
+                spawn_fn = st.session_state.get('spawn_worker')
+                if spawn_fn:
+                    spawn_fn(new_config)
+                    logger.info("Worker respawned with new config")
+
+            # Reset controller state for fresh experiment
+            controller.current_cycle = 0
+            controller.current_epoch = 0
+            controller.metrics_history = []
+            controller.epoch_metrics = []
+            controller.queried_images = []
+            controller.last_error = None
+            controller.unlabeled_pool_size = 0
+
             # Dispatch first cycle
             controller.dispatch_run_cycle(cycle_num=1)
-            st.sidebar.success("✅ Experiment started!")
+            st.sidebar.success("Experiment started!")
             logger.info("User started experiment (Cycle 1)")
             st.rerun()
         except Exception as e:
-            st.sidebar.error(f"❌ Failed to start: {e}")
+            st.sidebar.error(f"Failed to start: {e}")
             logger.error(f"Failed to start experiment: {e}")
     
     # Stop button (enabled when busy)
@@ -350,6 +385,7 @@ def render_sidebar(controller: Controller) -> Dict[str, Any]:
         "active_learning.batch_size_al": al_params["batch_size_al"],
         "active_learning.initial_pool_size": al_params["initial_pool_size"],
         "active_learning.reset_mode": al_params["reset_mode"],
+        "active_learning.auto_annotate": al_params["auto_annotate"],
     }
     
     # Store in session state for access by other views

@@ -26,17 +26,17 @@ logger = logging.getLogger(__name__)
 def render_epoch_progress(controller: Controller, config_overrides: Dict[str, Any]) -> None:
     """
     Render progress bar for current epoch within cycle.
-    
+
     Args:
         controller: Controller instance
-        config_overrides: Configuration overrides from sidebar
+        config_overrides: Configuration overrides from sidebar (unused, kept for compat)
     """
     # Get progress info from controller
     progress = controller.get_progress()
     current_epoch = progress.get('current_epoch', 0)
-    
-    # Get total epochs from config
-    total_epochs = config_overrides.get('training.epochs', 5)
+
+    # Get total epochs from controller's actual config
+    total_epochs = controller.config.training.epochs
     
     # Calculate progress percentage
     if total_epochs > 0:
@@ -117,18 +117,19 @@ def render_training_charts(controller: Controller) -> None:
     with col1:
         st.markdown("#### Training Loss")
         
-        # Prepare loss data
+        # Prepare loss data (filter out entries with None val_loss to avoid chart issues)
+        train_epochs = [m for m in epoch_metrics if 'train_loss' in m]
         loss_data = {
-            'Epoch': [m['epoch'] for m in epoch_metrics if 'train_loss' in m],
-            'Train Loss': [m['train_loss'] for m in epoch_metrics if 'train_loss' in m],
+            'Epoch': [m['epoch'] for m in train_epochs],
+            'Train Loss': [m['train_loss'] for m in train_epochs],
         }
-        
-        # Add validation loss if available
-        if any('val_loss' in m and m['val_loss'] is not None for m in epoch_metrics):
-            loss_data['Val Loss'] = [
-                m.get('val_loss', None) for m in epoch_metrics if 'train_loss' in m
-            ]
-        
+
+        # Add validation loss only for epochs that have it
+        val_losses = [m.get('val_loss') for m in train_epochs]
+        if any(v is not None for v in val_losses):
+            # Replace None with previous value or 0 to keep alignment
+            loss_data['Val Loss'] = [v if v is not None else float('nan') for v in val_losses]
+
         if loss_data['Epoch']:
             st.line_chart(
                 loss_data,
@@ -143,16 +144,17 @@ def render_training_charts(controller: Controller) -> None:
         st.markdown("#### Training Accuracy")
         
         # Prepare accuracy data
+        train_epochs_acc = [m for m in epoch_metrics if 'train_accuracy' in m]
         acc_data = {
-            'Epoch': [m['epoch'] for m in epoch_metrics if 'train_accuracy' in m],
-            'Train Acc': [m['train_accuracy'] * 100 for m in epoch_metrics if 'train_accuracy' in m],
+            'Epoch': [m['epoch'] for m in train_epochs_acc],
+            'Train Acc': [m['train_accuracy'] * 100 for m in train_epochs_acc],
         }
-        
-        # Add validation accuracy if available
-        if any('val_accuracy' in m and m['val_accuracy'] is not None for m in epoch_metrics):
+
+        # Add validation accuracy only for epochs that have it
+        val_accs = [m.get('val_accuracy') for m in train_epochs_acc]
+        if any(v is not None for v in val_accs):
             acc_data['Val Acc'] = [
-                m.get('val_accuracy', None) * 100 if m.get('val_accuracy') is not None else None
-                for m in epoch_metrics if 'train_accuracy' in m
+                v * 100 if v is not None else float('nan') for v in val_accs
             ]
         
         if acc_data['Epoch']:
