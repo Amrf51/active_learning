@@ -103,6 +103,104 @@ def render_best_cycle_summary(metrics_history: List[Dict[str, Any]]) -> None:
         st.write(f"Best Epoch: {best.get('best_epoch', 0)}")
 
 
+def _prediction_for_cycle(predictions_by_cycle: Dict[str, Any], cycle: int) -> Dict[str, Any] | None:
+    if cycle in predictions_by_cycle:
+        value = predictions_by_cycle.get(cycle)
+        return dict(value) if isinstance(value, dict) else None
+    value = predictions_by_cycle.get(str(cycle))
+    return dict(value) if isinstance(value, dict) else None
+
+
+def render_probe_predictions(metrics_history: List[Dict[str, Any]], snap: Dict[str, Any]) -> None:
+    st.markdown("### Probe Predictions")
+    probe_images = list(snap.get("probe_images", []))
+    if not probe_images:
+        st.info("Probe predictions will appear after cycle evaluation completes.")
+        return
+
+    cycle_options = [int(m.get("cycle", i + 1)) for i, m in enumerate(metrics_history)]
+    selected_cycle = st.selectbox(
+        "Probe Cycle",
+        options=cycle_options,
+        index=len(cycle_options) - 1,
+        key="results_probe_cycle",
+    )
+
+    table_rows: List[Dict[str, Any]] = []
+    rendered_probes: List[Dict[str, Any]] = []
+    correct_count = 0
+    for probe in probe_images:
+        predictions = probe.get("predictions_by_cycle", {})
+        if not isinstance(predictions, dict):
+            continue
+        cycle_prediction = _prediction_for_cycle(predictions, selected_cycle)
+        if cycle_prediction is None:
+            continue
+
+        true_class = str(probe.get("true_class", probe.get("true_class_idx", "N/A")))
+        predicted_class = str(cycle_prediction.get("predicted_class", "N/A"))
+        confidence = float(cycle_prediction.get("confidence", 0.0))
+        is_correct = predicted_class == true_class
+        if is_correct:
+            correct_count += 1
+
+        table_rows.append(
+            {
+                "Probe ID": probe.get("image_id", "N/A"),
+                "True Class": true_class,
+                "Predicted Class": predicted_class,
+                "Confidence": f"{confidence * 100:.1f}%",
+                "Correct": "Yes" if is_correct else "No",
+            }
+        )
+        rendered_probes.append(
+            {
+                "probe": probe,
+                "prediction": cycle_prediction,
+                "correct": is_correct,
+            }
+        )
+
+    if not table_rows:
+        st.info("No probe predictions recorded for this cycle yet.")
+        return
+
+    total = len(table_rows)
+    accuracy = (correct_count / total * 100.0) if total else 0.0
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Probes", total)
+    with col2:
+        st.metric("Correct", correct_count)
+    with col3:
+        st.metric("Probe Accuracy", f"{accuracy:.1f}%")
+
+    st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
+
+    with st.expander("Probe Image Cards"):
+        num_cols = 4
+        for i, entry in enumerate(rendered_probes):
+            if i % num_cols == 0:
+                cols = st.columns(num_cols)
+            with cols[i % num_cols]:
+                probe = entry["probe"]
+                prediction = entry["prediction"]
+                is_correct = bool(entry["correct"])
+
+                image_path = str(probe.get("display_path") or probe.get("image_path") or "")
+                if image_path and Path(image_path).exists():
+                    st.image(image_path, use_container_width=True)
+
+                true_class = str(probe.get("true_class", probe.get("true_class_idx", "N/A")))
+                predicted_class = str(prediction.get("predicted_class", "N/A"))
+                confidence = float(prediction.get("confidence", 0.0))
+                verdict = "Correct" if is_correct else "Wrong"
+                st.caption(f"ID: {probe.get('image_id', 'N/A')}")
+                st.caption(f"True: {true_class}")
+                st.caption(f"Pred: {predicted_class} ({confidence * 100:.1f}%)")
+                st.caption(verdict)
+
+
 def _resolve_confusion_matrix_path(metric: Dict[str, Any], run_dir: str) -> Path | None:
     raw_path = metric.get("confusion_matrix_path")
     if raw_path:
@@ -200,6 +298,8 @@ def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:
     render_metrics_table(metrics_history)
     st.markdown("---")
     render_best_cycle_summary(metrics_history)
+    st.markdown("---")
+    render_probe_predictions(metrics_history, snap)
     st.markdown("---")
     render_confusion_matrix(metrics_history, snap)
     st.markdown("---")

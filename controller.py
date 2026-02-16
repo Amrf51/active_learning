@@ -77,11 +77,13 @@ class Controller:
             case EventType.EVAL_COMPLETE:
                 snap = self.state.snapshot()
                 cycle_metrics = dict(event.data.get("cycle_metrics", {}))
+                probe_images = list(event.data.get("probe_images", snap.get("probe_images", [])))
                 history = list(snap["metrics_history"])
                 history.append(cycle_metrics)
                 self.state.update_for_run(
                     event.run_id,
                     metrics_history=history,
+                    probe_images=probe_images,
                     queried_images=[],
                     unlabeled_pool_size=int(
                         cycle_metrics.get("unlabeled_pool_size", snap["unlabeled_pool_size"])
@@ -292,6 +294,7 @@ class Controller:
             self.state.app_state = AppState.IDLE
             self.state.current_epoch = 0
             self.state.queried_images = []
+            self.state.probe_images = []
             self.state.annotations_data = []
             self.state.thread_status = "stopped"
             self.state.heartbeat_ts = time.time()
@@ -315,6 +318,7 @@ class Controller:
             "epoch_metrics": snap["epoch_metrics"],
             "metrics_history": snap["metrics_history"],
             "queried_images": snap["queried_images"],
+            "probe_images": snap["probe_images"],
             "class_names": snap["class_names"],
             "unlabeled_pool_size": snap["unlabeled_pool_size"],
             "last_error": snap["last_error"],
@@ -345,6 +349,7 @@ class Controller:
                 self.state.epoch_metrics = state_data.get("epoch_metrics", [])
                 self.state.metrics_history = state_data.get("metrics_history", [])
                 self.state.queried_images = state_data.get("queried_images", [])
+                self.state.probe_images = state_data.get("probe_images", [])
                 self.state.class_names = state_data.get("class_names", [])
                 self.state.unlabeled_pool_size = int(state_data.get("unlabeled_pool_size", 0))
                 self.state.last_error = state_data.get("last_error")

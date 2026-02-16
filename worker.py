@@ -136,6 +136,21 @@ def _as_dict(value: Any) -> Dict[str, Any]:
     return {}
 
 
+def _serialize_probe_images(al_loop: ActiveLearningLoop) -> List[Dict[str, Any]]:
+    """Serialize probe images to plain dictionaries for event transport."""
+    probe_images = list(getattr(al_loop, "probe_images", []))
+    serialized: List[Dict[str, Any]] = []
+    for probe in probe_images:
+        if hasattr(probe, "to_dict"):
+            data = probe.to_dict()
+            if isinstance(data, dict):
+                serialized.append(dict(data))
+                continue
+        if isinstance(probe, dict):
+            serialized.append(dict(probe))
+    return serialized
+
+
 def _flush_artifacts(al_loop: Optional[ActiveLearningLoop], run_dir: Path) -> None:
     """Best-effort save of all run artifacts."""
     if al_loop is None:
@@ -239,12 +254,16 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
 
             test_metrics = al_loop.run_evaluation()
             cycle_metrics = al_loop.finalize_cycle(test_metrics).model_dump()
+            probe_images = _serialize_probe_images(al_loop)
             _emit_event(
                 state,
                 EventType.EVAL_COMPLETE,
                 run_id=local_run_id,
                 cycle=cycle,
-                data={"cycle_metrics": cycle_metrics},
+                data={
+                    "cycle_metrics": cycle_metrics,
+                    "probe_images": probe_images,
+                },
             )
 
             if cycle >= total_cycles:

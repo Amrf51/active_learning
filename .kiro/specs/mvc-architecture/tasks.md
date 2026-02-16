@@ -22,7 +22,7 @@ Transform the existing monolithic backend into an MVC + multiprocessing architec
   - Backend: pass `save_cm_path` from AL loop to `Trainer.evaluate()`.
   - UI: load and render confusion matrix heatmap in `views/results.py`.
 
-- [ ] P0. Expose probe-image prediction tracking in UI after each cycle
+- [x] P0. Expose probe-image prediction tracking in UI after each cycle
   - Requirement: `README.md` Phase 4 (model predictions on example images, updated per cycle).
   - Backend: include probe prediction payload in worker-to-controller events.
   - UI: render probe predictions by cycle in results view.

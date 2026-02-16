@@ -42,6 +42,7 @@ class ExperimentState:
         self.epoch_metrics: List[Dict[str, Any]] = []
         self.metrics_history: List[Dict[str, Any]] = []
         self.queried_images: List[Dict[str, Any]] = []
+        self.probe_images: List[Dict[str, Any]] = []
         self.class_names: List[str] = []
         self.unlabeled_pool_size: int = 0
         self.last_error: Optional[Dict[str, str]] = None
@@ -72,6 +73,7 @@ class ExperimentState:
             self.epoch_metrics = []
             self.metrics_history = []
             self.queried_images = []
+            self.probe_images = []
             self.class_names = []
             self.unlabeled_pool_size = 0
             self.last_error = None
@@ -101,6 +103,7 @@ class ExperimentState:
                 "epoch_metrics": copy.deepcopy(self.epoch_metrics),
                 "metrics_history": copy.deepcopy(self.metrics_history),
                 "queried_images": copy.deepcopy(self.queried_images),
+                "probe_images": copy.deepcopy(self.probe_images),
                 "class_names": list(self.class_names),
                 "unlabeled_pool_size": self.unlabeled_pool_size,
                 "last_error": copy.deepcopy(self.last_error),

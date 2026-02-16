@@ -162,13 +162,26 @@ class ActiveLearningLoop:
                 try:
                     # Access the underlying dataset from the validation loader
                     dataset = self.val_loader.dataset
-                    image, label = dataset[idx]
-                    
+                    _, label = dataset[idx]
+
+                    image_path = f"val_sample_{idx}"
+                    display_path = image_path
+                    if (
+                        hasattr(dataset, "indices")
+                        and hasattr(dataset, "parent")
+                        and hasattr(dataset.parent, "dataset")
+                        and hasattr(dataset.parent.dataset, "samples")
+                    ):
+                        actual_idx = dataset.indices[idx] if idx < len(dataset.indices) else idx
+                        sample_path, _ = dataset.parent.dataset.samples[actual_idx]
+                        image_path = str(sample_path)
+                        display_path = image_path
+
                     # Create probe image
                     probe_image = ProbeImage(
                         image_id=int(idx),
-                        image_path=f"val_sample_{idx}",  # Placeholder path
-                        display_path=f"val_sample_{idx}",  # Will be updated when cached
+                        image_path=image_path,
+                        display_path=display_path,
                         true_class=self.class_names[cls] if self.class_names else str(cls),
                         true_class_idx=int(cls),
                         probe_type="validation_stratified",
