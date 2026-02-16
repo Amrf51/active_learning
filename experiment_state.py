@@ -12,6 +12,8 @@ import uuid
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from events import Inbox
+
 
 class AppState(Enum):
     """High-level lifecycle states for the active learning UI."""
@@ -53,6 +55,11 @@ class ExperimentState:
         self.thread_status: str = "stopped"
         self.run_id: str = ""
         self.heartbeat_ts: float = time.time()
+        self.query_token: str = ""
+        self.run_dir: str = ""
+
+        # Event inbox for worker → controller communication
+        self.inbox = Inbox()
 
     def reset(self, config: Any) -> str:
         """Reset run-scoped state, create a new run id, and clear events."""
@@ -73,9 +80,12 @@ class ExperimentState:
             self.run_id = new_run_id
             self.thread_status = "starting"
             self.heartbeat_ts = time.time()
+            self.query_token = ""
+            self.run_dir = ""
 
         self.stop_event.clear()
         self.annotations_ready.clear()
+        self.inbox.reset()
         return new_run_id
 
     def snapshot(self) -> Dict[str, Any]:
@@ -98,6 +108,9 @@ class ExperimentState:
                 "run_id": self.run_id,
                 "heartbeat_ts": self.heartbeat_ts,
                 "thread_alive": thread_alive,
+                "event_version": self.inbox.version,
+                "query_token": self.query_token,
+                "run_dir": self.run_dir,
             }
 
     def touch_heartbeat(self, run_id: Optional[str] = None) -> bool:
