@@ -53,7 +53,6 @@ class ExperimentState:
         self.thread_status: str = "stopped"
         self.run_id: str = ""
         self.heartbeat_ts: float = time.time()
-        self.event_log: List[Dict[str, Any]] = []
 
     def reset(self, config: Any) -> str:
         """Reset run-scoped state, create a new run id, and clear events."""
@@ -74,11 +73,9 @@ class ExperimentState:
             self.run_id = new_run_id
             self.thread_status = "starting"
             self.heartbeat_ts = time.time()
-            self.event_log = []
 
         self.stop_event.clear()
         self.annotations_ready.clear()
-        self.add_event("Run state reset", run_id=new_run_id)
         return new_run_id
 
     def snapshot(self) -> Dict[str, Any]:
@@ -101,7 +98,6 @@ class ExperimentState:
                 "run_id": self.run_id,
                 "heartbeat_ts": self.heartbeat_ts,
                 "thread_alive": thread_alive,
-                "event_log": copy.deepcopy(self.event_log),
             }
 
     def touch_heartbeat(self, run_id: Optional[str] = None) -> bool:
@@ -131,7 +127,6 @@ class ExperimentState:
                 "traceback": tb,
             }
             self.heartbeat_ts = time.time()
-            self._append_event_unlocked("Run failed", {"error_type": type(exc).__name__, "error": str(exc)})
 
     def set_annotations(self, run_id: str, cycle: int, annotations: List[Dict[str, Any]]) -> bool:
         """
@@ -154,38 +149,6 @@ class ExperimentState:
         with self._lock:
             self.annotations_data = []
         self.annotations_ready.clear()
-
-    def _append_event_unlocked(self, message: str, fields: Optional[Dict[str, Any]] = None) -> None:
-        """Append one event while lock is held."""
-        event = {
-            "ts": time.time(),
-            "message": message,
-            "state": self.app_state.value,
-            "cycle": int(self.current_cycle),
-            "epoch": int(self.current_epoch),
-        }
-        if fields:
-            event.update(fields)
-        self.event_log.append(event)
-        self.event_log = self.event_log[-200:]
-
-    def add_event(
-        self,
-        message: str,
-        run_id: Optional[str] = None,
-        **fields: Any,
-    ) -> bool:
-        """
-        Add a diagnostics event.
-
-        If run_id is provided, event is only recorded for the active run.
-        """
-        with self._lock:
-            if run_id is not None and self.run_id != run_id:
-                return False
-            self._append_event_unlocked(message, fields)
-            self.heartbeat_ts = time.time()
-            return True
 
     def consume_annotations(self, run_id: str, cycle: int) -> Optional[List[Dict[str, Any]]]:
         """Consume annotations if they belong to the current run/cycle."""

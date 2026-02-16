@@ -257,7 +257,6 @@ def render_annotation_feedback() -> None:
 def render_gallery_view(controller: Controller, snap: Dict[str, Any]) -> None:
     st.title("Gallery of Uncertainty")
     st.markdown(f"Cycle {snap['current_cycle']} - Please label the selected samples")
-    st.caption(f"Run ID: {snap['run_id'][:8]} | App State: {snap['app_state'].value}")
     st.markdown("---")
 
     run_id = snap["run_id"]

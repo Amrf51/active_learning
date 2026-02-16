@@ -144,10 +144,8 @@ def run_experiment(state: ExperimentState, config: Any) -> None:
             progress_detail="Building model and dataloaders...",
         ):
             return
-        state.add_event("Backend thread started", run_id=local_run_id)
 
         al_loop = build_al_loop(config)
-        state.add_event("Active learning loop initialized", run_id=local_run_id)
         state.touch_heartbeat(local_run_id)
 
         if _should_abort(state, local_run_id):
@@ -171,7 +169,6 @@ def run_experiment(state: ExperimentState, config: Any) -> None:
                 progress_detail=f"Preparing cycle {cycle}/{total_cycles}...",
             ):
                 return
-            state.add_event("Cycle started", run_id=local_run_id, cycle=cycle, total_cycles=total_cycles)
 
             prep_info = al_loop.prepare_cycle(cycle)
             class_names = list(getattr(al_loop, "class_names", []))
@@ -182,13 +179,6 @@ def run_experiment(state: ExperimentState, config: Any) -> None:
                 progress_detail=f"Training cycle {cycle}/{total_cycles}...",
             ):
                 return
-            state.add_event(
-                "Cycle prepared",
-                run_id=local_run_id,
-                cycle=cycle,
-                labeled=int(prep_info.get("labeled_count", 0)),
-                unlabeled=int(prep_info.get("unlabeled_count", 0)),
-            )
 
             epochs = int(config.training.epochs)
             for epoch in range(1, epochs + 1):
@@ -202,28 +192,18 @@ def run_experiment(state: ExperimentState, config: Any) -> None:
                     current_epoch=epoch,
                     progress_detail=f"Cycle {cycle}/{total_cycles} - Epoch {epoch}/{epochs}",
                 )
-                state.add_event("Epoch started", run_id=local_run_id, cycle=cycle, epoch=epoch)
                 state.touch_heartbeat(local_run_id)
 
                 metrics = al_loop.train_single_epoch(epoch)
                 metrics_dict = metrics.to_dict() if hasattr(metrics, "to_dict") else dict(metrics)
                 if not _append_epoch_metric(state, local_run_id, metrics_dict):
                     return
-                state.add_event(
-                    "Epoch finished",
-                    run_id=local_run_id,
-                    cycle=cycle,
-                    epoch=epoch,
-                    train_loss=float(metrics_dict.get("train_loss", 0.0)),
-                    val_acc=float(metrics_dict.get("val_accuracy") or 0.0),
-                )
 
                 if _should_abort(state, local_run_id):
                     _exit_stopped(state, local_run_id)
                     return
 
                 if al_loop.should_stop_early():
-                    state.add_event("Early stopping triggered", run_id=local_run_id, cycle=cycle, epoch=epoch)
                     break
 
             if _should_abort(state, local_run_id):
@@ -235,17 +215,10 @@ def run_experiment(state: ExperimentState, config: Any) -> None:
                 app_state=AppState.TRAINING,
                 progress_detail=f"Evaluating cycle {cycle}/{total_cycles}...",
             )
-            state.add_event("Cycle evaluation started", run_id=local_run_id, cycle=cycle)
             state.touch_heartbeat(local_run_id)
 
             test_metrics = al_loop.run_evaluation()
             cycle_metrics = al_loop.finalize_cycle(test_metrics).model_dump()
-            state.add_event(
-                "Cycle evaluation finished",
-                run_id=local_run_id,
-                cycle=cycle,
-                test_acc=float(cycle_metrics.get("test_accuracy", 0.0)),
-            )
 
             if not _append_cycle_metric(state, local_run_id, cycle_metrics):
                 return
@@ -255,18 +228,11 @@ def run_experiment(state: ExperimentState, config: Any) -> None:
                 queried_images=[],
                 progress_detail=f"Cycle {cycle}/{total_cycles} complete",
             )
-            state.add_event(
-                "Cycle finalized",
-                run_id=local_run_id,
-                cycle=cycle,
-                unlabeled=int(cycle_metrics.get("unlabeled_pool_size", 0)),
-            )
 
             if cycle >= total_cycles:
                 continue
 
             if int(cycle_metrics.get("unlabeled_pool_size", 0)) <= 0:
-                state.add_event("Stopping early: unlabeled pool exhausted", run_id=local_run_id, cycle=cycle)
                 break
 
             if _should_abort(state, local_run_id):
@@ -278,17 +244,14 @@ def run_experiment(state: ExperimentState, config: Any) -> None:
                 app_state=AppState.QUERYING,
                 progress_detail=f"Querying samples for cycle {cycle}/{total_cycles}...",
             )
-            state.add_event("Query started", run_id=local_run_id, cycle=cycle)
             state.touch_heartbeat(local_run_id)
 
             queried_images = al_loop.query_samples()
             queried_dicts = [img.to_dict() for img in queried_images]
             if not state.update_for_run(local_run_id, queried_images=queried_dicts):
                 return
-            state.add_event("Query finished", run_id=local_run_id, cycle=cycle, queried=len(queried_dicts))
 
             if not queried_dicts:
-                state.add_event("No samples returned by query strategy", run_id=local_run_id, cycle=cycle)
                 continue
 
             if auto_annotate:
@@ -312,7 +275,6 @@ def run_experiment(state: ExperimentState, config: Any) -> None:
                     progress_detail=f"Auto-annotation complete for cycle {cycle}/{total_cycles}",
                     queried_images=[],
                 )
-                state.add_event("Auto-annotation applied", run_id=local_run_id, cycle=cycle, count=len(annotations))
                 state.clear_annotations()
                 continue
 
@@ -323,7 +285,6 @@ def run_experiment(state: ExperimentState, config: Any) -> None:
                 progress_detail=f"Waiting for annotations (cycle {cycle}/{total_cycles})...",
             ):
                 return
-            state.add_event("Waiting for manual annotations", run_id=local_run_id, cycle=cycle, required=len(queried_dicts))
 
             while True:
                 if _should_abort(state, local_run_id):
@@ -332,7 +293,6 @@ def run_experiment(state: ExperimentState, config: Any) -> None:
                 if state.annotations_ready.wait(timeout=0.5):
                     annotations = state.consume_annotations(local_run_id, cycle)
                     if annotations is None:
-                        state.add_event("Annotation signal ignored due run/cycle mismatch", run_id=local_run_id, cycle=cycle)
                         continue
                     break
                 state.touch_heartbeat(local_run_id)
@@ -346,14 +306,12 @@ def run_experiment(state: ExperimentState, config: Any) -> None:
                 app_state=AppState.ANNOTATING,
                 progress_detail=f"Applying {len(annotations)} annotations...",
             )
-            state.add_event("Manual annotations received", run_id=local_run_id, cycle=cycle, count=len(annotations))
             al_loop.receive_annotations(annotations)
             state.update_for_run(
                 local_run_id,
                 queried_images=[],
                 progress_detail=f"Annotations applied for cycle {cycle}/{total_cycles}",
             )
-            state.add_event("Manual annotations applied", run_id=local_run_id, cycle=cycle, count=len(annotations))
 
         if state.is_run_active(local_run_id):
             state.update_for_run(
@@ -362,7 +320,6 @@ def run_experiment(state: ExperimentState, config: Any) -> None:
                 thread_status="finished",
                 progress_detail="Experiment finished",
             )
-            state.add_event("Run finished", run_id=local_run_id)
 
     except Exception as exc:  # pylint: disable=broad-exception-caught
         if state.is_run_active(local_run_id):
