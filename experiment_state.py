@@ -78,6 +78,7 @@ class ExperimentState:
             self.progress_detail = "Ready"
             self.annotations_data = []
             self.run_id = new_run_id
+            self.thread = None
             self.thread_status = "starting"
             self.heartbeat_ts = time.time()
             self.query_token = ""

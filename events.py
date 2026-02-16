@@ -7,12 +7,14 @@ them on each poll tick. The controller dispatches each event via match/case.
 
 from __future__ import annotations
 
+import copy
 import logging
 import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Dict, List, Tuple
+from types import MappingProxyType
+from typing import Any, List, Mapping, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,12 @@ class Event:
     run_id: str = ""
     cycle: int = 0
     timestamp: float = field(default_factory=time.time)
-    data: Dict[str, Any] = field(default_factory=dict)
+    data: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Detach and freeze payload so producers cannot mutate it after emit."""
+        frozen_data = MappingProxyType(copy.deepcopy(dict(self.data)))
+        object.__setattr__(self, "data", frozen_data)
 
 
 class Inbox:
