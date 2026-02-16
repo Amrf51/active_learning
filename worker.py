@@ -151,6 +151,41 @@ def _serialize_probe_images(al_loop: ActiveLearningLoop) -> List[Dict[str, Any]]
     return serialized
 
 
+def _as_named_distribution(dist: Dict[int, int], class_names: List[str]) -> Dict[str, int]:
+    """Convert class-index distribution to readable class-name keys."""
+    named: Dict[str, int] = {}
+    for class_idx, count in sorted(dist.items(), key=lambda item: int(item[0])):
+        idx = int(class_idx)
+        key = class_names[idx] if 0 <= idx < len(class_names) else str(idx)
+        named[key] = int(count)
+    return named
+
+
+def _pool_stats(al_loop: ActiveLearningLoop) -> Dict[str, Any]:
+    """Extract current pool sizes and class distributions."""
+    class_names = list(getattr(al_loop, "class_names", []))
+    pool_info = al_loop.data_manager.get_pool_info()
+    labeled_dist = al_loop.data_manager.get_class_distribution(pool="labeled")
+    unlabeled_dist = al_loop.data_manager.get_class_distribution(pool="unlabeled")
+    return {
+        "labeled_pool_size": int(pool_info.get("labeled", 0)),
+        "unlabeled_pool_size": int(pool_info.get("unlabeled", 0)),
+        "labeled_class_distribution": _as_named_distribution(labeled_dist, class_names),
+        "unlabeled_class_distribution": _as_named_distribution(unlabeled_dist, class_names),
+    }
+
+
+def _wait_for_next_step(state: ExperimentState, run_id: str) -> bool:
+    """Block until next-step signal or abort request."""
+    while True:
+        if _should_abort(state, run_id):
+            return False
+        if state.next_step_event.wait(timeout=0.5):
+            state.next_step_event.clear()
+            return True
+        state.touch_heartbeat(run_id)
+
+
 def _flush_artifacts(al_loop: Optional[ActiveLearningLoop], run_dir: Path) -> None:
     """Best-effort save of all run artifacts."""
     if al_loop is None:
@@ -193,14 +228,28 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
 
         total_cycles = int(config.active_learning.num_cycles)
         auto_annotate = bool(config.active_learning.auto_annotate)
+        step_mode = bool(getattr(config.active_learning, "step_mode", False))
 
         for cycle in range(1, total_cycles + 1):
+            if step_mode and cycle > 1:
+                _emit_event(
+                    state,
+                    EventType.WAITING_FOR_STEP,
+                    run_id=local_run_id,
+                    cycle=cycle,
+                    data={"next_cycle": cycle, "total_cycles": total_cycles},
+                )
+                if not _wait_for_next_step(state, local_run_id):
+                    _exit_stopped(state, local_run_id, current_cycle, al_loop, run_dir)
+                    return
+
             current_cycle = cycle
             if _should_abort(state, local_run_id):
                 _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
                 return
 
             prep_info = al_loop.prepare_cycle(cycle)
+            pool_stats = _pool_stats(al_loop)
             class_names = list(getattr(al_loop, "class_names", []))
             _emit_event(
                 state,
@@ -211,7 +260,10 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                     "cycle": cycle,
                     "total_cycles": total_cycles,
                     "class_names": class_names,
+                    "labeled_pool_size": int(prep_info.get("labeled_count", 0)),
                     "unlabeled_pool_size": int(prep_info.get("unlabeled_count", 0)),
+                    "labeled_class_distribution": pool_stats["labeled_class_distribution"],
+                    "unlabeled_class_distribution": pool_stats["unlabeled_class_distribution"],
                 },
             )
 
@@ -255,6 +307,7 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
             test_metrics = al_loop.run_evaluation()
             cycle_metrics = al_loop.finalize_cycle(test_metrics).model_dump()
             probe_images = _serialize_probe_images(al_loop)
+            pool_stats = _pool_stats(al_loop)
             _emit_event(
                 state,
                 EventType.EVAL_COMPLETE,
@@ -263,6 +316,8 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                 data={
                     "cycle_metrics": cycle_metrics,
                     "probe_images": probe_images,
+                    "labeled_class_distribution": pool_stats["labeled_class_distribution"],
+                    "unlabeled_class_distribution": pool_stats["unlabeled_class_distribution"],
                 },
             )
 
@@ -301,12 +356,19 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                     for img in queried_dicts
                 ]
                 al_loop.receive_annotations(annotations)
+                pool_stats = _pool_stats(al_loop)
                 _emit_event(
                     state,
                     EventType.ANNOTATIONS_APPLIED,
                     run_id=local_run_id,
                     cycle=cycle,
-                    data={"count": len(annotations)},
+                    data={
+                        "count": len(annotations),
+                        "labeled_pool_size": pool_stats["labeled_pool_size"],
+                        "unlabeled_pool_size": pool_stats["unlabeled_pool_size"],
+                        "labeled_class_distribution": pool_stats["labeled_class_distribution"],
+                        "unlabeled_class_distribution": pool_stats["unlabeled_class_distribution"],
+                    },
                 )
                 state.clear_annotations()
                 continue
@@ -340,12 +402,19 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                 return
 
             al_loop.receive_annotations(annotations)
+            pool_stats = _pool_stats(al_loop)
             _emit_event(
                 state,
                 EventType.ANNOTATIONS_APPLIED,
                 run_id=local_run_id,
                 cycle=cycle,
-                data={"count": len(annotations)},
+                data={
+                    "count": len(annotations),
+                    "labeled_pool_size": pool_stats["labeled_pool_size"],
+                    "unlabeled_pool_size": pool_stats["unlabeled_pool_size"],
+                    "labeled_class_distribution": pool_stats["labeled_class_distribution"],
+                    "unlabeled_class_distribution": pool_stats["unlabeled_class_distribution"],
+                },
             )
 
         _flush_artifacts(al_loop, run_dir)

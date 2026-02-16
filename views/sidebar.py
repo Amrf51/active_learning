@@ -33,7 +33,7 @@ def render_model_selection() -> str:
     Returns:
         Selected model name
     """
-    st.sidebar.markdown("### 🤖 Model Configuration")
+    st.sidebar.markdown("### Model Configuration")
     
     # Get curated model families
     model_families = get_model_families()
@@ -58,13 +58,13 @@ def render_model_selection() -> str:
     selected_model = model_options[selected_idx]
     
     # Show model info card
-    with st.sidebar.expander("📊 Model Info"):
+    with st.sidebar.expander("Model Info"):
         model_info = get_model_card(selected_model)
         if "error" in model_info:
-            st.warning(f"⚠️ Could not load model info: {model_info['error']}")
+            st.warning(f"Could not load model info: {model_info['error']}")
         else:
             st.write(f"**Parameters:** {model_info['parameters_human']}")
-            st.write(f"**Pretrained:** {'✅ Yes' if model_info['has_pretrained'] else '❌ No'}")
+            st.write(f"**Pretrained:** {'Yes' if model_info['has_pretrained'] else 'No'}")
     
     return selected_model
 
@@ -80,7 +80,7 @@ def render_strategy_selection() -> str:
     Returns:
         Selected strategy name
     """
-    st.sidebar.markdown("### 🎯 Sampling Strategy")
+    st.sidebar.markdown("### Sampling Strategy")
     
     strategies = {
         "entropy": "Entropy (Recommended)",
@@ -120,7 +120,7 @@ def render_training_hyperparameters() -> Dict[str, Any]:
     Returns:
         Dictionary with training hyperparameters
     """
-    st.sidebar.markdown("### ⚙️ Training Settings")
+    st.sidebar.markdown("### Training Settings")
     
     epochs = st.sidebar.slider(
         "Epochs per Cycle",
@@ -146,7 +146,7 @@ def render_training_hyperparameters() -> Dict[str, Any]:
     )
     
     # Advanced settings in expander
-    with st.sidebar.expander("🔧 Advanced Settings"):
+    with st.sidebar.expander("Advanced Settings"):
         weight_decay = st.number_input(
             "Weight Decay",
             min_value=0.0,
@@ -191,7 +191,7 @@ def render_al_settings() -> Dict[str, Any]:
     Returns:
         Dictionary with AL settings
     """
-    st.sidebar.markdown("### 🔄 Active Learning Settings")
+    st.sidebar.markdown("### Active Learning Settings")
     
     num_cycles = st.sidebar.slider(
         "Number of Cycles",
@@ -237,11 +237,18 @@ def render_al_settings() -> Dict[str, Any]:
                  "- none: Continue training from previous cycle"
         )
 
+        step_mode = st.checkbox(
+            "Step Mode (Next Step)",
+            value=False,
+            help="Pause after each cycle and wait for an explicit Next Step action.",
+        )
+
     return {
         "num_cycles": num_cycles,
         "batch_size_al": query_size,
         "initial_pool_size": initial_pool_size,
         "reset_mode": reset_mode,
+        "step_mode": step_mode,
         "auto_annotate": auto_annotate,
     }
 
@@ -262,24 +269,25 @@ def render_experiment_controls(
         controller: Controller instance for dispatching commands
     """
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🎮 Experiment Controls")
+    st.sidebar.markdown("### Experiment Controls")
     
     current_state = snap["app_state"]
     
     # Show current state
     state_emoji = {
-        AppState.IDLE: "🏁",
-        AppState.INITIALIZING: "⚙️",
-        AppState.TRAINING: "🔄",
-        AppState.QUERYING: "🔍",
-        AppState.ANNOTATING: "🏷️",
-        AppState.STOPPING: "⏳",
-        AppState.ERROR: "❌",
-        AppState.FINISHED: "✅",
+        AppState.IDLE: "IDLE",
+        AppState.INITIALIZING: "INIT",
+        AppState.TRAINING: "TRAIN",
+        AppState.QUERYING: "QUERY",
+        AppState.ANNOTATING: "ANNOTATE",
+        AppState.WAITING_STEP: "PAUSE",
+        AppState.STOPPING: "STOP",
+        AppState.ERROR: "ERROR",
+        AppState.FINISHED: "DONE",
     }
     
     st.sidebar.info(
-        f"{state_emoji.get(current_state, '❓')} **Status:** {current_state.value.upper()}"
+        f"{state_emoji.get(current_state, '?')} **Status:** {current_state.value.upper()}"
     )
     
     # Start button is enabled for non-running terminal states.
@@ -324,27 +332,53 @@ def render_experiment_controls(
         AppState.TRAINING,
         AppState.QUERYING,
         AppState.ANNOTATING,
+        AppState.WAITING_STEP,
     }
     stop_disabled = current_state not in stop_enabled_states
     
     if st.sidebar.button(
-        "⏹️ Stop",
+        "Stop",
         disabled=stop_disabled,
         help="Stop the current operation" if not stop_disabled else "Nothing to stop"
     ):
         try:
             controller.dispatch(Event(type=EventType.STOP_EXPERIMENT))
-            st.sidebar.warning("⚠️ Stop requested...")
+            st.sidebar.warning("Stop requested...")
             logger.info("User requested stop")
             st.rerun()
         except Exception as e:
-            st.sidebar.error(f"❌ Failed to stop: {e}")
+            st.sidebar.error(f"Failed to stop: {e}")
             logger.error(f"Failed to stop: {e}")
+
+    next_step_disabled = current_state != AppState.WAITING_STEP
+    if st.sidebar.button(
+        "Next Step",
+        disabled=next_step_disabled,
+        help="Advance to next cycle while paused in step mode"
+        if not next_step_disabled
+        else "Available only when paused for next step",
+    ):
+        try:
+            accepted = controller.dispatch(
+                Event(
+                    type=EventType.NEXT_STEP,
+                    run_id=str(snap.get("run_id", "")),
+                )
+            )
+            if accepted:
+                st.sidebar.success("Advancing to next cycle...")
+                logger.info("User triggered Next Step")
+            else:
+                st.sidebar.warning("Next Step ignored: not currently paused.")
+            st.rerun()
+        except Exception as e:
+            st.sidebar.error(f"Failed to advance: {e}")
+            logger.error(f"Failed to advance: {e}")
     
     # Show progress if experiment is running
     if current_state != AppState.IDLE:
         st.sidebar.markdown("---")
-        st.sidebar.markdown("### 📊 Progress")
+        st.sidebar.markdown("### Progress")
         st.sidebar.write(f"**Cycle:** {snap['current_cycle']} / {snap['total_cycles']}")
         st.sidebar.write(f"**Completed Cycles:** {len(snap['metrics_history'])}")
         st.sidebar.caption(snap.get("progress_detail", ""))
@@ -366,7 +400,7 @@ def render_sidebar(controller: Controller) -> Dict[str, Any]:
     Returns:
         Dictionary with all configuration overrides
     """
-    st.sidebar.title("🎯 Active Learning Framework")
+    st.sidebar.title("Active Learning Framework")
     st.sidebar.markdown("Configure your experiment below")
     
     # Render all sections
@@ -389,6 +423,7 @@ def render_sidebar(controller: Controller) -> Dict[str, Any]:
         "active_learning.batch_size_al": al_params["batch_size_al"],
         "active_learning.initial_pool_size": al_params["initial_pool_size"],
         "active_learning.reset_mode": al_params["reset_mode"],
+        "active_learning.step_mode": al_params["step_mode"],
         "active_learning.auto_annotate": al_params["auto_annotate"],
     }
 
@@ -400,3 +435,4 @@ def render_sidebar(controller: Controller) -> Dict[str, Any]:
     render_experiment_controls(controller, snap, config_overrides)
     
     return config_overrides
+

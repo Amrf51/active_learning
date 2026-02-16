@@ -34,6 +34,17 @@ def render() -> None:
                 "Try Stop and restart the experiment."
             )
 
+    main_tab, explorer_tab = st.tabs(["Main", "Dataset Explorer"])
+    with main_tab:
+        _render_state_view(controller, snap, current_state)
+    with explorer_tab:
+        from views.explorer import render_explorer_view
+
+        render_explorer_view(controller, snap)
+
+
+def _render_state_view(controller: Controller, snap: dict, current_state: AppState) -> None:
+    """Render state-specific main page content."""
     if current_state == AppState.IDLE:
         render_idle_view(controller, snap)
     elif current_state == AppState.INITIALIZING:
@@ -44,6 +55,8 @@ def render() -> None:
         render_querying_view(snap)
     elif current_state == AppState.ANNOTATING:
         render_annotating_view(controller, snap)
+    elif current_state == AppState.WAITING_STEP:
+        render_waiting_step_view(controller, snap)
     elif current_state == AppState.STOPPING:
         render_stopping_view(snap)
     elif current_state == AppState.ERROR:
@@ -114,6 +127,15 @@ def render_annotating_view(controller: Controller, snap: dict) -> None:
     from views.gallery import render_gallery_view
 
     render_gallery_view(controller, snap)
+
+
+def render_waiting_step_view(controller: Controller, snap: dict) -> None:
+    st.info("Paused in step mode.")
+    st.caption(snap.get("progress_detail", "Click Next Step in the sidebar to continue."))
+    if snap.get("metrics_history"):
+        from views.results import render_results_view
+
+        render_results_view(controller, snap)
 
 
 def render_stopping_view(snap: dict) -> None:

@@ -63,6 +63,7 @@ class ALConfig:
     sampling_strategy: str = "entropy"
     uncertainty_method: str = "entropy"
     reset_mode: str = "pretrained"
+    step_mode: bool = False  # Require explicit UI "Next Step" between cycles
     auto_annotate: bool = True  # Auto-annotate with ground truth for simulation
 
 
@@ -164,6 +165,10 @@ class Config:
         valid_reset_modes = ["pretrained", "head_only", "none"]
         if self.active_learning.reset_mode not in valid_reset_modes:
             errors.append(f"active_learning.reset_mode must be one of {valid_reset_modes}, got {self.active_learning.reset_mode}")
+        if not isinstance(self.active_learning.step_mode, bool):
+            errors.append(
+                f"active_learning.step_mode must be boolean, got {type(self.active_learning.step_mode).__name__}"
+            )
         
         # Validate experiment config
         if self.experiment.seed < 0:

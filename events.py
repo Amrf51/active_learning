@@ -29,6 +29,7 @@ class EventType(Enum):
     EPOCH_DONE = auto()
     EVAL_COMPLETE = auto()
     QUERYING_STARTED = auto()
+    WAITING_FOR_STEP = auto()
     NEW_IMAGES = auto()
     ANNOTATIONS_APPLIED = auto()
     RUN_FINISHED = auto()
@@ -38,6 +39,7 @@ class EventType(Enum):
     # UI → Controller (immediate, not through inbox)
     START_EXPERIMENT = auto()
     STOP_EXPERIMENT = auto()
+    NEXT_STEP = auto()
     SUBMIT_ANNOTATIONS = auto()
 
 

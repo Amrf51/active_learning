@@ -27,11 +27,11 @@ Transform the existing monolithic backend into an MVC + multiprocessing architec
   - Backend: include probe prediction payload in worker-to-controller events.
   - UI: render probe predictions by cycle in results view.
 
-- [ ] P1. Add explicit "Next Step" control for cycle progression
+- [x] P1. Add explicit "Next Step" control for cycle progression
   - Requirement: `README.md` Phase 3 frontend controls (Start, Stop, Next Step).
   - Add pause/step event flow between controller and worker.
 
-- [ ] P1. Implement Dataset Explorer page
+- [x] P1. Implement Dataset Explorer page
   - Requirement: `README.md` Phase 2 components (Dataset Explorer).
   - Show labeled/unlabeled pools and class distribution.
 

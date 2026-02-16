@@ -40,6 +40,8 @@ class Controller:
             case EventType.STOP_EXPERIMENT:
                 join_timeout = float(event.data.get("join_timeout", 5.0))
                 return self._handle_stop(join_timeout=join_timeout)
+            case EventType.NEXT_STEP:
+                return self._handle_next_step(event)
             case EventType.SUBMIT_ANNOTATIONS:
                 return self._handle_submit(event)
 
@@ -57,7 +59,10 @@ class Controller:
                     epoch_metrics=[],
                     query_token="",
                     class_names=list(event.data.get("class_names", [])),
+                    labeled_pool_size=int(event.data.get("labeled_pool_size", 0)),
                     unlabeled_pool_size=int(event.data.get("unlabeled_pool_size", 0)),
+                    labeled_class_distribution=dict(event.data.get("labeled_class_distribution", {})),
+                    unlabeled_class_distribution=dict(event.data.get("unlabeled_class_distribution", {})),
                     progress_detail=f"Training cycle {cycle}{cycle_suffix}...",
                 )
             case EventType.EPOCH_DONE:
@@ -85,8 +90,17 @@ class Controller:
                     metrics_history=history,
                     probe_images=probe_images,
                     queried_images=[],
+                    labeled_pool_size=int(
+                        cycle_metrics.get("labeled_pool_size", snap["labeled_pool_size"])
+                    ),
                     unlabeled_pool_size=int(
                         cycle_metrics.get("unlabeled_pool_size", snap["unlabeled_pool_size"])
+                    ),
+                    labeled_class_distribution=dict(
+                        event.data.get("labeled_class_distribution", snap["labeled_class_distribution"])
+                    ),
+                    unlabeled_class_distribution=dict(
+                        event.data.get("unlabeled_class_distribution", snap["unlabeled_class_distribution"])
                     ),
                     progress_detail=f"Cycle {event.cycle} complete",
                 )
@@ -97,6 +111,15 @@ class Controller:
                     app_state=AppState.QUERYING,
                     progress_detail=f"Querying samples for cycle {cycle}...",
                 )
+            case EventType.WAITING_FOR_STEP:
+                next_cycle = int(event.data.get("next_cycle", event.cycle))
+                total_cycles = int(event.data.get("total_cycles", 0))
+                cycle_suffix = f"/{total_cycles}" if total_cycles > 0 else ""
+                self.state.update_for_run(
+                    event.run_id,
+                    app_state=AppState.WAITING_STEP,
+                    progress_detail=f"Paused before cycle {next_cycle}{cycle_suffix}. Click Next Step.",
+                )
             case EventType.NEW_IMAGES:
                 self.state.update_for_run(
                     event.run_id,
@@ -106,10 +129,19 @@ class Controller:
                     progress_detail="Waiting for annotations...",
                 )
             case EventType.ANNOTATIONS_APPLIED:
+                snap = self.state.snapshot()
                 count = int(event.data.get("count", 0))
                 self.state.update_for_run(
                     event.run_id,
                     queried_images=[],
+                    labeled_pool_size=int(event.data.get("labeled_pool_size", snap["labeled_pool_size"])),
+                    unlabeled_pool_size=int(event.data.get("unlabeled_pool_size", snap["unlabeled_pool_size"])),
+                    labeled_class_distribution=dict(
+                        event.data.get("labeled_class_distribution", snap["labeled_class_distribution"])
+                    ),
+                    unlabeled_class_distribution=dict(
+                        event.data.get("unlabeled_class_distribution", snap["unlabeled_class_distribution"])
+                    ),
                     progress_detail=f"Annotations applied ({count})",
                 )
             case EventType.RUN_FINISHED:
@@ -188,6 +220,7 @@ class Controller:
                 progress_detail="Stop requested...",
             )
         self.state.stop_event.set()
+        self.state.next_step_event.set()
         self.state.annotations_ready.set()
 
         thread_obj = self.state.thread
@@ -204,6 +237,7 @@ class Controller:
                     query_token="",
                     progress_detail="Stopped",
                 )
+        self.state.next_step_event.clear()
 
     def _handle_submit(self, event: Event) -> bool:
         """Validate query token and hand accepted annotations to worker state."""
@@ -221,6 +255,23 @@ class Controller:
             annotations=list(event.data.get("annotations", [])),
         )
 
+    def _handle_next_step(self, event: Event) -> bool:
+        """Release worker pause when step mode is waiting for user action."""
+        snap = self.state.snapshot()
+        target_run_id = event.run_id or snap["run_id"]
+        if not target_run_id or target_run_id != snap["run_id"]:
+            return False
+        if snap["app_state"] != AppState.WAITING_STEP:
+            return False
+        if not self.state.update_for_run(
+            target_run_id,
+            app_state=AppState.TRAINING,
+            progress_detail="Advancing to next cycle...",
+        ):
+            return False
+        self.state.next_step_event.set()
+        return True
+
     def start_experiment(self, config: Any) -> str:
         """Backward-compatible wrapper for UI code paths."""
         return self.dispatch(
@@ -236,6 +287,18 @@ class Controller:
             Event(
                 type=EventType.STOP_EXPERIMENT,
                 data={"join_timeout": join_timeout},
+            )
+        )
+
+    def next_step(self, run_id: Optional[str] = None) -> bool:
+        """Backward-compatible wrapper for step-mode progression."""
+        rid = run_id if run_id is not None else self.state.snapshot().get("run_id", "")
+        return bool(
+            self.dispatch(
+                Event(
+                    type=EventType.NEXT_STEP,
+                    run_id=rid,
+                )
             )
         )
 
@@ -295,6 +358,10 @@ class Controller:
             self.state.current_epoch = 0
             self.state.queried_images = []
             self.state.probe_images = []
+            self.state.labeled_pool_size = 0
+            self.state.unlabeled_pool_size = 0
+            self.state.labeled_class_distribution = {}
+            self.state.unlabeled_class_distribution = {}
             self.state.annotations_data = []
             self.state.thread_status = "stopped"
             self.state.heartbeat_ts = time.time()
@@ -303,8 +370,8 @@ class Controller:
                 self.state.metrics_history = []
                 self.state.epoch_metrics = []
                 self.state.class_names = []
-                self.state.unlabeled_pool_size = 0
         self.state.stop_event.clear()
+        self.state.next_step_event.clear()
         self.state.annotations_ready.clear()
 
     def save_state(self) -> None:
@@ -320,7 +387,10 @@ class Controller:
             "queried_images": snap["queried_images"],
             "probe_images": snap["probe_images"],
             "class_names": snap["class_names"],
+            "labeled_pool_size": snap["labeled_pool_size"],
             "unlabeled_pool_size": snap["unlabeled_pool_size"],
+            "labeled_class_distribution": snap["labeled_class_distribution"],
+            "unlabeled_class_distribution": snap["unlabeled_class_distribution"],
             "last_error": snap["last_error"],
             "progress_detail": snap["progress_detail"],
             "run_id": snap["run_id"],
@@ -351,7 +421,10 @@ class Controller:
                 self.state.queried_images = state_data.get("queried_images", [])
                 self.state.probe_images = state_data.get("probe_images", [])
                 self.state.class_names = state_data.get("class_names", [])
+                self.state.labeled_pool_size = int(state_data.get("labeled_pool_size", 0))
                 self.state.unlabeled_pool_size = int(state_data.get("unlabeled_pool_size", 0))
+                self.state.labeled_class_distribution = dict(state_data.get("labeled_class_distribution", {}))
+                self.state.unlabeled_class_distribution = dict(state_data.get("unlabeled_class_distribution", {}))
                 self.state.last_error = state_data.get("last_error")
                 self.state.progress_detail = state_data.get("progress_detail", "Idle")
                 self.state.run_id = state_data.get("run_id", "")
@@ -384,5 +457,6 @@ class Controller:
             AppState.TRAINING,
             AppState.QUERYING,
             AppState.ANNOTATING,
+            AppState.WAITING_STEP,
             AppState.STOPPING,
         }

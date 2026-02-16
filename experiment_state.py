@@ -23,6 +23,7 @@ class AppState(Enum):
     TRAINING = "training"
     QUERYING = "querying"
     ANNOTATING = "annotating"
+    WAITING_STEP = "waiting_step"
     STOPPING = "stopping"
     ERROR = "error"
     FINISHED = "finished"
@@ -44,12 +45,16 @@ class ExperimentState:
         self.queried_images: List[Dict[str, Any]] = []
         self.probe_images: List[Dict[str, Any]] = []
         self.class_names: List[str] = []
+        self.labeled_pool_size: int = 0
         self.unlabeled_pool_size: int = 0
+        self.labeled_class_distribution: Dict[str, int] = {}
+        self.unlabeled_class_distribution: Dict[str, int] = {}
         self.last_error: Optional[Dict[str, str]] = None
         self.progress_detail: str = "Idle"
 
         # Thread control
         self.stop_event = threading.Event()
+        self.next_step_event = threading.Event()
         self.annotations_ready = threading.Event()
         self.annotations_data: List[Dict[str, Any]] = []
         self.thread: Optional[threading.Thread] = None
@@ -75,7 +80,10 @@ class ExperimentState:
             self.queried_images = []
             self.probe_images = []
             self.class_names = []
+            self.labeled_pool_size = 0
             self.unlabeled_pool_size = 0
+            self.labeled_class_distribution = {}
+            self.unlabeled_class_distribution = {}
             self.last_error = None
             self.progress_detail = "Ready"
             self.annotations_data = []
@@ -87,6 +95,7 @@ class ExperimentState:
             self.run_dir = ""
 
         self.stop_event.clear()
+        self.next_step_event.clear()
         self.annotations_ready.clear()
         self.inbox.reset()
         return new_run_id
@@ -105,7 +114,10 @@ class ExperimentState:
                 "queried_images": copy.deepcopy(self.queried_images),
                 "probe_images": copy.deepcopy(self.probe_images),
                 "class_names": list(self.class_names),
+                "labeled_pool_size": self.labeled_pool_size,
                 "unlabeled_pool_size": self.unlabeled_pool_size,
+                "labeled_class_distribution": copy.deepcopy(self.labeled_class_distribution),
+                "unlabeled_class_distribution": copy.deepcopy(self.unlabeled_class_distribution),
                 "last_error": copy.deepcopy(self.last_error),
                 "progress_detail": self.progress_detail,
                 "thread_status": self.thread_status,
