@@ -83,7 +83,6 @@ def live_update_fragment() -> None:
 def main() -> None:
     st.set_page_config(
         page_title="Active Learning Framework",
-        page_icon="🎯",
         layout="wide",
         initial_sidebar_state="expanded",
     )
@@ -96,7 +95,7 @@ def main() -> None:
 
     render_sidebar(controller)
 
-    st.title("🎯 Active Learning Framework")
+    st.title("Active Learning Framework")
     st.caption("Visual and Interactive Active Learning for Vehicle Image Classification")
     st.divider()
 
