@@ -26,7 +26,12 @@ def render() -> None:
     snap = controller.get_snapshot()
     current_state = snap["app_state"]
 
-    if current_state in {AppState.INITIALIZING, AppState.QUERYING} and snap["thread_alive"]:
+    if current_state in {
+        AppState.INITIALIZING,
+        AppState.TRAINING,
+        AppState.QUERYING,
+        AppState.ANNOTATING,
+    } and snap["thread_alive"]:
         age = time.time() - float(snap["heartbeat_ts"])
         if age > STALE_HEARTBEAT_SECONDS:
             st.warning(
@@ -52,6 +57,8 @@ def render() -> None:
         render_finished_view(controller, snap)
     else:
         st.error(f"Unknown application state: {current_state}")
+
+    render_runtime_diagnostics(snap)
 
 
 def render_idle_view(controller: Controller, snap: dict) -> None:
@@ -136,3 +143,35 @@ def render_error_view(controller: Controller, snap: dict) -> None:
     if st.button("Reset to IDLE"):
         controller.reset_to_idle(clear_history=False)
         st.rerun()
+
+
+def render_runtime_diagnostics(snap: dict) -> None:
+    with st.expander("Runtime Diagnostics", expanded=False):
+        age = time.time() - float(snap.get("heartbeat_ts", time.time()))
+        st.caption(
+            f"State={snap['app_state'].value} | "
+            f"Thread={snap['thread_status']} | "
+            f"Alive={snap['thread_alive']} | "
+            f"Heartbeat age={age:.1f}s | "
+            f"Cycle={snap['current_cycle']}/{snap['total_cycles']} | "
+            f"Epoch={snap['current_epoch']}"
+        )
+        st.caption(
+            f"Queried images={len(snap.get('queried_images', []))} | "
+            f"Completed cycles={len(snap.get('metrics_history', []))} | "
+            f"Unlabeled pool={snap.get('unlabeled_pool_size', 0)}"
+        )
+
+        events = snap.get("event_log", [])
+        if not events:
+            st.info("No runtime events yet.")
+            return
+
+        st.markdown("Recent events:")
+        for event in events[-15:]:
+            ts = time.strftime("%H:%M:%S", time.localtime(float(event.get("ts", 0.0))))
+            msg = event.get("message", "event")
+            state = event.get("state", "")
+            cycle = event.get("cycle", 0)
+            epoch = event.get("epoch", 0)
+            st.text(f"{ts} | {msg} | state={state} cycle={cycle} epoch={epoch}")

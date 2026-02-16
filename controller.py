@@ -28,6 +28,12 @@ class Controller:
     def _enforce_ui_safety(self, config: Any) -> None:
         # Streamlit mode should not spawn dataloader workers.
         config.data.num_workers = 0
+        # Avoid heavy checkpoint I/O stalls in interactive runs.
+        if hasattr(config, "checkpoint"):
+            if hasattr(config.checkpoint, "save_best_model"):
+                config.checkpoint.save_best_model = False
+            if hasattr(config.checkpoint, "save_best_per_cycle"):
+                config.checkpoint.save_best_per_cycle = False
 
     def start_experiment(self, config: Any) -> str:
         """Start a new backend run (stopping any previous run first)."""
@@ -42,6 +48,7 @@ class Controller:
             thread_status="starting",
             progress_detail="Starting backend thread...",
         )
+        self.state.add_event("Start requested", run_id=run_id)
 
         thread = threading.Thread(
             target=run_experiment,
@@ -51,6 +58,7 @@ class Controller:
         )
         self.state.update_for_run(run_id, thread=thread)
         thread.start()
+        self.state.add_event("Backend thread launched", run_id=run_id)
         logger.info("Started run %s", run_id)
         return run_id
 
@@ -66,6 +74,7 @@ class Controller:
                 thread_status="stopping",
                 progress_detail="Stop requested...",
             )
+            self.state.add_event("Stop requested", run_id=run_id)
         self.state.stop_event.set()
         # Unblock annotation wait loops immediately.
         self.state.annotations_ready.set()
@@ -83,10 +92,26 @@ class Controller:
                     thread_status="finished",
                     progress_detail="Stopped",
                 )
+                self.state.add_event("Run stopped", run_id=run_id)
 
     def submit_annotations(self, annotations: List[Dict[str, Any]], run_id: str, cycle: int) -> bool:
         """Submit human annotations only if run/cycle is still current."""
-        return self.state.set_annotations(run_id=run_id, cycle=cycle, annotations=annotations)
+        accepted = self.state.set_annotations(run_id=run_id, cycle=cycle, annotations=annotations)
+        if accepted:
+            self.state.add_event(
+                "Annotation submission accepted",
+                run_id=run_id,
+                cycle=cycle,
+                count=len(annotations),
+            )
+        else:
+            self.state.add_event(
+                "Annotation submission rejected",
+                run_id=None,
+                cycle=cycle,
+                count=len(annotations),
+            )
+        return accepted
 
     def get_snapshot(self) -> Dict[str, Any]:
         """Return atomic snapshot used by UI."""
@@ -131,6 +156,7 @@ class Controller:
             "run_id": snap["run_id"],
             "thread_status": snap["thread_status"],
             "heartbeat_ts": snap["heartbeat_ts"],
+            "event_log": snap.get("event_log", []),
         }
         with open(self.state_file, "w", encoding="utf-8") as f:
             json.dump(state_data, f, indent=2)
@@ -161,6 +187,7 @@ class Controller:
                 self.state.run_id = state_data.get("run_id", "")
                 self.state.thread_status = state_data.get("thread_status", "stopped")
                 self.state.heartbeat_ts = float(state_data.get("heartbeat_ts", time.time()))
+                self.state.event_log = state_data.get("event_log", [])[-200:]
                 self.state.thread = None
             return True
         except Exception:  # pylint: disable=broad-exception-caught

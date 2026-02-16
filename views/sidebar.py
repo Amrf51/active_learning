@@ -280,6 +280,7 @@ def render_experiment_controls(
     st.sidebar.info(
         f"{state_emoji.get(current_state, '❓')} **Status:** {current_state.value.upper()}"
     )
+    st.sidebar.caption("Use Runtime Diagnostics in the main panel for live backend state and heartbeat.")
     
     # Start button is enabled for non-running terminal states.
     start_disabled = current_state not in {AppState.IDLE, AppState.FINISHED, AppState.ERROR}
