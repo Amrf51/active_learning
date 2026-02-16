@@ -15,6 +15,7 @@ import streamlit as st
 from typing import Dict, Any, Optional
 import logging
 from controller import Controller
+from events import Event, EventType
 from experiment_state import AppState
 from models import get_model_families, get_model_card
 
@@ -296,10 +297,18 @@ def render_experiment_controls(
             new_config = load_config(overrides=config_overrides)
             new_config.data.num_workers = 0
             st.session_state.config = new_config
-            run_id = controller.start_experiment(new_config)
+            run_id = controller.dispatch(
+                Event(
+                    type=EventType.START_EXPERIMENT,
+                    data={"config": new_config},
+                )
+            )
 
             # Clear run-scoped UI cache
             st.session_state['active_run_id'] = run_id
+            st.session_state.last_event_version = -1
+            st.session_state.current_cycle_id = None
+            st.session_state.pop("gallery_cycle_id", None)
             st.session_state.annotations = {}
             st.session_state.pop('last_annotation_feedback', None)
 
@@ -324,7 +333,7 @@ def render_experiment_controls(
         help="Stop the current operation" if not stop_disabled else "Nothing to stop"
     ):
         try:
-            controller.stop_experiment()
+            controller.dispatch(Event(type=EventType.STOP_EXPERIMENT))
             st.sidebar.warning("⚠️ Stop requested...")
             logger.info("User requested stop")
             st.rerun()

@@ -12,6 +12,7 @@ import streamlit as st
 from PIL import Image
 
 from controller import Controller
+from events import Event, EventType
 
 logger = logging.getLogger(__name__)
 
@@ -181,11 +182,16 @@ def render_submit_button(
     snap: Dict[str, Any],
 ) -> bool:
     annotations = st.session_state.get("annotations", {})
-    num_annotated = len(annotations)
+    current_image_ids = {img.get("image_id") for img in queried_images}
+    relevant = {k: v for k, v in annotations.items() if k in current_image_ids}
+    st.session_state.annotations = relevant
+
+    num_annotated = len(relevant)
     num_required = len(queried_images)
+    progress = min(1.0, num_annotated / num_required) if num_required > 0 else 0.0
 
     st.progress(
-        num_annotated / num_required if num_required > 0 else 0,
+        progress,
         text=f"Annotated: {num_annotated} / {num_required}",
     )
 
@@ -202,12 +208,18 @@ def render_submit_button(
         try:
             annotations_list = [
                 {"image_id": ann["image_id"], "user_label": ann["user_label"]}
-                for ann in annotations.values()
+                for ann in relevant.values()
             ]
-            accepted = controller.submit_annotations(
-                annotations=annotations_list,
-                run_id=snap["run_id"],
-                cycle=snap["current_cycle"],
+            accepted = controller.dispatch(
+                Event(
+                    type=EventType.SUBMIT_ANNOTATIONS,
+                    run_id=snap["run_id"],
+                    cycle=snap["current_cycle"],
+                    data={
+                        "annotations": annotations_list,
+                        "query_token": snap.get("query_token", ""),
+                    },
+                )
             )
             if not accepted:
                 st.warning("Annotations rejected: run or cycle is stale. Refreshing view.")
@@ -215,7 +227,7 @@ def render_submit_button(
 
             st.session_state.last_annotation_feedback = {
                 "num_submitted": len(annotations_list),
-                "annotations": annotations,
+                "annotations": relevant,
             }
             st.session_state.annotations = {}
             logger.info("Submitted %d annotations", len(annotations_list))
@@ -259,9 +271,9 @@ def render_gallery_view(controller: Controller, snap: Dict[str, Any]) -> None:
     st.markdown(f"Cycle {snap['current_cycle']} - Please label the selected samples")
     st.markdown("---")
 
-    run_id = snap["run_id"]
-    if st.session_state.get("gallery_run_id") != run_id:
-        st.session_state["gallery_run_id"] = run_id
+    cycle_id = (snap["run_id"], snap["current_cycle"])
+    if st.session_state.get("gallery_cycle_id") != cycle_id:
+        st.session_state["gallery_cycle_id"] = cycle_id
         st.session_state.annotations = {}
         st.session_state.pop("last_annotation_feedback", None)
 
