@@ -8,10 +8,12 @@ import json
 import logging
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from al_thread import run_experiment
+from events import Event, EventType
 from experiment_state import AppState, ExperimentState
 
 logger = logging.getLogger(__name__)
@@ -29,8 +31,114 @@ class Controller:
         # Streamlit mode should not spawn dataloader workers.
         config.data.num_workers = 0
 
-    def start_experiment(self, config: Any) -> str:
-        """Start a new backend run (stopping any previous run first)."""
+    def dispatch(self, event: Event) -> Any:
+        """Central event router for UI and worker lifecycle events."""
+        match event.type:
+            # UI -> Controller (immediate)
+            case EventType.START_EXPERIMENT:
+                return self._handle_start(event.data["config"])
+            case EventType.STOP_EXPERIMENT:
+                join_timeout = float(event.data.get("join_timeout", 5.0))
+                return self._handle_stop(join_timeout=join_timeout)
+            case EventType.SUBMIT_ANNOTATIONS:
+                return self._handle_submit(event)
+
+            # Worker -> Controller (from inbox)
+            case EventType.CYCLE_STARTED:
+                cycle = int(event.data.get("cycle", event.cycle))
+                total_cycles = int(event.data.get("total_cycles", 0))
+                cycle_suffix = f"/{total_cycles}" if total_cycles > 0 else ""
+                self.state.update_for_run(
+                    event.run_id,
+                    app_state=AppState.TRAINING,
+                    thread_status="running",
+                    current_cycle=cycle,
+                    current_epoch=0,
+                    epoch_metrics=[],
+                    query_token="",
+                    class_names=list(event.data.get("class_names", [])),
+                    unlabeled_pool_size=int(event.data.get("unlabeled_pool_size", 0)),
+                    progress_detail=f"Training cycle {cycle}{cycle_suffix}...",
+                )
+            case EventType.EPOCH_DONE:
+                snap = self.state.snapshot()
+                metrics = dict(event.data.get("metrics", {}))
+                epoch_metrics = list(snap["epoch_metrics"])
+                epoch_metrics.append(metrics)
+                epoch = int(event.data.get("epoch", metrics.get("epoch", 0)))
+                total_epochs = int(event.data.get("total_epochs", 0))
+                self.state.update_for_run(
+                    event.run_id,
+                    app_state=AppState.TRAINING,
+                    current_epoch=epoch,
+                    epoch_metrics=epoch_metrics,
+                    progress_detail=f"Cycle {event.cycle} - Epoch {epoch}/{total_epochs}",
+                )
+            case EventType.EVAL_COMPLETE:
+                snap = self.state.snapshot()
+                cycle_metrics = dict(event.data.get("cycle_metrics", {}))
+                history = list(snap["metrics_history"])
+                history.append(cycle_metrics)
+                self.state.update_for_run(
+                    event.run_id,
+                    metrics_history=history,
+                    queried_images=[],
+                    unlabeled_pool_size=int(
+                        cycle_metrics.get("unlabeled_pool_size", snap["unlabeled_pool_size"])
+                    ),
+                    progress_detail=f"Cycle {event.cycle} complete",
+                )
+            case EventType.QUERYING_STARTED:
+                cycle = int(event.data.get("cycle", event.cycle))
+                self.state.update_for_run(
+                    event.run_id,
+                    app_state=AppState.QUERYING,
+                    progress_detail=f"Querying samples for cycle {cycle}...",
+                )
+            case EventType.NEW_IMAGES:
+                self.state.update_for_run(
+                    event.run_id,
+                    app_state=AppState.ANNOTATING,
+                    queried_images=list(event.data.get("queried_images", [])),
+                    query_token=str(event.data.get("query_token", "")),
+                    progress_detail="Waiting for annotations...",
+                )
+            case EventType.ANNOTATIONS_APPLIED:
+                count = int(event.data.get("count", 0))
+                self.state.update_for_run(
+                    event.run_id,
+                    queried_images=[],
+                    progress_detail=f"Annotations applied ({count})",
+                )
+            case EventType.RUN_FINISHED:
+                self.state.update_for_run(
+                    event.run_id,
+                    app_state=AppState.FINISHED,
+                    thread_status="finished",
+                    queried_images=[],
+                    query_token="",
+                    progress_detail="Experiment finished",
+                )
+            case EventType.RUN_ERROR:
+                self.state.set_error(
+                    Exception(str(event.data.get("error", "Unknown error"))),
+                    event.data.get("traceback"),
+                )
+            case EventType.RUN_STOPPED:
+                self.state.update_for_run(
+                    event.run_id,
+                    app_state=AppState.IDLE,
+                    thread_status="finished",
+                    queried_images=[],
+                    query_token="",
+                    progress_detail="Stopped",
+                )
+            case _:
+                logger.warning("Unhandled event type: %s", event.type)
+        return None
+
+    def _handle_start(self, config: Any) -> str:
+        """Immediate start: stop existing run, create run folder, save config, spawn thread."""
         self.stop_experiment(join_timeout=1.0)
         self._enforce_ui_safety(config)
         self.config = config
@@ -43,9 +151,19 @@ class Controller:
             progress_detail="Starting backend thread...",
         )
 
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_dir = (
+            Path(config.experiment.exp_dir)
+            / config.experiment.name
+            / f"{timestamp}_{run_id[:8]}"
+        )
+        run_dir.mkdir(parents=True, exist_ok=True)
+        config.save_to_file(run_dir / "config.yaml")
+        self.state.update_for_run(run_id, run_dir=str(run_dir))
+
         thread = threading.Thread(
             target=run_experiment,
-            args=(self.state, config),
+            args=(self.state, config, run_dir),
             daemon=True,
             name=f"ALThread-{run_id[:8]}",
         )
@@ -54,8 +172,8 @@ class Controller:
         logger.info("Started run %s", run_id)
         return run_id
 
-    def stop_experiment(self, join_timeout: float = 5.0) -> None:
-        """Signal backend thread to stop and best-effort join."""
+    def _handle_stop(self, join_timeout: float = 5.0) -> None:
+        """Immediate stop: mark STOPPING, signal worker, and best-effort join."""
         snap = self.state.snapshot()
         run_id = snap["run_id"]
 
@@ -64,10 +182,10 @@ class Controller:
                 run_id,
                 app_state=AppState.STOPPING,
                 thread_status="stopping",
+                query_token="",
                 progress_detail="Stop requested...",
             )
         self.state.stop_event.set()
-        # Unblock annotation wait loops immediately.
         self.state.annotations_ready.set()
 
         thread_obj = self.state.thread
@@ -81,12 +199,85 @@ class Controller:
                     run_id,
                     app_state=AppState.IDLE,
                     thread_status="finished",
+                    query_token="",
                     progress_detail="Stopped",
                 )
 
-    def submit_annotations(self, annotations: List[Dict[str, Any]], run_id: str, cycle: int) -> bool:
-        """Submit human annotations only if run/cycle is still current."""
-        return self.state.set_annotations(run_id=run_id, cycle=cycle, annotations=annotations)
+    def _handle_submit(self, event: Event) -> bool:
+        """Validate query token and hand accepted annotations to worker state."""
+        snap = self.state.snapshot()
+        token = str(event.data.get("query_token", ""))
+        if not token or token != snap["query_token"]:
+            return False
+
+        if not self.state.update_for_run(event.run_id, query_token=""):
+            return False
+
+        return self.state.set_annotations(
+            run_id=event.run_id,
+            cycle=event.cycle,
+            annotations=list(event.data.get("annotations", [])),
+        )
+
+    def start_experiment(self, config: Any) -> str:
+        """Backward-compatible wrapper for UI code paths."""
+        return self.dispatch(
+            Event(
+                type=EventType.START_EXPERIMENT,
+                data={"config": config},
+            )
+        )
+
+    def stop_experiment(self, join_timeout: float = 5.0) -> None:
+        """Backward-compatible wrapper for UI code paths."""
+        self.dispatch(
+            Event(
+                type=EventType.STOP_EXPERIMENT,
+                data={"join_timeout": join_timeout},
+            )
+        )
+
+    def submit_annotations(
+        self,
+        annotations: List[Dict[str, Any]],
+        run_id: str,
+        cycle: int,
+        query_token: Optional[str] = None,
+    ) -> bool:
+        """Backward-compatible wrapper for annotation submit."""
+        token = query_token if query_token is not None else self.state.snapshot().get("query_token", "")
+        return bool(
+            self.dispatch(
+                Event(
+                    type=EventType.SUBMIT_ANNOTATIONS,
+                    run_id=run_id,
+                    cycle=cycle,
+                    data={
+                        "annotations": annotations,
+                        "query_token": token,
+                    },
+                )
+            )
+        )
+
+    def process_inbox(self, since_version: int) -> Tuple[List[Event], int]:
+        """Drain worker events, filter stale items with a snapshot, and dispatch accepted events."""
+        events, new_version = self.state.inbox.drain(since_version)
+
+        snap = self.state.snapshot()
+        current_run_id = snap["run_id"]
+        current_cycle = snap["current_cycle"]
+
+        accepted: List[Event] = []
+        for event in events:
+            if event.run_id != current_run_id:
+                continue
+            if event.type == EventType.ANNOTATIONS_APPLIED and event.cycle != current_cycle:
+                continue
+            self.dispatch(event)
+            accepted.append(event)
+
+        return accepted, new_version
 
     def get_snapshot(self) -> Dict[str, Any]:
         """Return atomic snapshot used by UI."""

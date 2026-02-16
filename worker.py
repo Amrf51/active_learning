@@ -7,7 +7,8 @@ from __future__ import annotations
 import logging
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 import torch
 from torch.utils.data import DataLoader
@@ -15,7 +16,8 @@ from torch.utils.data import DataLoader
 from active_loop import ActiveLearningLoop
 from data_manager import ALDataManager
 from dataloader import get_datasets
-from experiment_state import AppState, ExperimentState
+from events import Event, EventType
+from experiment_state import ExperimentState
 from models import get_model
 from strategies import get_strategy
 from trainer import Trainer
@@ -23,9 +25,9 @@ from trainer import Trainer
 logger = logging.getLogger(__name__)
 
 
-def build_al_loop(config: Any) -> ActiveLearningLoop:
+def build_al_loop(config: Any, run_dir: Path) -> ActiveLearningLoop:
     """Build the AL loop once per run."""
-    exp_dir = Path(config.experiment.exp_dir) / config.experiment.name
+    exp_dir = Path(run_dir)
     exp_dir.mkdir(parents=True, exist_ok=True)
 
     datasets = get_datasets(
@@ -96,137 +98,153 @@ def build_al_loop(config: Any) -> ActiveLearningLoop:
     )
 
 
+def _emit_event(
+    state: ExperimentState,
+    event_type: EventType,
+    run_id: str,
+    cycle: int = 0,
+    data: Optional[Dict[str, Any]] = None,
+) -> None:
+    state.inbox.put(
+        Event(
+            type=event_type,
+            run_id=run_id,
+            cycle=cycle,
+            data=data or {},
+        )
+    )
+
+
 def _should_abort(state: ExperimentState, run_id: str) -> bool:
     if state.stop_event.is_set():
         return True
     return not state.is_run_active(run_id)
 
 
-def _exit_stopped(state: ExperimentState, run_id: str) -> None:
+def _as_dict(value: Any) -> Dict[str, Any]:
+    """Best-effort normalization of metrics objects to plain dict."""
+    if isinstance(value, dict):
+        return dict(value)
+    if hasattr(value, "to_dict"):
+        converted = value.to_dict()
+        if isinstance(converted, dict):
+            return dict(converted)
+    if hasattr(value, "model_dump"):
+        converted = value.model_dump()
+        if isinstance(converted, dict):
+            return dict(converted)
+    return {}
+
+
+def _flush_artifacts(al_loop: Optional[ActiveLearningLoop], run_dir: Path) -> None:
+    """Best-effort save of all run artifacts."""
+    if al_loop is None:
+        return
+    try:
+        al_loop._save_results()
+        al_loop.data_manager.save_state(Path(run_dir) / "al_pool_state.json")
+        al_loop.trainer.save_training_log()
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.exception("Failed to flush artifacts")
+
+
+def _exit_stopped(
+    state: ExperimentState,
+    run_id: str,
+    cycle: int,
+    al_loop: Optional[ActiveLearningLoop],
+    run_dir: Path,
+) -> None:
+    _flush_artifacts(al_loop, run_dir)
     if state.is_run_active(run_id):
-        state.update_for_run(
-            run_id,
-            app_state=AppState.IDLE,
-            thread_status="finished",
-            progress_detail="Stopped",
-        )
+        _emit_event(state, EventType.RUN_STOPPED, run_id=run_id, cycle=cycle, data={})
 
 
-def _append_epoch_metric(state: ExperimentState, run_id: str, metric: Dict[str, Any]) -> bool:
-    snap = state.snapshot()
-    metrics = snap["epoch_metrics"]
-    metrics.append(metric)
-    return state.update_for_run(run_id, epoch_metrics=metrics, current_epoch=metric.get("epoch", 0))
-
-
-def _append_cycle_metric(state: ExperimentState, run_id: str, metric: Dict[str, Any]) -> bool:
-    snap = state.snapshot()
-    history = snap["metrics_history"]
-    history.append(metric)
-    return state.update_for_run(
-        run_id,
-        metrics_history=history,
-        unlabeled_pool_size=int(metric.get("unlabeled_pool_size", 0)),
-    )
-
-
-def run_experiment(state: ExperimentState, config: Any) -> None:
+def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
     """
     Entry point for the backend daemon thread.
     """
     local_run_id = state.snapshot()["run_id"]
+    al_loop: Optional[ActiveLearningLoop] = None
+    current_cycle = 0
 
     try:
-        if not state.update_for_run(
-            local_run_id,
-            app_state=AppState.INITIALIZING,
-            thread_status="running",
-            progress_detail="Building model and dataloaders...",
-        ):
-            return
-
-        al_loop = build_al_loop(config)
+        al_loop = build_al_loop(config, run_dir)
         state.touch_heartbeat(local_run_id)
 
         if _should_abort(state, local_run_id):
-            _exit_stopped(state, local_run_id)
+            _exit_stopped(state, local_run_id, current_cycle, al_loop, run_dir)
             return
 
         total_cycles = int(config.active_learning.num_cycles)
         auto_annotate = bool(config.active_learning.auto_annotate)
 
         for cycle in range(1, total_cycles + 1):
+            current_cycle = cycle
             if _should_abort(state, local_run_id):
-                _exit_stopped(state, local_run_id)
-                return
-
-            if not state.update_for_run(
-                local_run_id,
-                app_state=AppState.TRAINING,
-                current_cycle=cycle,
-                current_epoch=0,
-                epoch_metrics=[],
-                progress_detail=f"Preparing cycle {cycle}/{total_cycles}...",
-            ):
+                _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
                 return
 
             prep_info = al_loop.prepare_cycle(cycle)
             class_names = list(getattr(al_loop, "class_names", []))
-            if not state.update_for_run(
-                local_run_id,
-                class_names=class_names,
-                unlabeled_pool_size=int(prep_info.get("unlabeled_count", 0)),
-                progress_detail=f"Training cycle {cycle}/{total_cycles}...",
-            ):
-                return
+            _emit_event(
+                state,
+                EventType.CYCLE_STARTED,
+                run_id=local_run_id,
+                cycle=cycle,
+                data={
+                    "cycle": cycle,
+                    "total_cycles": total_cycles,
+                    "class_names": class_names,
+                    "unlabeled_pool_size": int(prep_info.get("unlabeled_count", 0)),
+                },
+            )
 
             epochs = int(config.training.epochs)
             for epoch in range(1, epochs + 1):
                 if _should_abort(state, local_run_id):
-                    _exit_stopped(state, local_run_id)
+                    _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
                     return
 
-                state.update_for_run(
-                    local_run_id,
-                    app_state=AppState.TRAINING,
-                    current_epoch=epoch,
-                    progress_detail=f"Cycle {cycle}/{total_cycles} - Epoch {epoch}/{epochs}",
-                )
                 state.touch_heartbeat(local_run_id)
 
                 metrics = al_loop.train_single_epoch(epoch)
-                metrics_dict = metrics.to_dict() if hasattr(metrics, "to_dict") else dict(metrics)
-                if not _append_epoch_metric(state, local_run_id, metrics_dict):
-                    return
+                metrics_dict = _as_dict(metrics)
+                if not metrics_dict:
+                    metrics_dict = {"epoch": epoch}
+                _emit_event(
+                    state,
+                    EventType.EPOCH_DONE,
+                    run_id=local_run_id,
+                    cycle=cycle,
+                    data={
+                        "epoch": epoch,
+                        "total_epochs": epochs,
+                        "metrics": metrics_dict,
+                    },
+                )
 
                 if _should_abort(state, local_run_id):
-                    _exit_stopped(state, local_run_id)
+                    _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
                     return
 
                 if al_loop.should_stop_early():
                     break
 
             if _should_abort(state, local_run_id):
-                _exit_stopped(state, local_run_id)
+                _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
                 return
 
-            state.update_for_run(
-                local_run_id,
-                app_state=AppState.TRAINING,
-                progress_detail=f"Evaluating cycle {cycle}/{total_cycles}...",
-            )
             state.touch_heartbeat(local_run_id)
 
             test_metrics = al_loop.run_evaluation()
             cycle_metrics = al_loop.finalize_cycle(test_metrics).model_dump()
-
-            if not _append_cycle_metric(state, local_run_id, cycle_metrics):
-                return
-
-            state.update_for_run(
-                local_run_id,
-                queried_images=[],
-                progress_detail=f"Cycle {cycle}/{total_cycles} complete",
+            _emit_event(
+                state,
+                EventType.EVAL_COMPLETE,
+                run_id=local_run_id,
+                cycle=cycle,
+                data={"cycle_metrics": cycle_metrics},
             )
 
             if cycle >= total_cycles:
@@ -236,59 +254,60 @@ def run_experiment(state: ExperimentState, config: Any) -> None:
                 break
 
             if _should_abort(state, local_run_id):
-                _exit_stopped(state, local_run_id)
+                _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
                 return
 
-            state.update_for_run(
-                local_run_id,
-                app_state=AppState.QUERYING,
-                progress_detail=f"Querying samples for cycle {cycle}/{total_cycles}...",
+            _emit_event(
+                state,
+                EventType.QUERYING_STARTED,
+                run_id=local_run_id,
+                cycle=cycle,
+                data={"cycle": cycle},
             )
             state.touch_heartbeat(local_run_id)
 
             queried_images = al_loop.query_samples()
             queried_dicts = [img.to_dict() for img in queried_images]
-            if not state.update_for_run(local_run_id, queried_images=queried_dicts):
-                return
 
             if not queried_dicts:
                 continue
 
             if auto_annotate:
                 if _should_abort(state, local_run_id):
-                    _exit_stopped(state, local_run_id)
+                    _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
                     return
-
-                state.update_for_run(
-                    local_run_id,
-                    app_state=AppState.QUERYING,
-                    progress_detail=f"Auto-annotating {len(queried_dicts)} samples...",
-                )
 
                 annotations = [
                     {"image_id": img["image_id"], "user_label": img["ground_truth"]}
                     for img in queried_dicts
                 ]
                 al_loop.receive_annotations(annotations)
-                state.update_for_run(
-                    local_run_id,
-                    progress_detail=f"Auto-annotation complete for cycle {cycle}/{total_cycles}",
-                    queried_images=[],
+                _emit_event(
+                    state,
+                    EventType.ANNOTATIONS_APPLIED,
+                    run_id=local_run_id,
+                    cycle=cycle,
+                    data={"count": len(annotations)},
                 )
                 state.clear_annotations()
                 continue
 
             state.clear_annotations()
-            if not state.update_for_run(
-                local_run_id,
-                app_state=AppState.ANNOTATING,
-                progress_detail=f"Waiting for annotations (cycle {cycle}/{total_cycles})...",
-            ):
-                return
+            _emit_event(
+                state,
+                EventType.NEW_IMAGES,
+                run_id=local_run_id,
+                cycle=cycle,
+                data={
+                    "queried_images": queried_dicts,
+                    "query_token": str(uuid4()),
+                },
+            )
 
+            annotations: List[Dict[str, Any]]
             while True:
                 if _should_abort(state, local_run_id):
-                    _exit_stopped(state, local_run_id)
+                    _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
                     return
                 if state.annotations_ready.wait(timeout=0.5):
                     annotations = state.consume_annotations(local_run_id, cycle)
@@ -298,31 +317,39 @@ def run_experiment(state: ExperimentState, config: Any) -> None:
                 state.touch_heartbeat(local_run_id)
 
             if _should_abort(state, local_run_id):
-                _exit_stopped(state, local_run_id)
+                _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
                 return
 
-            state.update_for_run(
-                local_run_id,
-                app_state=AppState.ANNOTATING,
-                progress_detail=f"Applying {len(annotations)} annotations...",
-            )
             al_loop.receive_annotations(annotations)
-            state.update_for_run(
-                local_run_id,
-                queried_images=[],
-                progress_detail=f"Annotations applied for cycle {cycle}/{total_cycles}",
+            _emit_event(
+                state,
+                EventType.ANNOTATIONS_APPLIED,
+                run_id=local_run_id,
+                cycle=cycle,
+                data={"count": len(annotations)},
             )
 
+        _flush_artifacts(al_loop, run_dir)
         if state.is_run_active(local_run_id):
-            state.update_for_run(
-                local_run_id,
-                app_state=AppState.FINISHED,
-                thread_status="finished",
-                progress_detail="Experiment finished",
+            _emit_event(
+                state,
+                EventType.RUN_FINISHED,
+                run_id=local_run_id,
+                cycle=current_cycle,
+                data={},
             )
 
     except Exception as exc:  # pylint: disable=broad-exception-caught
+        logger.exception("Backend thread failed")
+        _flush_artifacts(al_loop, run_dir)
         if state.is_run_active(local_run_id):
-            tb = traceback.format_exc()
-            logger.exception("Backend thread failed")
-            state.set_error(exc, tb)
+            _emit_event(
+                state,
+                EventType.RUN_ERROR,
+                run_id=local_run_id,
+                cycle=current_cycle,
+                data={
+                    "error": str(exc),
+                    "traceback": traceback.format_exc(),
+                },
+            )

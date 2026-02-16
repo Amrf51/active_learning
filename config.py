@@ -97,6 +97,13 @@ class Config:
     def to_dict(self) -> dict:
         """Serialize entire config for queue transport (no dataclass objects)."""
         return asdict(self)
+
+    def save_to_file(self, path: Path) -> None:
+        """Save resolved config as YAML."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(self.to_dict(), f, default_flow_style=False, sort_keys=False)
     
     def validate(self) -> list[str]:
         """
