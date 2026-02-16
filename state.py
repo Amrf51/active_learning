@@ -53,6 +53,7 @@ class CycleMetrics:
     test_precision: float
     test_recall: float
     per_class_metrics: Optional[dict] = None
+    confusion_matrix_path: Optional[str] = None
     
     def model_dump(self) -> dict:
         """Convert to dictionary for serialization (Pydantic-style method name)."""
@@ -67,7 +68,8 @@ class CycleMetrics:
             "test_f1": self.test_f1,
             "test_precision": self.test_precision,
             "test_recall": self.test_recall,
-            "per_class_metrics": self.per_class_metrics
+            "per_class_metrics": self.per_class_metrics,
+            "confusion_matrix_path": self.confusion_matrix_path,
         }
 
 

@@ -388,6 +388,8 @@ class Trainer:
             "test_recall": float(recall),
             "test_f1": float(f1),
         }
+        if save_cm_path is not None:
+            metrics["confusion_matrix_path"] = str(save_cm_path)
         
         if class_names is not None:
             p_per_class, r_per_class, f1_per_class, _ = precision_recall_fscore_support(

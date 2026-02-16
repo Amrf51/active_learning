@@ -15,6 +15,39 @@ Transform the existing monolithic backend into an MVC + multiprocessing architec
 
 ---
 
+## Top Priority TODOs (Current Review)
+
+- [x] P0. Wire confusion matrix end-to-end (backend artifact + results UI)
+  - Requirement: `README.md` Phase 5 (Confusion Matrix).
+  - Backend: pass `save_cm_path` from AL loop to `Trainer.evaluate()`.
+  - UI: load and render confusion matrix heatmap in `views/results.py`.
+
+- [ ] P0. Expose probe-image prediction tracking in UI after each cycle
+  - Requirement: `README.md` Phase 4 (model predictions on example images, updated per cycle).
+  - Backend: include probe prediction payload in worker-to-controller events.
+  - UI: render probe predictions by cycle in results view.
+
+- [ ] P1. Add explicit "Next Step" control for cycle progression
+  - Requirement: `README.md` Phase 3 frontend controls (Start, Stop, Next Step).
+  - Add pause/step event flow between controller and worker.
+
+- [ ] P1. Implement Dataset Explorer page
+  - Requirement: `README.md` Phase 2 components (Dataset Explorer).
+  - Show labeled/unlabeled pools and class distribution.
+
+- [ ] P1. Add cross-run comparison graphs (strategy/model vs strategy/model)
+  - Requirement: `README.md` Phase 5 comparison graphs.
+  - Persist and aggregate metrics across runs for side-by-side charts.
+
+- [ ] P1. Align gallery uncertainty display with active sampling behavior
+  - Ensure displayed uncertainty semantics match strategy (`entropy`, `margin`, `least_confidence`).
+  - Fix margin-direction interpretation for uncertainty coloring.
+
+- [ ] P2. Honor configurable `data.image_size` in data transforms
+  - Replace hardcoded resize/crop sizes with config-driven values in `dataloader.py`.
+
+---
+
 ## Phase 1: Configuration & Protocol Infrastructure
 
 - [x] 1. Create YAML-based configuration system

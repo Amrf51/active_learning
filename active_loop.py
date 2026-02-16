@@ -312,9 +312,11 @@ class ActiveLearningLoop:
         Returns:
             Dict with test metrics
         """
+        cm_path = self.exp_dir / "confusion_matrices" / f"cycle_{self.current_cycle}.npy"
         test_metrics = self.trainer.evaluate(
             self.test_loader,
-            class_names=self.class_names
+            class_names=self.class_names,
+            save_cm_path=cm_path,
         )
         
         if self.config.checkpoint.save_best_per_cycle:
@@ -548,6 +550,7 @@ class ActiveLearningLoop:
             test_precision=test_metrics["test_precision"],
             test_recall=test_metrics["test_recall"],
             per_class_metrics=test_metrics.get("per_class"),
+            confusion_matrix_path=test_metrics.get("confusion_matrix_path"),
         )
         
         self.cycle_results.append(cycle_metrics)

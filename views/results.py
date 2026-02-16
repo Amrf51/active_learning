@@ -4,6 +4,7 @@ Results dashboard for completed/ongoing active learning runs.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List
 
 import pandas as pd
@@ -102,6 +103,89 @@ def render_best_cycle_summary(metrics_history: List[Dict[str, Any]]) -> None:
         st.write(f"Best Epoch: {best.get('best_epoch', 0)}")
 
 
+def _resolve_confusion_matrix_path(metric: Dict[str, Any], run_dir: str) -> Path | None:
+    raw_path = metric.get("confusion_matrix_path")
+    if raw_path:
+        path = Path(str(raw_path))
+        if path.exists():
+            return path
+
+    cycle = metric.get("cycle")
+    if run_dir and cycle is not None:
+        fallback = Path(run_dir) / "confusion_matrices" / f"cycle_{cycle}.npy"
+        if fallback.exists():
+            return fallback
+
+    return None
+
+
+def render_confusion_matrix(metrics_history: List[Dict[str, Any]], snap: Dict[str, Any]) -> None:
+    st.markdown("### Confusion Matrix")
+    if not metrics_history:
+        st.info("Confusion matrix will appear after at least one cycle completes")
+        return
+
+    cycle_options = [m.get("cycle", i + 1) for i, m in enumerate(metrics_history)]
+    selected_cycle = st.selectbox(
+        "Cycle",
+        options=cycle_options,
+        index=len(cycle_options) - 1,
+        key="results_confusion_matrix_cycle",
+    )
+    selected_metric = next(
+        (m for m in metrics_history if m.get("cycle", None) == selected_cycle),
+        metrics_history[-1],
+    )
+
+    cm_path = _resolve_confusion_matrix_path(selected_metric, str(snap.get("run_dir", "")))
+    if cm_path is None:
+        st.info("Confusion matrix file not found for selected cycle.")
+        return
+
+    try:
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        cm = np.load(cm_path)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        st.error(f"Failed to load confusion matrix: {exc}")
+        return
+
+    if cm.ndim != 2:
+        st.error(f"Invalid confusion matrix shape: {cm.shape}")
+        return
+
+    num_classes = int(cm.shape[0])
+    class_names = list(snap.get("class_names", []))
+    if len(class_names) != num_classes:
+        class_names = [str(i) for i in range(num_classes)]
+
+    fig_size = min(14, max(6, num_classes * 0.7))
+    fig, ax = plt.subplots(figsize=(fig_size, fig_size))
+    image = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
+    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
+    ax.set_title(f"Cycle {selected_cycle} Confusion Matrix")
+    ax.set_xlabel("Predicted Label")
+    ax.set_ylabel("True Label")
+
+    ax.set_xticks(range(num_classes))
+    ax.set_yticks(range(num_classes))
+    ax.set_xticklabels(class_names, rotation=45, ha="right")
+    ax.set_yticklabels(class_names)
+
+    if num_classes <= 25:
+        threshold = cm.max() / 2.0 if cm.size else 0
+        for i in range(num_classes):
+            for j in range(num_classes):
+                value = int(cm[i, j])
+                color = "white" if value > threshold else "black"
+                ax.text(j, i, str(value), ha="center", va="center", color=color, fontsize=8)
+
+    fig.tight_layout()
+    st.pyplot(fig, use_container_width=True)
+    st.caption(f"Source: {cm_path}")
+
+
 def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:
     st.title("Results Dashboard")
     st.markdown("---")
@@ -116,6 +200,8 @@ def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:
     render_metrics_table(metrics_history)
     st.markdown("---")
     render_best_cycle_summary(metrics_history)
+    st.markdown("---")
+    render_confusion_matrix(metrics_history, snap)
     st.markdown("---")
 
     if st.button("Export Results (JSON)"):
