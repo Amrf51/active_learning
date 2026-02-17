@@ -34,9 +34,13 @@ def render() -> None:
                 "Try Stop and restart the experiment."
             )
 
-    main_tab, explorer_tab = st.tabs(["Main", "Dataset Explorer"])
+    main_tab, results_tab, explorer_tab = st.tabs(["Main", "Results", "Dataset Explorer"])
     with main_tab:
         _render_state_view(controller, snap, current_state)
+    with results_tab:
+        from views.results import render_results_view
+
+        render_results_view(controller, snap)
     with explorer_tab:
         from views.explorer import render_explorer_view
 
@@ -68,30 +72,19 @@ def _render_state_view(controller: Controller, snap: dict, current_state: AppSta
 
 
 def render_idle_view(controller: Controller, snap: dict) -> None:
-    if snap["metrics_history"]:
-        tab1, tab2 = st.tabs(["Welcome", "Results"])
-        with tab1:
-            st.info("IDLE - Ready to start a new experiment.")
-            st.write("Configure your experiment in the sidebar and click Start Experiment.")
-            with st.expander("Controller Status"):
-                st.write(f"Current Cycle: {snap['current_cycle']}")
-                st.write(f"Completed Cycles: {len(snap['metrics_history'])}")
-                st.write(f"Queried Images: {len(snap['queried_images'])}")
-        with tab2:
-            from views.results import render_results_view
-
-            render_results_view(controller, snap)
-    else:
-        st.info("IDLE - Ready to start a new experiment.")
-        st.write("Configure your experiment in the sidebar and click Start Experiment.")
+    _ = controller
+    st.info("IDLE - Ready to start a new experiment.")
+    st.write("Configure your experiment in the sidebar and click Start Experiment.")
+    with st.expander("Controller Status"):
+        st.write(f"Current Cycle: {snap['current_cycle']}")
+        st.write(f"Completed Cycles: {len(snap['metrics_history'])}")
+        st.write(f"Queried Images: {len(snap['queried_images'])}")
 
 
 def render_finished_view(controller: Controller, snap: dict) -> None:
+    _ = controller
     st.success("Experiment finished.")
     st.caption(snap.get("progress_detail", ""))
-    from views.results import render_results_view
-
-    render_results_view(controller, snap)
 
 
 def render_initializing_view(snap: dict) -> None:
@@ -104,16 +97,7 @@ def render_initializing_view(snap: dict) -> None:
 def render_training_view(controller: Controller, snap: dict) -> None:
     from views.training import render_training_view as render_training
 
-    if snap["metrics_history"]:
-        tab1, tab2 = st.tabs(["Training", "Results"])
-        with tab1:
-            render_training(controller, snap)
-        with tab2:
-            from views.results import render_results_view
-
-            render_results_view(controller, snap)
-    else:
-        render_training(controller, snap)
+    render_training(controller, snap)
 
 
 def render_querying_view(snap: dict) -> None:
@@ -130,12 +114,9 @@ def render_annotating_view(controller: Controller, snap: dict) -> None:
 
 
 def render_waiting_step_view(controller: Controller, snap: dict) -> None:
+    _ = controller
     st.info("Paused in step mode.")
     st.caption(snap.get("progress_detail", "Click Next Step in the sidebar to continue."))
-    if snap.get("metrics_history"):
-        from views.results import render_results_view
-
-        render_results_view(controller, snap)
 
 
 def render_stopping_view(snap: dict) -> None:
