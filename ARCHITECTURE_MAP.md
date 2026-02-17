@@ -65,7 +65,8 @@ Core flow:
 - `worker.py:28` `build_al_loop()`: constructs dataset loaders, model, data manager, trainer, strategy, AL loop.
 - `worker.py:101` `_emit_event()`: worker -> inbox event publishing.
 - `worker.py:178` `_wait_for_next_step()`: step-mode blocking wait.
-- `worker.py:189` `_flush_artifacts()`: saves results/state/logs at stop/finish/error.
+- `worker.py:189` `_flush_artifacts()`: final save of results/state/logs at stop/finish/error.
+- `worker.py` incremental persistence: artifacts are also saved during the run (after cycle eval and annotation application).
 
 ### Active Learning Loop
 
@@ -92,7 +93,7 @@ Core flow:
 - `views/sidebar.py:422` `render_sidebar()`: config controls + Start/Stop/Next Step.
 - `views/training.py:122` `render_training_view()`: live training charts/metrics.
 - `views/gallery.py:277` `render_gallery_view()`: manual annotation UI and submit flow.
-- `views/results.py:296` `render_results_view()`: metrics history/probe/confusion matrix.
+- `views/results.py:430` `render_results_view()`: disk-first run browser (current + previous runs from experiment folders).
 - `views/explorer.py:46` `render_explorer_view()`: pool sizes and class distribution.
 
 ## 3. Initialization Map (Exact "where")
@@ -364,6 +365,11 @@ Per-run directory artifacts:
 - `confusion_matrices/cycle_{n}.npy`
 - `queries/cycle_{n}/...` cached queried images
 - `cycle_{n}_annotations.json` for annotation summary
+
+Persistence cadence:
+
+- `al_cycle_results.json`, `al_pool_state.json`, and training logs are persisted incrementally during runs.
+- Final flush still occurs on stop/finish/error.
 
 Global snapshot artifact:
 

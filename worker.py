@@ -191,11 +191,17 @@ def _flush_artifacts(al_loop: Optional[ActiveLearningLoop], run_dir: Path) -> No
     if al_loop is None:
         return
     try:
-        al_loop._save_results()
-        al_loop.data_manager.save_state(Path(run_dir) / "al_pool_state.json")
-        al_loop.trainer.save_training_log()
+        al_loop.persist_artifacts()
     except Exception:  # pylint: disable=broad-exception-caught
         logger.exception("Failed to flush artifacts")
+
+
+def _persist_incremental_artifacts(al_loop: ActiveLearningLoop, cycle: int) -> None:
+    """Best-effort persistence after each cycle so UI can read run folders directly."""
+    try:
+        al_loop.persist_artifacts()
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.exception("Failed to persist incremental artifacts for cycle %s", cycle)
 
 
 def _exit_stopped(
@@ -320,6 +326,7 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                     "unlabeled_class_distribution": pool_stats["unlabeled_class_distribution"],
                 },
             )
+            _persist_incremental_artifacts(al_loop, cycle)
 
             if cycle >= total_cycles:
                 continue
@@ -366,6 +373,7 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                     },
                 )
                 state.clear_annotations()
+                _persist_incremental_artifacts(al_loop, cycle)
                 continue
 
             queried_images = al_loop.query_samples(
@@ -419,6 +427,7 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                     "unlabeled_class_distribution": pool_stats["unlabeled_class_distribution"],
                 },
             )
+            _persist_incremental_artifacts(al_loop, cycle)
 
         _flush_artifacts(al_loop, run_dir)
         if state.is_run_active(local_run_id):

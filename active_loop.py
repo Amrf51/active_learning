@@ -751,11 +751,15 @@ class ActiveLearningLoop:
         logger.info("="*60)
         
         self._log_summary()
-        self._save_results()
-        
-        self.data_manager.save_state(self.exp_dir / "al_pool_state.json")
+        self.persist_artifacts()
         
         return self.cycle_results
+    
+    def persist_artifacts(self) -> None:
+        """Persist run artifacts used by the dashboard and experiment analysis."""
+        self._save_results()
+        self.data_manager.save_state(self.exp_dir / "al_pool_state.json")
+        self.trainer.save_training_log()
     
     def _save_results(self):
         """Save cycle results to JSON."""
