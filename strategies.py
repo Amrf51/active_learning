@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from typing import Callable, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,8 @@ def uncertainty_least_confidence(
     model: torch.nn.Module,
     unlabeled_loader: DataLoader,
     n_samples: int,
-    device: str = "cuda"
+    device: str = "cuda",
+    heartbeat_fn: Optional[Callable[[], None]] = None,
 ) -> np.ndarray:
     """
     Query instances with lowest prediction confidence.
@@ -48,6 +50,8 @@ def uncertainty_least_confidence(
             probs = F.softmax(outputs, dim=1)
             max_probs, _ = probs.max(dim=1)
             confidences.extend(max_probs.cpu().numpy())
+            if heartbeat_fn is not None:
+                heartbeat_fn()
     
     confidences = np.array(confidences)
     
@@ -63,7 +67,8 @@ def uncertainty_entropy(
     model: torch.nn.Module,
     unlabeled_loader: DataLoader,
     n_samples: int,
-    device: str = "cuda"
+    device: str = "cuda",
+    heartbeat_fn: Optional[Callable[[], None]] = None,
 ) -> np.ndarray:
     """
     Query instances with highest prediction entropy.
@@ -91,6 +96,8 @@ def uncertainty_entropy(
             # Add small epsilon to avoid log(0)
             entropy = -(probs * torch.log(probs + 1e-10)).sum(dim=1)
             entropies.extend(entropy.cpu().numpy())
+            if heartbeat_fn is not None:
+                heartbeat_fn()
     
     entropies = np.array(entropies)
     
@@ -106,7 +113,8 @@ def margin_sampling(
     model: torch.nn.Module,
     unlabeled_loader: DataLoader,
     n_samples: int,
-    device: str = "cuda"
+    device: str = "cuda",
+    heartbeat_fn: Optional[Callable[[], None]] = None,
 ) -> np.ndarray:
     """
     Query instances with smallest margin between top-2 predictions.
@@ -141,6 +149,8 @@ def margin_sampling(
                 margin = top2_probs[:, 0]
             
             margins.extend(margin.cpu().numpy())
+            if heartbeat_fn is not None:
+                heartbeat_fn()
     
     margins = np.array(margins)
     
@@ -156,7 +166,8 @@ def random_sampling(
     model: torch.nn.Module,
     unlabeled_loader: DataLoader,
     n_samples: int,
-    device: str = "cuda"
+    device: str = "cuda",
+    heartbeat_fn: Optional[Callable[[], None]] = None,
 ) -> np.ndarray:
     """
     Query random instances (baseline strategy).
@@ -174,6 +185,8 @@ def random_sampling(
     n_query = min(n_samples, n_total)
     
     query_indices = np.random.choice(n_total, size=n_query, replace=False)
+    if heartbeat_fn is not None:
+        heartbeat_fn()
     
     logger.info(f"Random sampling: selected {len(query_indices)} samples")
     

@@ -23,6 +23,37 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# Experiment metadata
+# ============================================================================
+
+def render_experiment_settings() -> str:
+    """
+    Render experiment metadata controls.
+
+    Returns:
+        Experiment name to use for run folder parent path.
+    """
+    st.sidebar.markdown("### Experiment")
+
+    current_config = st.session_state.get("config")
+    default_name = "al_experiment"
+    if current_config is not None and hasattr(current_config, "experiment"):
+        default_name = str(getattr(current_config.experiment, "name", default_name))
+
+    experiment_name = st.sidebar.text_input(
+        "Experiment Name",
+        value=default_name,
+        help="Used as the folder name under the experiments directory for this run.",
+    ).strip()
+
+    if not experiment_name:
+        experiment_name = default_name
+        st.sidebar.caption("Empty name reverted to default experiment name.")
+
+    return experiment_name
+
+
+# ============================================================================
 # SUBTASK 11.1: Model selection dropdown (curated families)
 # ============================================================================
 
@@ -404,6 +435,7 @@ def render_sidebar(controller: Controller) -> Dict[str, Any]:
     st.sidebar.markdown("Configure your experiment below")
     
     # Render all sections
+    experiment_name = render_experiment_settings()
     model_name = render_model_selection()
     strategy = render_strategy_selection()
     training_params = render_training_hyperparameters()
@@ -411,6 +443,7 @@ def render_sidebar(controller: Controller) -> Dict[str, Any]:
     
     # Build config overrides dictionary
     config_overrides = {
+        "experiment.name": experiment_name,
         "model.name": model_name,
         "active_learning.sampling_strategy": strategy,
         "training.epochs": training_params["epochs"],

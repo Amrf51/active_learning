@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 from datetime import datetime
@@ -30,6 +31,17 @@ class Controller:
     def _enforce_ui_safety(self, config: Any) -> None:
         # Streamlit mode should not spawn dataloader workers.
         config.data.num_workers = 0
+
+    def _sanitize_experiment_name(self, name: Any) -> str:
+        """Return a filesystem-safe experiment folder name."""
+        raw = str(name or "").strip()
+        if not raw:
+            return "al_experiment"
+
+        # Windows-reserved filename characters + control chars.
+        safe = re.sub(r'[<>:"/\\\\|?*\x00-\x1F]', "_", raw)
+        safe = safe.strip().strip(".")
+        return safe or "al_experiment"
 
     def dispatch(self, event: Event) -> Any:
         """Central event router for UI and worker lifecycle events."""
@@ -175,6 +187,14 @@ class Controller:
         """Immediate start: stop existing run, create run folder, save config, spawn thread."""
         self.stop_experiment(join_timeout=1.0)
         self._enforce_ui_safety(config)
+        safe_exp_name = self._sanitize_experiment_name(config.experiment.name)
+        if safe_exp_name != config.experiment.name:
+            logger.warning(
+                "Experiment name '%s' normalized to '%s' for folder creation",
+                config.experiment.name,
+                safe_exp_name,
+            )
+        config.experiment.name = safe_exp_name
         self.config = config
 
         run_id = self.state.reset(config)
@@ -185,10 +205,10 @@ class Controller:
             progress_detail="Starting backend thread...",
         )
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
         run_dir = (
             Path(config.experiment.exp_dir)
-            / config.experiment.name
+            / safe_exp_name
             / f"{timestamp}_{run_id[:8]}"
         )
         run_dir.mkdir(parents=True, exist_ok=True)

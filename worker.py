@@ -340,22 +340,17 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
             )
             state.touch_heartbeat(local_run_id)
 
-            queried_images = al_loop.query_samples()
-            queried_dicts = [img.to_dict() for img in queried_images]
-
-            if not queried_dicts:
-                continue
-
             if auto_annotate:
                 if _should_abort(state, local_run_id):
                     _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
                     return
 
-                annotations = [
-                    {"image_id": img["image_id"], "user_label": img["ground_truth"]}
-                    for img in queried_dicts
-                ]
-                al_loop.receive_annotations(annotations)
+                summary = al_loop.query_and_auto_annotate(
+                    heartbeat_fn=lambda: state.touch_heartbeat(local_run_id)
+                )
+                if int(summary.get("queried_count", 0)) <= 0:
+                    continue
+
                 pool_stats = _pool_stats(al_loop)
                 _emit_event(
                     state,
@@ -363,7 +358,7 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                     run_id=local_run_id,
                     cycle=cycle,
                     data={
-                        "count": len(annotations),
+                        "count": int(summary.get("applied_count", 0)),
                         "labeled_pool_size": pool_stats["labeled_pool_size"],
                         "unlabeled_pool_size": pool_stats["unlabeled_pool_size"],
                         "labeled_class_distribution": pool_stats["labeled_class_distribution"],
@@ -371,6 +366,14 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                     },
                 )
                 state.clear_annotations()
+                continue
+
+            queried_images = al_loop.query_samples(
+                heartbeat_fn=lambda: state.touch_heartbeat(local_run_id)
+            )
+            queried_dicts = [img.to_dict() for img in queried_images]
+
+            if not queried_dicts:
                 continue
 
             state.clear_annotations()

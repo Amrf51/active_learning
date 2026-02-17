@@ -99,7 +99,7 @@ class ALDataManager:
     def _get_label(self, idx: int) -> int:
         """
         Get label for a dataset index with caching.
-        
+
         This avoids loading images when we only need labels for
         class distribution calculations.
         
@@ -110,8 +110,48 @@ class ALDataManager:
             Label as integer
         """
         if idx not in self._label_cache:
-            _, label = self.dataset[idx]
-            self._label_cache[idx] = int(label)
+            label = None
+
+            # Fast path for SplitSubset/ImageFolderWithIndex wrapper used by this project.
+            if hasattr(self.dataset, "indices") and hasattr(self.dataset, "parent"):
+                try:
+                    actual_idx = self.dataset.indices[idx]
+                    parent = self.dataset.parent
+                    if hasattr(parent, "dataset") and hasattr(parent.dataset, "samples"):
+                        label = int(parent.dataset.samples[actual_idx][1])
+                except Exception:  # pylint: disable=broad-exception-caught
+                    label = None
+
+            # Generic Subset(dataset=..., indices=...) fast path.
+            if label is None and hasattr(self.dataset, "dataset") and hasattr(self.dataset, "indices"):
+                try:
+                    actual_idx = self.dataset.indices[idx]
+                    inner = self.dataset.dataset
+                    if hasattr(inner, "targets"):
+                        label = int(inner.targets[actual_idx])
+                    elif hasattr(inner, "samples"):
+                        label = int(inner.samples[actual_idx][1])
+                except Exception:  # pylint: disable=broad-exception-caught
+                    label = None
+
+            # Direct ImageFolder-like datasets.
+            if label is None and hasattr(self.dataset, "targets"):
+                try:
+                    label = int(self.dataset.targets[idx])
+                except Exception:  # pylint: disable=broad-exception-caught
+                    label = None
+            if label is None and hasattr(self.dataset, "samples"):
+                try:
+                    label = int(self.dataset.samples[idx][1])
+                except Exception:  # pylint: disable=broad-exception-caught
+                    label = None
+
+            # Slow fallback: run __getitem__ (loads image + transforms).
+            if label is None:
+                _, fetched = self.dataset[idx]
+                label = int(fetched)
+
+            self._label_cache[idx] = label
         return self._label_cache[idx]
     
     def get_pool_info(self) -> Dict:
@@ -215,8 +255,7 @@ class ALDataManager:
         Returns:
             Ground truth label (int)
         """
-        _, label = self.dataset[image_id]
-        return int(label)
+        return self._get_label(image_id)
     
     def update_labeled_pool(
         self,

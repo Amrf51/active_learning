@@ -18,6 +18,7 @@ step, enabling real-time visualization in the Streamlit dashboard.
 
 import json
 import shutil
+import inspect
 import numpy as np
 from pathlib import Path
 from typing import Dict, List, Callable, Optional, Tuple
@@ -337,34 +338,130 @@ class ActiveLearningLoop:
         
         return test_metrics
     
-    def query_samples(self) -> List[QueriedImage]:
+    def _select_query_indices(
+        self,
+        heartbeat_fn: Optional[Callable[[], None]] = None,
+    ) -> np.ndarray:
         """
-        Apply AL strategy to select samples for annotation.
-        
+        Run the configured strategy and return relative indices into unlabeled pool.
+
+        Args:
+            heartbeat_fn: Optional callback used to keep worker heartbeat fresh
+                during potentially long query passes.
+
         Returns:
-            List of QueriedImage objects with full info for UI
+            Array of relative indices into current unlabeled pool.
         """
         al_config = self.config.active_learning
-        
+
         pool_info = self.data_manager.get_pool_info()
         if pool_info["unlabeled"] == 0:
             logger.warning("No unlabeled samples remaining")
-            return []
-        
+            return np.array([], dtype=int)
+
         n_query = min(al_config.batch_size_al, pool_info["unlabeled"])
-        
         unlabeled_loader = self.data_manager.get_unlabeled_loader(
             batch_size=self.config.training.batch_size,
             shuffle=False,
             num_workers=self.config.data.num_workers
         )
+
+        supports_heartbeat = False
+        try:
+            supports_heartbeat = "heartbeat_fn" in inspect.signature(self.strategy).parameters
+        except (TypeError, ValueError):
+            supports_heartbeat = False
+
+        if supports_heartbeat:
+            query_indices = self.strategy(
+                self.trainer.model,
+                unlabeled_loader,
+                n_query,
+                self.trainer.device,
+                heartbeat_fn=heartbeat_fn,
+            )
+        else:
+            query_indices = self.strategy(
+                self.trainer.model,
+                unlabeled_loader,
+                n_query,
+                self.trainer.device,
+            )
+
+        query_indices = np.asarray(query_indices, dtype=int).reshape(-1)
+        if query_indices.size == 0:
+            return query_indices
+
+        max_idx = len(self.data_manager.get_unlabeled_indices())
+        valid = (query_indices >= 0) & (query_indices < max_idx)
+        filtered = query_indices[valid]
+        if filtered.size < query_indices.size:
+            logger.warning(
+                "Strategy returned %d out-of-range query indices; kept %d valid",
+                int(query_indices.size - filtered.size),
+                int(filtered.size),
+            )
+        return filtered
+
+    def query_and_auto_annotate(
+        self,
+        heartbeat_fn: Optional[Callable[[], None]] = None,
+    ) -> Dict[str, int]:
+        """
+        Query samples and apply ground-truth annotations without UI payload building.
+
+        This is the fast path for auto-annotate mode.
+        """
+        query_indices = self._select_query_indices(heartbeat_fn=heartbeat_fn)
+        if query_indices.size == 0:
+            return {"queried_count": 0, "applied_count": 0}
+
+        unlabeled_indices = self.data_manager.get_unlabeled_indices()
+        absolute_indices: List[int] = []
+        seen = set()
+
+        for rel_idx in query_indices.tolist():
+            if 0 <= rel_idx < len(unlabeled_indices):
+                abs_idx = int(unlabeled_indices[rel_idx])
+                if abs_idx not in seen:
+                    seen.add(abs_idx)
+                    absolute_indices.append(abs_idx)
+
+        annotations = []
+        for image_id in absolute_indices:
+            annotations.append(
+                {
+                    "image_id": image_id,
+                    "user_label": int(self.data_manager.get_ground_truth(image_id)),
+                }
+            )
+            if heartbeat_fn is not None:
+                heartbeat_fn()
+
+        if not annotations:
+            return {"queried_count": 0, "applied_count": 0}
+
+        result = self.receive_annotations(annotations)
+        applied = int(result.get("moved_count", 0))
+        logger.info("Auto-annotated %d/%d queried samples", applied, len(annotations))
+        return {"queried_count": len(annotations), "applied_count": applied}
+
+    def query_samples(
+        self,
+        heartbeat_fn: Optional[Callable[[], None]] = None,
+    ) -> List[QueriedImage]:
+        """
+        Apply AL strategy to select samples for annotation.
         
-        query_indices = self.strategy(
-            self.trainer.model,
-            unlabeled_loader,
-            n_query,
-            self.trainer.device
-        )
+        Args:
+            heartbeat_fn: Optional callback used during query phase.
+
+        Returns:
+            List of QueriedImage objects with full info for UI
+        """
+        query_indices = self._select_query_indices(heartbeat_fn=heartbeat_fn)
+        if query_indices.size == 0:
+            return []
         
         queried_images = self._build_queried_images(query_indices)
         
