@@ -17,6 +17,14 @@ from events import Event, EventType
 logger = logging.getLogger(__name__)
 
 
+def _load_display_image(image_path: str) -> Image.Image:
+    """Open image for Streamlit display and normalize problematic palette mode."""
+    img = Image.open(image_path)
+    if img.mode == "P" and "transparency" in img.info:
+        return img.convert("RGBA")
+    return img
+
+
 def render_image_grid(
     queried_images: List[Dict[str, Any]],
     available_classes: List[str],
@@ -50,8 +58,8 @@ def render_image_card(image_data: Dict[str, Any], img_idx: int, available_classe
     with st.container():
         try:
             if Path(display_path).exists():
-                img = Image.open(display_path)
-                st.image(img, use_container_width=True)
+                img = _load_display_image(display_path)
+                st.image(img, width="stretch")
             else:
                 st.warning(f"Image not found: {display_path}")
         except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -155,7 +163,7 @@ def render_auto_label_button(queried_images: List[Dict[str, Any]]) -> bool:
     if st.button(
         "Auto-Label All (Ground Truth)",
         type="secondary",
-        use_container_width=True,
+        width="stretch",
         help="Automatically label all images with their ground truth labels",
     ):
         if "annotations" not in st.session_state:
@@ -199,7 +207,7 @@ def render_submit_button(
     if st.button(
         "Submit Annotations",
         type="primary",
-        use_container_width=True,
+        width="stretch",
         disabled=submit_disabled,
         help="Submit annotations and continue"
         if not submit_disabled

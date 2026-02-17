@@ -80,4 +80,4 @@ def render_explorer_view(controller: Controller, snap: Dict[str, Any]) -> None:
         return
 
     st.bar_chart(dist_df.set_index("Class")[["Labeled", "Unlabeled"]], height=350)
-    st.dataframe(dist_df, use_container_width=True, hide_index=True)
+    st.dataframe(dist_df, width="stretch", hide_index=True)

@@ -9,8 +9,17 @@ from typing import Any, Dict, List
 
 import pandas as pd
 import streamlit as st
+from PIL import Image
 
 from controller import Controller
+
+
+def _load_display_image(image_path: str) -> Image.Image:
+    """Open image for Streamlit display and normalize problematic palette mode."""
+    img = Image.open(image_path)
+    if img.mode == "P" and "transparency" in img.info:
+        return img.convert("RGBA")
+    return img
 
 
 def render_metrics_table(metrics_history: List[Dict[str, Any]]) -> None:
@@ -33,7 +42,7 @@ def render_metrics_table(metrics_history: List[Dict[str, Any]]) -> None:
             }
         )
     df = pd.DataFrame(rows)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width="stretch", hide_index=True)
 
     latest = metrics_history[-1]
     labeled = latest.get("labeled_pool_size", 0)
@@ -175,7 +184,7 @@ def render_probe_predictions(metrics_history: List[Dict[str, Any]], snap: Dict[s
     with col3:
         st.metric("Probe Accuracy", f"{accuracy:.1f}%")
 
-    st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(table_rows), width="stretch", hide_index=True)
 
     with st.expander("Probe Image Cards"):
         num_cols = 4
@@ -189,7 +198,7 @@ def render_probe_predictions(metrics_history: List[Dict[str, Any]], snap: Dict[s
 
                 image_path = str(probe.get("display_path") or probe.get("image_path") or "")
                 if image_path and Path(image_path).exists():
-                    st.image(image_path, use_container_width=True)
+                    st.image(_load_display_image(image_path), width="stretch")
 
                 true_class = str(probe.get("true_class", probe.get("true_class_idx", "N/A")))
                 predicted_class = str(prediction.get("predicted_class", "N/A"))
@@ -280,7 +289,7 @@ def render_confusion_matrix(metrics_history: List[Dict[str, Any]], snap: Dict[st
                 ax.text(j, i, str(value), ha="center", va="center", color=color, fontsize=8)
 
     fig.tight_layout()
-    st.pyplot(fig, use_container_width=True)
+    st.pyplot(fig, width="stretch")
     st.caption(f"Source: {cm_path}")
 
 
