@@ -86,8 +86,8 @@ def _handle_ui_effects(events: List[Event]) -> None:
             st.session_state.pop("last_annotation_feedback", None)
 
 
-def _drain_inbox_and_render() -> None:
-    """Drain worker inbox once and render routed UI."""
+def _drain_inbox_and_render() -> dict:
+    """Drain worker inbox once, render routed UI, and return the snapshot used."""
     from views.router import render
 
     controller = st.session_state.controller
@@ -98,13 +98,13 @@ def _drain_inbox_and_render() -> None:
         _handle_ui_effects(events)
     st.session_state.last_event_version = new_ver
 
-    render()
-
-
-def _ensure_poll_mode_matches_state() -> None:
-    """Switch polling mode when state changes and trigger full rerun."""
-    controller = st.session_state.controller
     snap = controller.get_snapshot()
+    render(snap)
+    return snap
+
+
+def _ensure_poll_mode_matches_state(snap: dict) -> None:
+    """Switch polling mode when state changes and trigger full rerun."""
     desired_mode = _target_poll_mode(snap["app_state"])
     current_mode = st.session_state.get("poll_mode", "off")
     if desired_mode != current_mode:
@@ -115,15 +115,15 @@ def _ensure_poll_mode_matches_state() -> None:
 @st.fragment(run_every="0.5s")
 def fast_live_update_fragment() -> None:
     """Fast polling for short-latency states."""
-    _drain_inbox_and_render()
-    _ensure_poll_mode_matches_state()
+    snap = _drain_inbox_and_render()
+    _ensure_poll_mode_matches_state(snap)
 
 
 @st.fragment(run_every="1.5s")
 def slow_live_update_fragment() -> None:
     """Reduced polling cadence for long-running states."""
-    _drain_inbox_and_render()
-    _ensure_poll_mode_matches_state()
+    snap = _drain_inbox_and_render()
+    _ensure_poll_mode_matches_state(snap)
 
 
 def static_render_fragment() -> None:

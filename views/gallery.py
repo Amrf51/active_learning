@@ -17,6 +17,7 @@ from events import Event, EventType
 logger = logging.getLogger(__name__)
 
 
+@st.cache_data(show_spinner=False)
 def _load_display_image(image_path: str) -> Image.Image:
     """Open image for Streamlit display and normalize problematic palette mode."""
     img = Image.open(image_path)

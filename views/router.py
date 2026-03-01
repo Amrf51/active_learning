@@ -5,7 +5,7 @@ View router for the threaded Active Learning UI.
 from __future__ import annotations
 
 import time
-from typing import Optional
+from typing import Dict, Optional
 
 import streamlit as st
 
@@ -16,14 +16,15 @@ from experiment_state import AppState
 STALE_HEARTBEAT_SECONDS = 60.0
 
 
-def render() -> None:
+def render(snap: Optional[Dict] = None) -> None:
     """Route to the correct state view using one atomic snapshot."""
     controller: Optional[Controller] = st.session_state.get("controller")
     if controller is None:
         st.error("Controller not initialized. Please restart the application.")
         return
 
-    snap = controller.get_snapshot()
+    if snap is None:
+        snap = controller.get_snapshot()
     current_state = snap["app_state"]
 
     if current_state in {AppState.INITIALIZING, AppState.QUERYING} and snap["thread_alive"]:
