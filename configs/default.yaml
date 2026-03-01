@@ -1,0 +1,49 @@
+# ──────────────────────────────────────
+# Active Learning Framework Configuration
+# ──────────────────────────────────────
+
+experiment:
+  name: "mwpTest"
+  seed: 42
+  device: "auto"             # "auto", "cuda", "cpu"
+  exp_dir: "experiments/"
+
+data:
+  data_dir: "data/raw/kaggle-vehicle"
+  val_split: 0.15
+  test_split: 0.15
+  augmentation: true
+  num_workers: 0  # Set to 0 to avoid multiprocessing issues
+  image_size: 224
+
+model:
+  name: "resnet18"           # Any TIMM model name
+  pretrained: true
+  num_classes: null           # auto-detected from dataset if null
+
+training:
+  epochs: 5
+  batch_size: 32
+  learning_rate: 1.0e-4
+  weight_decay: 1.0e-4
+  optimizer: "adam"          # "adam", "adamw", "sgd"
+  early_stopping_patience: 3
+
+active_learning:
+  num_cycles: 10
+  initial_pool_size: 100
+  batch_size_al: 50           # samples per query
+  sampling_strategy: "entropy" # "entropy", "margin", "least_confidence", "random"
+  uncertainty_method: "entropy"
+  reset_mode: "pretrained"    # "pretrained", "head_only", "none"
+  step_mode: false            # true = require "Next Step" to start each new cycle
+  auto_annotate: true         # Auto-annotate with ground truth for simulation
+
+checkpoint:
+  save_best_model: true
+  save_best_per_cycle: true
+  save_every_n_epochs: 5
+
+logging:
+  level: "INFO"
+  log_to_file: true

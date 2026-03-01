@@ -1,0 +1,19 @@
+# ──────────────────────────────────────
+# Quick Test Configuration
+# Fast debugging config with minimal resources
+# ──────────────────────────────────────
+
+experiment:
+  name: "quick_test"
+
+model:
+  name: "mobilenetv3_small_100"
+
+training:
+  epochs: 2
+  batch_size: 16
+
+active_learning:
+  num_cycles: 3
+  initial_pool_size: 50
+  batch_size_al: 20
