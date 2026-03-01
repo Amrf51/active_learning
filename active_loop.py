@@ -19,6 +19,7 @@ step, enabling real-time visualization in the Streamlit dashboard.
 import json
 import shutil
 import inspect
+import time
 import numpy as np
 from pathlib import Path
 from typing import Dict, List, Callable, Optional, Tuple
@@ -256,26 +257,42 @@ class ActiveLearningLoop:
             Dict with cycle preparation info
         """
         self.current_cycle = cycle_num
+        cycle_start = time.perf_counter()
+        probe_elapsed = 0.0
         
         # Initialize probe images on first cycle
         if cycle_num == 1 and not self.probe_images:
+            probe_start = time.perf_counter()
             self.probe_images = self._initialize_probe_images()
+            probe_elapsed = time.perf_counter() - probe_start
         
         reset_mode = self.config.active_learning.reset_mode
+        reset_start = time.perf_counter()
         self.trainer.reset_model_weights(mode=reset_mode)
+        reset_elapsed = time.perf_counter() - reset_start
         
         pool_info = self.data_manager.get_pool_info()
         
+        loader_start = time.perf_counter()
         self.current_train_loader = self.data_manager.get_labeled_loader(
             batch_size=self.config.training.batch_size,
             shuffle=True,
             num_workers=self.config.data.num_workers
         )
+        loader_elapsed = time.perf_counter() - loader_start
+        total_elapsed = time.perf_counter() - cycle_start
         
         logger.info(f"Cycle {cycle_num} prepared:")
         logger.info(f"  Labeled: {pool_info['labeled']}")
         logger.info(f"  Unlabeled: {pool_info['unlabeled']}")
         logger.info(f"  Reset mode: {reset_mode}")
+        logger.info(
+            "  Timing: probe_init=%.2fs reset=%.2fs loader=%.2fs total=%.2fs",
+            probe_elapsed,
+            reset_elapsed,
+            loader_elapsed,
+            total_elapsed,
+        )
         
         return {
             "cycle": cycle_num,
@@ -412,10 +429,21 @@ class ActiveLearningLoop:
 
         This is the fast path for auto-annotate mode.
         """
+        total_start = time.perf_counter()
+        query_start = time.perf_counter()
         query_indices = self._select_query_indices(heartbeat_fn=heartbeat_fn)
+        query_elapsed = time.perf_counter() - query_start
         if query_indices.size == 0:
+            total_elapsed = time.perf_counter() - total_start
+            logger.info(
+                "Auto-annotate timing (cycle %s): query=%.2fs total=%.2fs (no samples)",
+                self.current_cycle,
+                query_elapsed,
+                total_elapsed,
+            )
             return {"queried_count": 0, "applied_count": 0}
 
+        build_start = time.perf_counter()
         unlabeled_indices = self.data_manager.get_unlabeled_indices()
         absolute_indices: List[int] = []
         seen = set()
@@ -426,7 +454,9 @@ class ActiveLearningLoop:
                 if abs_idx not in seen:
                     seen.add(abs_idx)
                     absolute_indices.append(abs_idx)
+        dedupe_elapsed = time.perf_counter() - build_start
 
+        annotation_build_start = time.perf_counter()
         annotations = []
         for image_id in absolute_indices:
             annotations.append(
@@ -437,12 +467,33 @@ class ActiveLearningLoop:
             )
             if heartbeat_fn is not None:
                 heartbeat_fn()
+        annotation_build_elapsed = time.perf_counter() - annotation_build_start
 
         if not annotations:
+            total_elapsed = time.perf_counter() - total_start
+            logger.info(
+                "Auto-annotate timing (cycle %s): query=%.2fs build=%.2fs total=%.2fs (empty annotations)",
+                self.current_cycle,
+                query_elapsed,
+                dedupe_elapsed + annotation_build_elapsed,
+                total_elapsed,
+            )
             return {"queried_count": 0, "applied_count": 0}
 
+        apply_start = time.perf_counter()
         result = self.receive_annotations(annotations)
+        apply_elapsed = time.perf_counter() - apply_start
         applied = int(result.get("moved_count", 0))
+        total_elapsed = time.perf_counter() - total_start
+        logger.info(
+            "Auto-annotate timing (cycle %s): query=%.2fs dedupe=%.2fs build=%.2fs apply=%.2fs total=%.2fs",
+            self.current_cycle,
+            query_elapsed,
+            dedupe_elapsed,
+            annotation_build_elapsed,
+            apply_elapsed,
+            total_elapsed,
+        )
         logger.info("Auto-annotated %d/%d queried samples", applied, len(annotations))
         return {"queried_count": len(annotations), "applied_count": applied}
 

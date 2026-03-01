@@ -5,6 +5,7 @@ Background thread orchestration for interactive active learning.
 from __future__ import annotations
 
 import logging
+import time
 import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -196,12 +197,14 @@ def _flush_artifacts(al_loop: Optional[ActiveLearningLoop], run_dir: Path) -> No
         logger.exception("Failed to flush artifacts")
 
 
-def _persist_incremental_artifacts(al_loop: ActiveLearningLoop, cycle: int) -> None:
+def _persist_incremental_artifacts(al_loop: ActiveLearningLoop, cycle: int) -> float:
     """Best-effort persistence after each cycle so UI can read run folders directly."""
+    start_ts = time.perf_counter()
     try:
         al_loop.persist_artifacts()
     except Exception:  # pylint: disable=broad-exception-caught
         logger.exception("Failed to persist incremental artifacts for cycle %s", cycle)
+    return time.perf_counter() - start_ts
 
 
 def _exit_stopped(
@@ -254,7 +257,10 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                 _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
                 return
 
+            prep_start = time.perf_counter()
             prep_info = al_loop.prepare_cycle(cycle)
+            prep_elapsed = time.perf_counter() - prep_start
+            logger.info("Cycle %s timing | prepare_cycle=%.2fs", cycle, prep_elapsed)
             pool_stats = _pool_stats(al_loop)
             class_names = list(getattr(al_loop, "class_names", []))
             _emit_event(
@@ -326,7 +332,8 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                     "unlabeled_class_distribution": pool_stats["unlabeled_class_distribution"],
                 },
             )
-            _persist_incremental_artifacts(al_loop, cycle)
+            persist_elapsed = _persist_incremental_artifacts(al_loop, cycle)
+            logger.info("Cycle %s timing | post_eval_persist=%.2fs", cycle, persist_elapsed)
 
             if cycle >= total_cycles:
                 continue
@@ -352,8 +359,17 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                     _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
                     return
 
+                auto_annotate_start = time.perf_counter()
                 summary = al_loop.query_and_auto_annotate(
                     heartbeat_fn=lambda: state.touch_heartbeat(local_run_id)
+                )
+                auto_annotate_elapsed = time.perf_counter() - auto_annotate_start
+                logger.info(
+                    "Cycle %s timing | auto_query_apply=%.2fs | queried=%s applied=%s",
+                    cycle,
+                    auto_annotate_elapsed,
+                    int(summary.get("queried_count", 0)),
+                    int(summary.get("applied_count", 0)),
                 )
                 if int(summary.get("queried_count", 0)) <= 0:
                     continue
@@ -373,11 +389,20 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                     },
                 )
                 state.clear_annotations()
-                _persist_incremental_artifacts(al_loop, cycle)
+                persist_elapsed = _persist_incremental_artifacts(al_loop, cycle)
+                logger.info("Cycle %s timing | post_annotation_persist=%.2fs", cycle, persist_elapsed)
                 continue
 
+            query_start = time.perf_counter()
             queried_images = al_loop.query_samples(
                 heartbeat_fn=lambda: state.touch_heartbeat(local_run_id)
+            )
+            query_elapsed = time.perf_counter() - query_start
+            logger.info(
+                "Cycle %s timing | manual_query_build_payload=%.2fs | queried=%s",
+                cycle,
+                query_elapsed,
+                len(queried_images),
             )
             queried_dicts = [img.to_dict() for img in queried_images]
 
@@ -412,7 +437,15 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                 _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
                 return
 
+            apply_start = time.perf_counter()
             al_loop.receive_annotations(annotations)
+            apply_elapsed = time.perf_counter() - apply_start
+            logger.info(
+                "Cycle %s timing | manual_annotation_apply=%.2fs | count=%s",
+                cycle,
+                apply_elapsed,
+                len(annotations),
+            )
             pool_stats = _pool_stats(al_loop)
             _emit_event(
                 state,
@@ -427,7 +460,8 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                     "unlabeled_class_distribution": pool_stats["unlabeled_class_distribution"],
                 },
             )
-            _persist_incremental_artifacts(al_loop, cycle)
+            persist_elapsed = _persist_incremental_artifacts(al_loop, cycle)
+            logger.info("Cycle %s timing | post_annotation_persist=%.2fs", cycle, persist_elapsed)
 
         _flush_artifacts(al_loop, run_dir)
         if state.is_run_active(local_run_id):
