@@ -5,6 +5,7 @@ Background thread orchestration for interactive active learning.
 from __future__ import annotations
 
 import logging
+import queue
 import time
 import traceback
 from pathlib import Path
@@ -17,8 +18,7 @@ from torch.utils.data import DataLoader
 from active_loop import ActiveLearningLoop
 from data_manager import ALDataManager
 from dataloader import get_datasets
-from events import Event, EventType
-from experiment_state import ExperimentState
+from events import Event, EventType, Inbox
 from models import get_model
 from strategies import get_strategy
 from trainer import Trainer
@@ -100,13 +100,13 @@ def build_al_loop(config: Any, run_dir: Path) -> ActiveLearningLoop:
 
 
 def _emit_event(
-    state: ExperimentState,
+    event_inbox: Inbox,
     event_type: EventType,
     run_id: str,
     cycle: int = 0,
     data: Optional[Dict[str, Any]] = None,
 ) -> None:
-    state.inbox.put(
+    event_inbox.put(
         Event(
             type=event_type,
             run_id=run_id,
@@ -116,10 +116,67 @@ def _emit_event(
     )
 
 
-def _should_abort(state: ExperimentState, run_id: str) -> bool:
-    if state.stop_event.is_set():
-        return True
-    return not state.is_run_active(run_id)
+def _check_stop(command_queue: "queue.Queue[Any]") -> bool:
+    """Non-blocking check: drain the queue and return True if a STOP command is found.
+
+    Non-STOP messages are preserved by requeueing them in original order so that
+    later blocking waits (next-step, annotations) can still consume them.
+    """
+    buf: List[Any] = []
+    found = False
+    while True:
+        try:
+            msg = command_queue.get_nowait()
+        except queue.Empty:
+            break
+        if msg.get("command") == "STOP":
+            found = True
+            break
+        buf.append(msg)
+    for msg in buf:
+        command_queue.put(msg)
+    return found
+
+
+def _wait_for_next_step(command_queue: "queue.Queue[Any]") -> bool:
+    """Block until NEXT_STEP or STOP command arrives. Returns False on STOP."""
+    while True:
+        try:
+            msg = command_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        cmd = msg.get("command")
+        if cmd == "STOP":
+            return False
+        if cmd == "NEXT_STEP":
+            return True
+        command_queue.put(msg)  # unknown command — requeue
+
+
+def _wait_for_annotations(
+    command_queue: "queue.Queue[Any]",
+    run_id: str,
+    cycle: int,
+) -> Optional[List[Dict[str, Any]]]:
+    """Block until SUBMIT_ANNOTATIONS (matching run/cycle) or STOP arrives.
+
+    Returns the annotation list on success, or None if STOP was received.
+    Mismatched SUBMIT_ANNOTATIONS commands (wrong run/cycle) are silently discarded.
+    """
+    while True:
+        try:
+            msg = command_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        cmd = msg.get("command")
+        if cmd == "STOP":
+            return None
+        if cmd == "SUBMIT_ANNOTATIONS":
+            if msg.get("run_id") == run_id and msg.get("cycle") == cycle:
+                return list(msg.get("annotations", []))
+            # Wrong run/cycle — discard silently
+            continue
+        command_queue.put(msg)  # unknown command — requeue
 
 
 def _as_dict(value: Any) -> Dict[str, Any]:
@@ -176,17 +233,6 @@ def _pool_stats(al_loop: ActiveLearningLoop) -> Dict[str, Any]:
     }
 
 
-def _wait_for_next_step(state: ExperimentState, run_id: str) -> bool:
-    """Block until next-step signal or abort request."""
-    while True:
-        if _should_abort(state, run_id):
-            return False
-        if state.next_step_event.wait(timeout=0.5):
-            state.next_step_event.clear()
-            return True
-        state.touch_heartbeat(run_id)
-
-
 def _flush_artifacts(al_loop: Optional[ActiveLearningLoop], run_dir: Path) -> None:
     """Best-effort save of all run artifacts."""
     if al_loop is None:
@@ -208,31 +254,37 @@ def _persist_incremental_artifacts(al_loop: ActiveLearningLoop, cycle: int) -> f
 
 
 def _exit_stopped(
-    state: ExperimentState,
+    event_inbox: Inbox,
     run_id: str,
     cycle: int,
     al_loop: Optional[ActiveLearningLoop],
     run_dir: Path,
 ) -> None:
     _flush_artifacts(al_loop, run_dir)
-    if state.is_run_active(run_id):
-        _emit_event(state, EventType.RUN_STOPPED, run_id=run_id, cycle=cycle, data={})
+    _emit_event(event_inbox, EventType.RUN_STOPPED, run_id=run_id, cycle=cycle, data={})
 
 
-def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
+def run_experiment(
+    command_queue: "queue.Queue[Any]",
+    event_inbox: Inbox,
+    config: Any,
+    run_dir: Path,
+    run_id: str,
+) -> None:
     """
     Entry point for the backend daemon thread.
+
+    Receives control signals via *command_queue* (STOP, NEXT_STEP, SUBMIT_ANNOTATIONS)
+    and emits progress events via *event_inbox* (worker → UI direction).
     """
-    local_run_id = state.snapshot()["run_id"]
     al_loop: Optional[ActiveLearningLoop] = None
     current_cycle = 0
 
     try:
         al_loop = build_al_loop(config, run_dir)
-        state.touch_heartbeat(local_run_id)
 
-        if _should_abort(state, local_run_id):
-            _exit_stopped(state, local_run_id, current_cycle, al_loop, run_dir)
+        if _check_stop(command_queue):
+            _exit_stopped(event_inbox, run_id, current_cycle, al_loop, run_dir)
             return
 
         total_cycles = int(config.active_learning.num_cycles)
@@ -242,19 +294,19 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
         for cycle in range(1, total_cycles + 1):
             if step_mode and cycle > 1:
                 _emit_event(
-                    state,
+                    event_inbox,
                     EventType.WAITING_FOR_STEP,
-                    run_id=local_run_id,
+                    run_id=run_id,
                     cycle=cycle,
                     data={"next_cycle": cycle, "total_cycles": total_cycles},
                 )
-                if not _wait_for_next_step(state, local_run_id):
-                    _exit_stopped(state, local_run_id, current_cycle, al_loop, run_dir)
+                if not _wait_for_next_step(command_queue):
+                    _exit_stopped(event_inbox, run_id, current_cycle, al_loop, run_dir)
                     return
 
             current_cycle = cycle
-            if _should_abort(state, local_run_id):
-                _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
+            if _check_stop(command_queue):
+                _exit_stopped(event_inbox, run_id, cycle, al_loop, run_dir)
                 return
 
             prep_start = time.perf_counter()
@@ -264,9 +316,9 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
             pool_stats = _pool_stats(al_loop)
             class_names = list(getattr(al_loop, "class_names", []))
             _emit_event(
-                state,
+                event_inbox,
                 EventType.CYCLE_STARTED,
-                run_id=local_run_id,
+                run_id=run_id,
                 cycle=cycle,
                 data={
                     "cycle": cycle,
@@ -281,20 +333,18 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
 
             epochs = int(config.training.epochs)
             for epoch in range(1, epochs + 1):
-                if _should_abort(state, local_run_id):
-                    _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
+                if _check_stop(command_queue):
+                    _exit_stopped(event_inbox, run_id, cycle, al_loop, run_dir)
                     return
-
-                state.touch_heartbeat(local_run_id)
 
                 metrics = al_loop.train_single_epoch(epoch)
                 metrics_dict = _as_dict(metrics)
                 if not metrics_dict:
                     metrics_dict = {"epoch": epoch}
                 _emit_event(
-                    state,
+                    event_inbox,
                     EventType.EPOCH_DONE,
-                    run_id=local_run_id,
+                    run_id=run_id,
                     cycle=cycle,
                     data={
                         "epoch": epoch,
@@ -303,27 +353,25 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                     },
                 )
 
-                if _should_abort(state, local_run_id):
-                    _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
+                if _check_stop(command_queue):
+                    _exit_stopped(event_inbox, run_id, cycle, al_loop, run_dir)
                     return
 
                 if al_loop.should_stop_early():
                     break
 
-            if _should_abort(state, local_run_id):
-                _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
+            if _check_stop(command_queue):
+                _exit_stopped(event_inbox, run_id, cycle, al_loop, run_dir)
                 return
-
-            state.touch_heartbeat(local_run_id)
 
             test_metrics = al_loop.run_evaluation()
             cycle_metrics = al_loop.finalize_cycle(test_metrics).model_dump()
             probe_images = _serialize_probe_images(al_loop)
             pool_stats = _pool_stats(al_loop)
             _emit_event(
-                state,
+                event_inbox,
                 EventType.EVAL_COMPLETE,
-                run_id=local_run_id,
+                run_id=run_id,
                 cycle=cycle,
                 data={
                     "cycle_metrics": cycle_metrics,
@@ -341,28 +389,25 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
             if int(cycle_metrics.get("unlabeled_pool_size", 0)) <= 0:
                 break
 
-            if _should_abort(state, local_run_id):
-                _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
+            if _check_stop(command_queue):
+                _exit_stopped(event_inbox, run_id, cycle, al_loop, run_dir)
                 return
 
             _emit_event(
-                state,
+                event_inbox,
                 EventType.QUERYING_STARTED,
-                run_id=local_run_id,
+                run_id=run_id,
                 cycle=cycle,
                 data={"cycle": cycle},
             )
-            state.touch_heartbeat(local_run_id)
 
             if auto_annotate:
-                if _should_abort(state, local_run_id):
-                    _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
+                if _check_stop(command_queue):
+                    _exit_stopped(event_inbox, run_id, cycle, al_loop, run_dir)
                     return
 
                 auto_annotate_start = time.perf_counter()
-                summary = al_loop.query_and_auto_annotate(
-                    heartbeat_fn=lambda: state.touch_heartbeat(local_run_id)
-                )
+                summary = al_loop.query_and_auto_annotate(heartbeat_fn=lambda: None)
                 auto_annotate_elapsed = time.perf_counter() - auto_annotate_start
                 logger.info(
                     "Cycle %s timing | auto_query_apply=%.2fs | queried=%s applied=%s",
@@ -376,9 +421,9 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
 
                 pool_stats = _pool_stats(al_loop)
                 _emit_event(
-                    state,
+                    event_inbox,
                     EventType.ANNOTATIONS_APPLIED,
-                    run_id=local_run_id,
+                    run_id=run_id,
                     cycle=cycle,
                     data={
                         "count": int(summary.get("applied_count", 0)),
@@ -388,15 +433,12 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                         "unlabeled_class_distribution": pool_stats["unlabeled_class_distribution"],
                     },
                 )
-                state.clear_annotations()
                 persist_elapsed = _persist_incremental_artifacts(al_loop, cycle)
                 logger.info("Cycle %s timing | post_annotation_persist=%.2fs", cycle, persist_elapsed)
                 continue
 
             query_start = time.perf_counter()
-            queried_images = al_loop.query_samples(
-                heartbeat_fn=lambda: state.touch_heartbeat(local_run_id)
-            )
+            queried_images = al_loop.query_samples(heartbeat_fn=lambda: None)
             query_elapsed = time.perf_counter() - query_start
             logger.info(
                 "Cycle %s timing | manual_query_build_payload=%.2fs | queried=%s",
@@ -409,11 +451,10 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
             if not queried_dicts:
                 continue
 
-            state.clear_annotations()
             _emit_event(
-                state,
+                event_inbox,
                 EventType.NEW_IMAGES,
-                run_id=local_run_id,
+                run_id=run_id,
                 cycle=cycle,
                 data={
                     "queried_images": queried_dicts,
@@ -421,20 +462,13 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
                 },
             )
 
-            annotations: List[Dict[str, Any]]
-            while True:
-                if _should_abort(state, local_run_id):
-                    _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
-                    return
-                if state.annotations_ready.wait(timeout=0.5):
-                    annotations = state.consume_annotations(local_run_id, cycle)
-                    if annotations is None:
-                        continue
-                    break
-                state.touch_heartbeat(local_run_id)
+            annotations = _wait_for_annotations(command_queue, run_id, cycle)
+            if annotations is None:
+                _exit_stopped(event_inbox, run_id, cycle, al_loop, run_dir)
+                return
 
-            if _should_abort(state, local_run_id):
-                _exit_stopped(state, local_run_id, cycle, al_loop, run_dir)
+            if _check_stop(command_queue):
+                _exit_stopped(event_inbox, run_id, cycle, al_loop, run_dir)
                 return
 
             apply_start = time.perf_counter()
@@ -448,9 +482,9 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
             )
             pool_stats = _pool_stats(al_loop)
             _emit_event(
-                state,
+                event_inbox,
                 EventType.ANNOTATIONS_APPLIED,
-                run_id=local_run_id,
+                run_id=run_id,
                 cycle=cycle,
                 data={
                     "count": len(annotations),
@@ -464,26 +498,24 @@ def run_experiment(state: ExperimentState, config: Any, run_dir: Path) -> None:
             logger.info("Cycle %s timing | post_annotation_persist=%.2fs", cycle, persist_elapsed)
 
         _flush_artifacts(al_loop, run_dir)
-        if state.is_run_active(local_run_id):
-            _emit_event(
-                state,
-                EventType.RUN_FINISHED,
-                run_id=local_run_id,
-                cycle=current_cycle,
-                data={},
-            )
+        _emit_event(
+            event_inbox,
+            EventType.RUN_FINISHED,
+            run_id=run_id,
+            cycle=current_cycle,
+            data={},
+        )
 
     except Exception as exc:  # pylint: disable=broad-exception-caught
         logger.exception("Backend thread failed")
         _flush_artifacts(al_loop, run_dir)
-        if state.is_run_active(local_run_id):
-            _emit_event(
-                state,
-                EventType.RUN_ERROR,
-                run_id=local_run_id,
-                cycle=current_cycle,
-                data={
-                    "error": str(exc),
-                    "traceback": traceback.format_exc(),
-                },
-            )
+        _emit_event(
+            event_inbox,
+            EventType.RUN_ERROR,
+            run_id=run_id,
+            cycle=current_cycle,
+            data={
+                "error": str(exc),
+                "traceback": traceback.format_exc(),
+            },
+        )

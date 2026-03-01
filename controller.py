@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import queue
 import re
 import threading
 import time
@@ -215,9 +216,12 @@ class Controller:
         config.save_to_file(run_dir / "config.yaml")
         self.state.update_for_run(run_id, run_dir=str(run_dir))
 
+        command_queue: "queue.Queue[Any]" = queue.Queue()
+        self.state.command_queue = command_queue
+
         thread = threading.Thread(
             target=run_experiment,
-            args=(self.state, config, run_dir),
+            args=(command_queue, self.state.inbox, config, run_dir, run_id),
             daemon=True,
             name=f"ALThread-{run_id[:8]}",
         )
@@ -227,7 +231,7 @@ class Controller:
         return run_id
 
     def _handle_stop(self, join_timeout: float = 5.0) -> None:
-        """Immediate stop: mark STOPPING, signal worker, and best-effort join."""
+        """Immediate stop: mark STOPPING, signal worker via command queue, and best-effort join."""
         snap = self.state.snapshot()
         run_id = snap["run_id"]
 
@@ -239,9 +243,10 @@ class Controller:
                 query_token="",
                 progress_detail="Stop requested...",
             )
-        self.state.stop_event.set()
-        self.state.next_step_event.set()
-        self.state.annotations_ready.set()
+
+        q = self.state.command_queue
+        if q is not None:
+            q.put({"command": "STOP"})
 
         thread_obj = self.state.thread
         if thread_obj is not None and thread_obj.is_alive():
@@ -257,23 +262,34 @@ class Controller:
                     query_token="",
                     progress_detail="Stopped",
                 )
-        self.state.next_step_event.clear()
 
     def _handle_submit(self, event: Event) -> bool:
-        """Validate query token and hand accepted annotations to worker state."""
+        """Validate query token and forward annotations to the worker via command queue."""
         snap = self.state.snapshot()
         token = str(event.data.get("query_token", ""))
         if not token or token != snap["query_token"]:
             return False
 
+        # Validate run/cycle/state before consuming the token
+        if snap["app_state"] != AppState.ANNOTATING:
+            return False
+        if snap["current_cycle"] != event.cycle:
+            return False
+
         if not self.state.update_for_run(event.run_id, query_token=""):
             return False
 
-        return self.state.set_annotations(
-            run_id=event.run_id,
-            cycle=event.cycle,
-            annotations=list(event.data.get("annotations", [])),
-        )
+        q = self.state.command_queue
+        if q is None:
+            return False
+
+        q.put({
+            "command": "SUBMIT_ANNOTATIONS",
+            "run_id": event.run_id,
+            "cycle": event.cycle,
+            "annotations": list(event.data.get("annotations", [])),
+        })
+        return True
 
     def _handle_next_step(self, event: Event) -> bool:
         """Release worker pause when step mode is waiting for user action."""
@@ -289,7 +305,11 @@ class Controller:
             progress_detail="Advancing to next cycle...",
         ):
             return False
-        self.state.next_step_event.set()
+
+        q = self.state.command_queue
+        if q is None:
+            return False
+        q.put({"command": "NEXT_STEP"})
         return True
 
     def start_experiment(self, config: Any) -> str:
@@ -382,7 +402,6 @@ class Controller:
             self.state.unlabeled_pool_size = 0
             self.state.labeled_class_distribution = {}
             self.state.unlabeled_class_distribution = {}
-            self.state.annotations_data = []
             self.state.thread_status = "stopped"
             self.state.heartbeat_ts = time.time()
             if clear_history:
@@ -390,9 +409,6 @@ class Controller:
                 self.state.metrics_history = []
                 self.state.epoch_metrics = []
                 self.state.class_names = []
-        self.state.stop_event.clear()
-        self.state.next_step_event.clear()
-        self.state.annotations_ready.clear()
 
     def save_state(self) -> None:
         """Persist UI-visible state as JSON."""
