@@ -53,6 +53,15 @@ class TrainingConfig:
     weight_decay: float = 1e-4
     optimizer: str = "adamw"
     early_stopping_patience: int = 3
+    scheduler: str = "cosine"       # options: "cosine", "plateau", "none"
+    warmup_epochs: int = 2
+    grad_clip_norm: float = 1.0     # set to 0 to disable
+    label_smoothing: float = 0.1
+    backbone_lr_factor: float = 0.1  # backbone LR = learning_rate × this factor
+    freeze_backbone_epochs: int = 2  # freeze backbone for first N epochs per cycle
+    loss_fn: str = "cross_entropy"   # options: "cross_entropy", "supcon", "combined"
+    supcon_temperature: float = 0.07
+    supcon_weight: float = 0.5       # α in: loss = (1-α)·CE + α·SupCon
 
 
 @dataclass
@@ -62,9 +71,10 @@ class ALConfig:
     batch_size_al: int = 50
     sampling_strategy: str = "entropy"
     uncertainty_method: str = "entropy"
-    reset_mode: str = "pretrained"
+    reset_mode: str = "continue"  # options: "continue", "pretrained", "head_only", "none"
     step_mode: bool = False  # Require explicit UI "Next Step" between cycles
     auto_annotate: bool = True  # Auto-annotate with ground truth for simulation
+    stratified_init: bool = True  # Guarantee ≥1 sample per class in initial pool
 
 
 @dataclass
@@ -145,6 +155,27 @@ class Config:
         valid_optimizers = ["adam", "adamw", "sgd"]
         if self.training.optimizer not in valid_optimizers:
             errors.append(f"training.optimizer must be one of {valid_optimizers}, got {self.training.optimizer}")
+
+        valid_schedulers = ["cosine", "plateau", "none"]
+        if self.training.scheduler not in valid_schedulers:
+            errors.append(f"training.scheduler must be one of {valid_schedulers}, got {self.training.scheduler}")
+        if self.training.warmup_epochs < 0:
+            errors.append(f"training.warmup_epochs must be >= 0, got {self.training.warmup_epochs}")
+        if self.training.grad_clip_norm < 0:
+            errors.append(f"training.grad_clip_norm must be >= 0, got {self.training.grad_clip_norm}")
+        if not (0.0 <= self.training.label_smoothing < 1.0):
+            errors.append(f"training.label_smoothing must be in [0, 1), got {self.training.label_smoothing}")
+        if not (0.0 < self.training.backbone_lr_factor <= 1.0):
+            errors.append(f"training.backbone_lr_factor must be in (0, 1], got {self.training.backbone_lr_factor}")
+        if self.training.freeze_backbone_epochs < 0:
+            errors.append(f"training.freeze_backbone_epochs must be >= 0, got {self.training.freeze_backbone_epochs}")
+        valid_loss_fns = ["cross_entropy", "supcon", "combined"]
+        if self.training.loss_fn not in valid_loss_fns:
+            errors.append(f"training.loss_fn must be one of {valid_loss_fns}, got {self.training.loss_fn}")
+        if not (0.0 < self.training.supcon_temperature <= 1.0):
+            errors.append(f"training.supcon_temperature must be in (0, 1], got {self.training.supcon_temperature}")
+        if not (0.0 <= self.training.supcon_weight <= 1.0):
+            errors.append(f"training.supcon_weight must be in [0, 1], got {self.training.supcon_weight}")
         
         # Validate active learning config
         if self.active_learning.num_cycles <= 0:
@@ -162,7 +193,7 @@ class Config:
         if self.active_learning.uncertainty_method not in valid_uncertainty:
             errors.append(f"active_learning.uncertainty_method must be one of {valid_uncertainty}, got {self.active_learning.uncertainty_method}")
         
-        valid_reset_modes = ["pretrained", "head_only", "none"]
+        valid_reset_modes = ["continue", "pretrained", "head_only", "none"]
         if self.active_learning.reset_mode not in valid_reset_modes:
             errors.append(f"active_learning.reset_mode must be one of {valid_reset_modes}, got {self.active_learning.reset_mode}")
         if not isinstance(self.active_learning.step_mode, bool):

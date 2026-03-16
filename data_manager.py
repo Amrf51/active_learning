@@ -57,45 +57,102 @@ class ALDataManager:
         dataset: Dataset,
         initial_pool_size: int = 50,
         seed: int = 42,
-        exp_dir: Optional[Path] = None
+        exp_dir: Optional[Path] = None,
+        stratified_init: bool = True,
     ):
         """
         Initialize AL Data Manager.
-        
+
         Args:
             dataset: PyTorch dataset (training pool only, not val/test)
             initial_pool_size: Number of samples to start in labeled pool
             seed: Random seed for reproducibility
             exp_dir: Experiment directory for saving state (optional)
+            stratified_init: If True, guarantee ≥1 sample per class in the
+                initial labeled pool (falls back to random when budget is
+                smaller than the number of classes).
         """
         self.dataset = dataset
         self.initial_pool_size = initial_pool_size
         self.seed = seed
+        self.stratified_init = stratified_init
         self.exp_dir = Path(exp_dir) if exp_dir else None
-        
+
         self.total_samples = len(dataset)
-        
+
         # Label cache for efficient class-based operations
         self._label_cache = {}
-        
+
         np.random.seed(seed)
-        
-        all_indices = np.arange(self.total_samples)
-        np.random.shuffle(all_indices)
-        
-        n_initial = min(initial_pool_size, self.total_samples)
-        
-        self._labeled_list = all_indices[:n_initial].tolist()
-        self._unlabeled_list = all_indices[n_initial:].tolist()
-        
+
+        labeled, unlabeled = self._build_initial_pools(initial_pool_size)
+        self._labeled_list = labeled
+        self._unlabeled_list = unlabeled
+
         self.query_history = []
         self.annotation_history = []
-        
+
         logger.info(f"ALDataManager initialized:")
         logger.info(f"  Total samples: {self.total_samples}")
         logger.info(f"  Initial labeled: {len(self._labeled_list)}")
         logger.info(f"  Initial unlabeled: {len(self._unlabeled_list)}")
     
+    def _build_initial_pools(self, n_initial: int):
+        """
+        Build labeled / unlabeled index lists for pool initialization.
+
+        When stratified_init=True and the budget is large enough, guarantees
+        at least one sample per class before filling the rest randomly.
+        Falls back to a plain random shuffle if the budget is smaller than
+        the number of unique classes.
+
+        Returns:
+            (labeled_list, unlabeled_list) — both are Python lists of ints.
+        """
+        n_initial = min(n_initial, self.total_samples)
+        all_indices = np.arange(self.total_samples)
+
+        if not self.stratified_init:
+            np.random.shuffle(all_indices)
+            return all_indices[:n_initial].tolist(), all_indices[n_initial:].tolist()
+
+        # Group indices by class label (uses fast label cache path)
+        class_to_indices: dict = {}
+        for idx in all_indices:
+            label = self._get_label(int(idx))
+            class_to_indices.setdefault(label, []).append(int(idx))
+
+        num_classes = len(class_to_indices)
+
+        if n_initial < num_classes:
+            # Budget too small to place one per class — fall back to random
+            logger.warning(
+                f"Stratified init: budget ({n_initial}) < num_classes ({num_classes}). "
+                "Falling back to random initialization."
+            )
+            np.random.shuffle(all_indices)
+            return all_indices[:n_initial].tolist(), all_indices[n_initial:].tolist()
+
+        # Pick exactly one random sample per class
+        labeled_set = []
+        remaining_pool = []
+        for indices in class_to_indices.values():
+            pick = int(np.random.choice(indices))
+            labeled_set.append(pick)
+            remaining_pool.extend([i for i in indices if i != pick])
+
+        # Fill remaining budget randomly from the rest
+        extra_needed = n_initial - len(labeled_set)
+        np.random.shuffle(remaining_pool)
+        labeled_set.extend(remaining_pool[:extra_needed])
+        unlabeled_list = remaining_pool[extra_needed:]
+
+        logger.info(
+            f"Stratified init: {num_classes} classes covered, "
+            f"{len(labeled_set)} labeled, {len(unlabeled_list)} unlabeled."
+        )
+        return labeled_set, unlabeled_list
+
     def _get_label(self, idx: int) -> int:
         """
         Get label for a dataset index with caching.
@@ -469,17 +526,13 @@ class ALDataManager:
     def reset(self) -> None:
         """Reset pools to initial state."""
         np.random.seed(self.seed)
-        
-        all_indices = np.arange(self.total_samples)
-        np.random.shuffle(all_indices)
-        
-        n_initial = min(self.initial_pool_size, self.total_samples)
-        
-        self._labeled_list = all_indices[:n_initial].tolist()
-        self._unlabeled_list = all_indices[n_initial:].tolist()
+
+        labeled, unlabeled = self._build_initial_pools(self.initial_pool_size)
+        self._labeled_list = labeled
+        self._unlabeled_list = unlabeled
         self.query_history = []
         self.annotation_history = []
-        
+
         logger.info("Pools reset to initial state")
     
     def get_query_history(self) -> List[Dict]:

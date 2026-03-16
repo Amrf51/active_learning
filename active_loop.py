@@ -32,6 +32,7 @@ from state import (
     QueriedImage,
     ProbeImage,
 )
+from embeddings import build_cycle_embeddings
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,8 @@ class ActiveLearningLoop:
         self.current_cycle = 0
         self.current_train_loader: Optional[DataLoader] = None
         self.probe_images: List[ProbeImage] = []
-        
+        self._rng = np.random.default_rng(config.experiment.seed)
+
         (self.exp_dir / "queries").mkdir(parents=True, exist_ok=True)
         
         al_config = config.active_learning
@@ -268,7 +270,7 @@ class ActiveLearningLoop:
         
         reset_mode = self.config.active_learning.reset_mode
         reset_start = time.perf_counter()
-        self.trainer.reset_model_weights(mode=reset_mode)
+        self.trainer.reset_model_weights(mode=reset_mode, cycle=cycle_num)
         reset_elapsed = time.perf_counter() - reset_start
         
         pool_info = self.data_manager.get_pool_info()
@@ -699,6 +701,14 @@ class ActiveLearningLoop:
         pool_info = self.data_manager.get_pool_info()
         training_summary = self.trainer.get_training_summary()
         
+        embeddings_path = build_cycle_embeddings(
+            trainer=self.trainer,
+            data_manager=self.data_manager,
+            exp_dir=self.exp_dir,
+            cycle=self.current_cycle,
+            rng=self._rng,
+        )
+
         cycle_metrics = CycleMetrics(
             cycle=self.current_cycle,
             labeled_pool_size=pool_info["labeled"],
@@ -712,6 +722,8 @@ class ActiveLearningLoop:
             test_recall=test_metrics["test_recall"],
             per_class_metrics=test_metrics.get("per_class"),
             confusion_matrix_path=test_metrics.get("confusion_matrix_path"),
+            ece=test_metrics.get("ece"),
+            embeddings_path=embeddings_path,
         )
         
         self.cycle_results.append(cycle_metrics)
@@ -753,8 +765,9 @@ class ActiveLearningLoop:
                 logger.info(f"Early stopping at epoch {epoch}")
                 break
         
+        self.trainer.restore_best_model()
         test_metrics = self.run_evaluation()
-        
+
         cycle_metrics = self.finalize_cycle(test_metrics)
         
         queried_images = []

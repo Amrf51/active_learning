@@ -54,7 +54,9 @@ class CycleMetrics:
     test_recall: float
     per_class_metrics: Optional[dict] = None
     confusion_matrix_path: Optional[str] = None
-    
+    ece: Optional[float] = None
+    embeddings_path: Optional[str] = None
+
     def model_dump(self) -> dict:
         """Convert to dictionary for serialization (Pydantic-style method name)."""
         return {
@@ -70,6 +72,8 @@ class CycleMetrics:
             "test_recall": self.test_recall,
             "per_class_metrics": self.per_class_metrics,
             "confusion_matrix_path": self.confusion_matrix_path,
+            "ece": self.ece,
+            "embeddings_path": self.embeddings_path,
         }
 
 

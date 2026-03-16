@@ -73,6 +73,7 @@ def build_al_loop(config: Any, run_dir: Path) -> ActiveLearningLoop:
         initial_pool_size=config.active_learning.initial_pool_size,
         seed=config.experiment.seed,
         exp_dir=exp_dir,
+        stratified_init=config.active_learning.stratified_init,
     )
 
     trainer = Trainer(
@@ -364,6 +365,7 @@ def run_experiment(
                 _exit_stopped(event_inbox, run_id, cycle, al_loop, run_dir)
                 return
 
+            al_loop.trainer.restore_best_model()
             test_metrics = al_loop.run_evaluation()
             cycle_metrics = al_loop.finalize_cycle(test_metrics).model_dump()
             probe_images = _serialize_probe_images(al_loop)
