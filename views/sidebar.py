@@ -200,14 +200,67 @@ def render_training_hyperparameters() -> Dict[str, Any]:
             value=3,
             help="Stop training if no improvement for N epochs"
         )
-    
+
+        scheduler = st.selectbox(
+            "LR Scheduler",
+            ["cosine", "plateau", "none"],
+            help="cosine: CosineAnnealingLR with linear warmup\n"
+                 "plateau: ReduceLROnPlateau (no warmup)\n"
+                 "none: constant LR"
+        )
+
+        warmup_epochs = st.number_input(
+            "Warmup Epochs",
+            min_value=0, max_value=5, value=2,
+            help="Linear LR warmup before cosine decay (ignored for plateau)"
+        )
+
+        grad_clip_norm = st.number_input(
+            "Gradient Clip Norm",
+            min_value=0.0, max_value=10.0, value=1.0, step=0.5,
+            help="Max gradient norm (0 = disabled)"
+        )
+
+        label_smoothing = st.number_input(
+            "Label Smoothing",
+            min_value=0.0, max_value=0.5, value=0.1, step=0.05,
+            help="Cross-entropy label smoothing [0, 1)"
+        )
+
+        backbone_lr_factor = st.number_input(
+            "Backbone LR Factor",
+            min_value=0.01, max_value=1.0, value=0.1, step=0.05,
+            help="Backbone LR = learning_rate × this factor (discriminative LR)"
+        )
+
+        freeze_backbone_epochs = st.number_input(
+            "Freeze Backbone Epochs",
+            min_value=0, max_value=10, value=2,
+            help="Freeze backbone for first N epochs per cycle (A0)"
+        )
+
+        loss_fn = st.selectbox(
+            "Loss Function",
+            ["cross_entropy", "combined", "supcon"],
+            help="cross_entropy: standard CE with label smoothing\n"
+                 "combined: (1-α)·CE + α·SupCon\n"
+                 "supcon: Supervised Contrastive only"
+        )
+
     return {
         "epochs": epochs,
         "batch_size": batch_size,
         "learning_rate": learning_rate,
         "weight_decay": weight_decay,
         "optimizer": optimizer,
-        "early_stopping_patience": early_stopping
+        "early_stopping_patience": early_stopping,
+        "scheduler": scheduler,
+        "warmup_epochs": warmup_epochs,
+        "grad_clip_norm": grad_clip_norm,
+        "label_smoothing": label_smoothing,
+        "backbone_lr_factor": backbone_lr_factor,
+        "freeze_backbone_epochs": freeze_backbone_epochs,
+        "loss_fn": loss_fn,
     }
 
 
@@ -261,17 +314,24 @@ def render_al_settings() -> Dict[str, Any]:
 
         reset_mode = st.selectbox(
             "Model Reset Mode",
-            ["pretrained", "head_only", "none"],
+            ["continue", "pretrained", "head_only", "none"],
             help="How to reset model weights between cycles:\n"
-                 "- pretrained: Reset to pretrained weights\n"
-                 "- head_only: Reset only classification head\n"
-                 "- none: Continue training from previous cycle"
+                 "- continue: Keep weights, freeze→unfreeze backbone each cycle (recommended)\n"
+                 "- pretrained: Reset to ImageNet weights every cycle\n"
+                 "- head_only: Reset only the classification head\n"
+                 "- none: Keep all weights and optimizer state"
         )
 
         step_mode = st.checkbox(
             "Step Mode (Next Step)",
             value=False,
             help="Pause after each cycle and wait for an explicit Next Step action.",
+        )
+
+        stratified_init = st.checkbox(
+            "Stratified Initial Pool",
+            value=True,
+            help="Guarantee ≥1 sample per class in the initial labeled pool"
         )
 
     return {
@@ -281,6 +341,7 @@ def render_al_settings() -> Dict[str, Any]:
         "reset_mode": reset_mode,
         "step_mode": step_mode,
         "auto_annotate": auto_annotate,
+        "stratified_init": stratified_init,
     }
 
 
@@ -458,6 +519,14 @@ def render_sidebar(controller: Controller) -> Dict[str, Any]:
         "active_learning.reset_mode": al_params["reset_mode"],
         "active_learning.step_mode": al_params["step_mode"],
         "active_learning.auto_annotate": al_params["auto_annotate"],
+        "active_learning.stratified_init": al_params["stratified_init"],
+        "training.scheduler": training_params["scheduler"],
+        "training.warmup_epochs": training_params["warmup_epochs"],
+        "training.grad_clip_norm": training_params["grad_clip_norm"],
+        "training.label_smoothing": training_params["label_smoothing"],
+        "training.backbone_lr_factor": training_params["backbone_lr_factor"],
+        "training.freeze_backbone_epochs": training_params["freeze_backbone_epochs"],
+        "training.loss_fn": training_params["loss_fn"],
     }
 
     # Store current widget-derived overrides before controls run.
