@@ -156,6 +156,7 @@ def render_metrics_table(metrics_history: List[Dict[str, Any]]) -> None:
 
     rows = []
     for metrics in metrics_history:
+        ece = metrics.get("ece")
         rows.append(
             {
                 "Cycle": metrics.get("cycle", "N/A"),
@@ -165,6 +166,7 @@ def render_metrics_table(metrics_history: List[Dict[str, Any]]) -> None:
                 "F1": f"{metrics.get('test_f1', 0):.3f}",
                 "Precision": f"{metrics.get('test_precision', 0):.3f}",
                 "Recall": f"{metrics.get('test_recall', 0):.3f}",
+                "ECE": f"{ece:.4f}" if ece is not None else "N/A",
             }
         )
     df = pd.DataFrame(rows)
@@ -207,6 +209,20 @@ def render_accuracy_progression_chart(metrics_history: List[Dict[str, Any]]) -> 
             st.metric(label="Final Test Acc", value=f"{last_acc:.2f}%")
         with col3:
             st.metric(label="Improvement", value=f"+{improvement:.2f}%", delta=f"{improvement:.2f}%")
+
+
+def render_ece_chart(metrics_history: List[Dict[str, Any]]) -> None:
+    st.markdown("### Calibration (ECE) Across Cycles")
+    ece_rows = [
+        {"Cycle": m.get("cycle", i + 1), "ECE": m["ece"]}
+        for i, m in enumerate(metrics_history)
+        if m.get("ece") is not None
+    ]
+    if not ece_rows:
+        st.info("ECE values will appear after cycles complete (requires calibration to be enabled)")
+        return
+    df = pd.DataFrame(ece_rows)
+    st.line_chart(df, x="Cycle", y="ECE", height=250)
 
 
 def render_best_cycle_summary(metrics_history: List[Dict[str, Any]]) -> None:
@@ -427,6 +443,116 @@ def render_confusion_matrix(
     st.caption(f"Source: {cm_path}")
 
 
+def _resolve_embeddings_path(metric: Dict[str, Any], run_dir: str) -> Path | None:
+    raw_path = metric.get("embeddings_path")
+    if raw_path:
+        path = Path(str(raw_path))
+        if path.exists():
+            return path
+
+    cycle = metric.get("cycle")
+    if run_dir and cycle is not None:
+        fallback = Path(run_dir) / "embeddings" / f"cycle_{cycle}.npz"
+        if fallback.exists():
+            return fallback
+
+    return None
+
+
+def render_embedding_plot(
+    metrics_history: List[Dict[str, Any]],
+    snap: Dict[str, Any],
+    widget_prefix: str = "live",
+) -> None:
+    st.markdown("### UMAP Embedding Visualization")
+    if not metrics_history:
+        st.info("Embedding plot will appear after at least one cycle completes")
+        return
+
+    cycle_options = [m.get("cycle", i + 1) for i, m in enumerate(metrics_history)]
+    selected_cycle = st.selectbox(
+        "Cycle",
+        options=cycle_options,
+        index=len(cycle_options) - 1,
+        key=f"{widget_prefix}_embedding_cycle",
+    )
+    selected_metric = next(
+        (m for m in metrics_history if m.get("cycle", None) == selected_cycle),
+        metrics_history[-1],
+    )
+
+    emb_path = _resolve_embeddings_path(selected_metric, str(snap.get("run_dir", "")))
+    if emb_path is None:
+        st.info("Embedding file not found for the selected cycle (umap-learn may not have been installed during the run).")
+        return
+
+    try:
+        import numpy as np
+        import plotly.graph_objects as go
+
+        data = np.load(emb_path)
+        coords = data["coords"]   # [N, 2]
+        labels = data["labels"]   # [N] int
+        pool = data["pool"]       # [N] int8: 0=labeled, 1=unlabeled
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        st.error(f"Failed to load embedding file: {exc}")
+        return
+
+    color_mode = st.radio(
+        "Color by",
+        options=["Class Label", "Pool Membership"],
+        horizontal=True,
+        key=f"{widget_prefix}_embedding_color_mode",
+    )
+
+    fig = go.Figure()
+
+    if color_mode == "Pool Membership":
+        pool_labels = {0: "Labeled", 1: "Unlabeled", 2: "Queried"}
+        pool_colors = {0: "#2196F3", 1: "#BDBDBD", 2: "#FF5722"}
+        for pool_val, pool_name in pool_labels.items():
+            mask = pool == pool_val
+            if not mask.any():
+                continue
+            fig.add_trace(
+                go.Scattergl(
+                    x=coords[mask, 0].tolist(),
+                    y=coords[mask, 1].tolist(),
+                    mode="markers",
+                    name=pool_name,
+                    legendgroup=pool_name,
+                    marker=dict(size=4, opacity=0.7, color=pool_colors[pool_val]),
+                )
+            )
+    else:
+        class_names = list(snap.get("class_names", []))
+        unique_labels = sorted(set(int(l) for l in labels))
+        for label_idx in unique_labels:
+            mask = labels == label_idx
+            name = class_names[label_idx] if label_idx < len(class_names) else str(label_idx)
+            fig.add_trace(
+                go.Scattergl(
+                    x=coords[mask, 0].tolist(),
+                    y=coords[mask, 1].tolist(),
+                    mode="markers",
+                    name=name,
+                    legendgroup=name,
+                    marker=dict(size=4, opacity=0.7),
+                )
+            )
+
+    fig.update_layout(
+        title=f"UMAP — Cycle {selected_cycle} ({len(coords)} points)",
+        xaxis_title="UMAP 1",
+        yaxis_title="UMAP 2",
+        legend=dict(itemsizing="constant"),
+        height=550,
+        margin=dict(l=40, r=20, t=50, b=40),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(f"Source: {emb_path}")
+
+
 def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:
     st.title("Results Dashboard")
     st.markdown("---")
@@ -510,6 +636,8 @@ def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:
 
     render_accuracy_progression_chart(metrics_history)
     st.markdown("---")
+    render_ece_chart(metrics_history)
+    st.markdown("---")
     render_metrics_table(metrics_history)
     st.markdown("---")
     render_best_cycle_summary(metrics_history)
@@ -517,4 +645,6 @@ def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:
     render_probe_predictions(metrics_history, selected_snap, widget_prefix=widget_prefix)
     st.markdown("---")
     render_confusion_matrix(metrics_history, selected_snap, widget_prefix=widget_prefix)
+    st.markdown("---")
+    render_embedding_plot(metrics_history, selected_snap, widget_prefix=widget_prefix)
     st.markdown("---")

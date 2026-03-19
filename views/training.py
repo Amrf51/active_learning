@@ -72,6 +72,17 @@ def render_training_charts(epoch_metrics: List[Dict[str, Any]]) -> None:
                 height=300,
             )
 
+    lr_epochs = [m["epoch"] for m in epoch_metrics if "epoch" in m and "learning_rate" in m]
+    lr_values = [m["learning_rate"] for m in epoch_metrics if "epoch" in m and "learning_rate" in m]
+    if lr_epochs and any(v is not None for v in lr_values):
+        st.markdown("#### Learning Rate Schedule")
+        st.line_chart(
+            {"Epoch": lr_epochs, "Learning Rate": lr_values},
+            x="Epoch",
+            y="Learning Rate",
+            height=200,
+        )
+
 
 def render_pool_statistics(metrics_history: List[Dict[str, Any]]) -> None:
     st.markdown("### Data Pool Status")
