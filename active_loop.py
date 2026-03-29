@@ -356,6 +356,7 @@ class ActiveLearningLoop:
             Dict with test metrics
         """
         cm_path = self.exp_dir / "confusion_matrices" / f"cycle_{self.current_cycle}.npy"
+        self.trainer.calibrate_temperature(self.val_loader)
         test_metrics = self.trainer.evaluate(
             self.test_loader,
             class_names=self.class_names,

@@ -86,6 +86,7 @@ class Trainer:
         self.best_epoch = 0
         self.patience_counter = 0
         self._backbone_frozen = False
+        self.temperature = 1.0  # learned by calibrate_temperature(); 1.0 = no scaling
 
         logger.info(f"Trainer initialized | Device: {device}")
     
@@ -557,12 +558,32 @@ class Trainer:
                 ece += mask.sum() * abs(bin_conf - bin_acc)
         ece = float(ece / len(all_labels))
 
+        # ECE after Temperature Scaling (reuse same bins, no extra GPU forward pass)
+        scaled_logits_all = []
+        with torch.no_grad():
+            for images, _ in test_loader:
+                logits = self.model(images.to(self.device))
+                scaled_logits_all.append((logits / self.temperature).cpu().numpy())
+        scaled_logits_all = np.vstack(scaled_logits_all)
+        exp_l = np.exp(scaled_logits_all - scaled_logits_all.max(axis=1, keepdims=True))
+        scaled_probs = exp_l / exp_l.sum(axis=1, keepdims=True)
+        scaled_conf = scaled_probs.max(axis=1)
+        scaled_correct = (scaled_probs.argmax(axis=1) == np.array(all_labels)).astype(float)
+        ece_calibrated = 0.0
+        for i in range(n_bins):
+            mask = (scaled_conf >= bin_edges[i]) & (scaled_conf < bin_edges[i + 1])
+            if mask.sum() > 0:
+                ece_calibrated += mask.sum() * abs(scaled_conf[mask].mean() - scaled_correct[mask].mean())
+        ece_calibrated = float(ece_calibrated / len(all_labels))
+
         metrics = {
             "test_accuracy": float(accuracy),
             "test_precision": float(precision),
             "test_recall": float(recall),
             "test_f1": float(f1),
             "ece": ece,
+            "ece_calibrated": ece_calibrated,
+            "temperature": self.temperature,
         }
         if save_cm_path is not None:
             metrics["confusion_matrix_path"] = str(save_cm_path)
@@ -583,11 +604,43 @@ class Trainer:
         
         logger.info(
             f"Test Results | Acc: {accuracy:.4f}, P: {precision:.4f}, "
-            f"R: {recall:.4f}, F1: {f1:.4f}, ECE: {ece:.4f}"
+            f"R: {recall:.4f}, F1: {f1:.4f}, "
+            f"ECE: {ece:.4f}, ECE(T={self.temperature:.2f}): {ece_calibrated:.4f}"
         )
         
         return metrics
-    
+
+    def calibrate_temperature(self, val_loader: DataLoader) -> float:
+        """
+        Post-hoc temperature scaling: learn scalar T on the validation set.
+        Minimizes NLL of softmax(logits / T) using LBFGS.
+        Stores result in self.temperature for use in evaluate().
+        """
+        self.model.eval()
+        all_logits, all_labels = [], []
+        with torch.no_grad():
+            for images, labels in val_loader:
+                logits = self.model(images.to(self.device))
+                all_logits.append(logits.cpu())
+                all_labels.append(labels)
+        all_logits = torch.cat(all_logits)
+        all_labels = torch.cat(all_labels)
+
+        temperature = nn.Parameter(torch.ones(1) * 1.5)
+        optimizer = torch.optim.LBFGS([temperature], lr=0.01, max_iter=50)
+        criterion = nn.CrossEntropyLoss()
+
+        def eval_step():
+            optimizer.zero_grad()
+            loss = criterion(all_logits / temperature, all_labels)
+            loss.backward()
+            return loss
+
+        optimizer.step(eval_step)
+        self.temperature = float(temperature.item())
+        logger.info(f"Temperature Scaling | learned T={self.temperature:.4f}")
+        return self.temperature
+
     def get_predictions_for_indices(
         self,
         indices: List[int],
