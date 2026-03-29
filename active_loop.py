@@ -30,11 +30,20 @@ from state import (
     EpochMetrics,
     CycleMetrics,
     QueriedImage,
+    QuerySummary,
     ProbeImage,
 )
 from embeddings import build_cycle_embeddings
 
 logger = logging.getLogger(__name__)
+
+_STRATEGY_DESCRIPTIONS: Dict[str, str] = {
+    "entropy": "Selects images whose predicted probability distributions have the highest Shannon entropy — i.e. the model is most uncertain across all classes.",
+    "least_confidence": "Selects images where the model's highest class probability is lowest — the model is least confident in its top prediction.",
+    "uncertainty": "Alias for least-confidence: selects images with the lowest max-softmax probability.",
+    "margin": "Selects images where the gap between the top-two predicted class probabilities is smallest — the model cannot decide between two classes.",
+    "random": "Selects images uniformly at random from the unlabeled pool (baseline — no model guidance).",
+}
 
 
 class ActiveLearningLoop:
@@ -83,6 +92,7 @@ class ActiveLearningLoop:
         self.current_train_loader: Optional[DataLoader] = None
         self.probe_images: List[ProbeImage] = []
         self._rng = np.random.default_rng(config.experiment.seed)
+        self._last_queried_abs_indices: List[int] = []
 
         (self.exp_dir / "queries").mkdir(parents=True, exist_ok=True)
         
@@ -482,17 +492,27 @@ class ActiveLearningLoop:
             )
             return {"queried_count": 0, "applied_count": 0}
 
+        # Build query summary BEFORE receive_annotations moves samples
+        summary_start = time.perf_counter()
+        queried_images = self._build_queried_images(query_indices)
+        pool_size_before = self.data_manager.get_pool_info()["unlabeled"]
+        summary = self._build_query_summary(queried_images, pool_size_before)
+        self._save_query_summary(summary)
+        self._last_queried_abs_indices = [img.image_id for img in queried_images]
+        summary_elapsed = time.perf_counter() - summary_start
+
         apply_start = time.perf_counter()
         result = self.receive_annotations(annotations)
         apply_elapsed = time.perf_counter() - apply_start
         applied = int(result.get("moved_count", 0))
         total_elapsed = time.perf_counter() - total_start
         logger.info(
-            "Auto-annotate timing (cycle %s): query=%.2fs dedupe=%.2fs build=%.2fs apply=%.2fs total=%.2fs",
+            "Auto-annotate timing (cycle %s): query=%.2fs dedupe=%.2fs build=%.2fs summary=%.2fs apply=%.2fs total=%.2fs",
             self.current_cycle,
             query_elapsed,
             dedupe_elapsed,
             annotation_build_elapsed,
+            summary_elapsed,
             apply_elapsed,
             total_elapsed,
         )
@@ -519,9 +539,14 @@ class ActiveLearningLoop:
         queried_images = self._build_queried_images(query_indices)
         
         self._cache_queried_images(queried_images)
-        
+
+        pool_size_before = self.data_manager.get_pool_info()["unlabeled"]
+        summary = self._build_query_summary(queried_images, pool_size_before)
+        self._save_query_summary(summary)
+        self._last_queried_abs_indices = [img.image_id for img in queried_images]
+
         logger.info(f"Queried {len(queried_images)} samples for annotation")
-        
+
         return queried_images
     
     def _build_queried_images(self, query_indices: np.ndarray) -> List[QueriedImage]:
@@ -658,7 +683,72 @@ class ActiveLearningLoop:
             else:
                 logger.warning(f"Source image not found: {src_path}")
                 img.display_path = img.image_path
-    
+
+    def _build_query_summary(
+        self,
+        queried_images: List[QueriedImage],
+        pool_size_before: int,
+        top_n: int = 10,
+    ) -> QuerySummary:
+        """Build a QuerySummary for the current cycle's queried batch."""
+        strategy_name = self.config.active_learning.sampling_strategy
+        strategy_desc = _STRATEGY_DESCRIPTIONS.get(
+            strategy_name, f"Custom strategy: {strategy_name}"
+        )
+
+        scores = np.array([img.uncertainty_score for img in queried_images])
+
+        # Class distribution of queried batch
+        queried_class_dist: Dict[str, int] = {}
+        for img in queried_images:
+            queried_class_dist[img.ground_truth_name] = (
+                queried_class_dist.get(img.ground_truth_name, 0) + 1
+            )
+
+        # Labeled pool class distribution (before this query is applied)
+        raw_dist = self.data_manager.get_class_distribution(pool="labeled")
+        labeled_class_dist = {
+            self.class_names[k] if k < len(self.class_names) else str(k): v
+            for k, v in raw_dist.items()
+        }
+
+        # Top uncertain images
+        order = np.argsort(-scores)[:top_n]
+        top_uncertain = [
+            {
+                "image_id": queried_images[i].image_id,
+                "uncertainty_score": float(queried_images[i].uncertainty_score),
+                "predicted_class": queried_images[i].predicted_class,
+                "predicted_confidence": float(queried_images[i].predicted_confidence),
+            }
+            for i in order
+        ]
+
+        return QuerySummary(
+            cycle=self.current_cycle,
+            strategy_name=strategy_name,
+            strategy_description=strategy_desc,
+            pool_size_before_query=pool_size_before,
+            n_queried=len(queried_images),
+            uncertainty_stats={
+                "min": float(scores.min()),
+                "max": float(scores.max()),
+                "mean": float(scores.mean()),
+                "std": float(scores.std()),
+            },
+            queried_class_distribution=queried_class_dist,
+            labeled_class_distribution=labeled_class_dist,
+            top_uncertain=top_uncertain,
+            queried_image_ids=[img.image_id for img in queried_images],
+        )
+
+    def _save_query_summary(self, summary: QuerySummary) -> None:
+        """Persist query summary JSON to experiment directory."""
+        path = self.exp_dir / f"cycle_{self.current_cycle}_query_summary.json"
+        with open(path, "w") as f:
+            json.dump(summary.to_dict(), f, indent=2)
+        logger.info("Saved query summary to %s", path)
+
     def receive_annotations(
         self,
         annotations: List[Dict]
@@ -707,6 +797,7 @@ class ActiveLearningLoop:
             exp_dir=self.exp_dir,
             cycle=self.current_cycle,
             rng=self._rng,
+            queried_abs_indices=self._last_queried_abs_indices,
         )
 
         cycle_metrics = CycleMetrics(

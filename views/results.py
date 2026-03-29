@@ -459,6 +459,71 @@ def _resolve_embeddings_path(metric: Dict[str, Any], run_dir: str) -> Path | Non
     return None
 
 
+def _build_umap_figure(
+    coords,
+    labels,
+    pool,
+    class_names: List[str],
+    color_mode: str,
+    title: str,
+    height: int = 550,
+    show_legend: bool = True,
+):
+    """Build a Plotly Figure for a single UMAP embedding snapshot."""
+    import plotly.graph_objects as go
+
+    fig = go.Figure()
+
+    if color_mode == "Pool Membership":
+        pool_labels = {0: "Labeled", 1: "Unlabeled", 2: "Queried"}
+        pool_colors = {0: "#2196F3", 1: "#BDBDBD", 2: "#FF5722"}
+        pool_sizes = {0: 4, 1: 4, 2: 6}
+        for pool_val, pool_name in pool_labels.items():
+            mask = pool == pool_val
+            if not mask.any():
+                continue
+            fig.add_trace(
+                go.Scattergl(
+                    x=coords[mask, 0].tolist(),
+                    y=coords[mask, 1].tolist(),
+                    mode="markers",
+                    name=pool_name,
+                    legendgroup=pool_name,
+                    marker=dict(
+                        size=pool_sizes[pool_val],
+                        opacity=0.7,
+                        color=pool_colors[pool_val],
+                    ),
+                )
+            )
+    else:
+        unique_labels = sorted(set(int(l) for l in labels))
+        for label_idx in unique_labels:
+            mask = labels == label_idx
+            name = class_names[label_idx] if label_idx < len(class_names) else str(label_idx)
+            fig.add_trace(
+                go.Scattergl(
+                    x=coords[mask, 0].tolist(),
+                    y=coords[mask, 1].tolist(),
+                    mode="markers",
+                    name=name,
+                    legendgroup=name,
+                    marker=dict(size=4, opacity=0.7),
+                )
+            )
+
+    fig.update_layout(
+        title=title,
+        xaxis_title="UMAP 1",
+        yaxis_title="UMAP 2",
+        legend=dict(itemsizing="constant"),
+        showlegend=show_legend,
+        height=height,
+        margin=dict(l=40, r=20, t=50, b=40),
+    )
+    return fig
+
+
 def render_embedding_plot(
     metrics_history: List[Dict[str, Any]],
     snap: Dict[str, Any],
@@ -488,12 +553,11 @@ def render_embedding_plot(
 
     try:
         import numpy as np
-        import plotly.graph_objects as go
 
         data = np.load(emb_path)
-        coords = data["coords"]   # [N, 2]
-        labels = data["labels"]   # [N] int
-        pool = data["pool"]       # [N] int8: 0=labeled, 1=unlabeled
+        coords = data["coords"]
+        labels = data["labels"]
+        pool = data["pool"]
     except Exception as exc:  # pylint: disable=broad-exception-caught
         st.error(f"Failed to load embedding file: {exc}")
         return
@@ -505,52 +569,243 @@ def render_embedding_plot(
         key=f"{widget_prefix}_embedding_color_mode",
     )
 
-    fig = go.Figure()
-
-    if color_mode == "Pool Membership":
-        pool_labels = {0: "Labeled", 1: "Unlabeled", 2: "Queried"}
-        pool_colors = {0: "#2196F3", 1: "#BDBDBD", 2: "#FF5722"}
-        for pool_val, pool_name in pool_labels.items():
-            mask = pool == pool_val
-            if not mask.any():
-                continue
-            fig.add_trace(
-                go.Scattergl(
-                    x=coords[mask, 0].tolist(),
-                    y=coords[mask, 1].tolist(),
-                    mode="markers",
-                    name=pool_name,
-                    legendgroup=pool_name,
-                    marker=dict(size=4, opacity=0.7, color=pool_colors[pool_val]),
-                )
-            )
-    else:
-        class_names = list(snap.get("class_names", []))
-        unique_labels = sorted(set(int(l) for l in labels))
-        for label_idx in unique_labels:
-            mask = labels == label_idx
-            name = class_names[label_idx] if label_idx < len(class_names) else str(label_idx)
-            fig.add_trace(
-                go.Scattergl(
-                    x=coords[mask, 0].tolist(),
-                    y=coords[mask, 1].tolist(),
-                    mode="markers",
-                    name=name,
-                    legendgroup=name,
-                    marker=dict(size=4, opacity=0.7),
-                )
-            )
-
-    fig.update_layout(
-        title=f"UMAP — Cycle {selected_cycle} ({len(coords)} points)",
-        xaxis_title="UMAP 1",
-        yaxis_title="UMAP 2",
-        legend=dict(itemsizing="constant"),
-        height=550,
-        margin=dict(l=40, r=20, t=50, b=40),
-    )
+    class_names = list(snap.get("class_names", []))
+    title = f"UMAP — Cycle {selected_cycle} ({len(coords)} points)"
+    fig = _build_umap_figure(coords, labels, pool, class_names, color_mode, title)
     st.plotly_chart(fig, use_container_width=True)
     st.caption(f"Source: {emb_path}")
+
+
+@st.cache_data(show_spinner=False, ttl=60)
+def _load_all_embeddings(run_dir: str, cycle_numbers: tuple) -> Dict[int, Dict]:
+    """Load embedding .npz files for multiple cycles (cached)."""
+    import numpy as np
+
+    result: Dict[int, Dict] = {}
+    for cycle in cycle_numbers:
+        path = Path(run_dir) / "embeddings" / f"cycle_{cycle}.npz"
+        if not path.exists():
+            continue
+        try:
+            data = np.load(path)
+            result[cycle] = {
+                "coords": data["coords"],
+                "labels": data["labels"],
+                "pool": data["pool"],
+            }
+        except Exception:
+            continue
+    return result
+
+
+def render_query_summary(
+    metrics_history: List[Dict[str, Any]],
+    snap: Dict[str, Any],
+    widget_prefix: str = "live",
+) -> None:
+    """Display per-cycle query summary: strategy, distributions, top uncertain."""
+    import numpy as np
+    import plotly.graph_objects as go
+
+    st.markdown("### Query Summary")
+
+    if not metrics_history:
+        st.info("Query summaries will appear after the first query cycle completes.")
+        return
+
+    run_dir = str(snap.get("run_dir", ""))
+    cycle_options = [m.get("cycle", i + 1) for i, m in enumerate(metrics_history)]
+    selected_cycle = st.selectbox(
+        "Cycle",
+        options=cycle_options,
+        index=len(cycle_options) - 1,
+        key=f"{widget_prefix}_query_summary_cycle",
+    )
+
+    summary_path = Path(run_dir) / f"cycle_{selected_cycle}_query_summary.json"
+    if not summary_path.exists():
+        st.info(f"No query summary found for cycle {selected_cycle}.")
+        return
+
+    with open(summary_path) as f:
+        summary = json.load(f)
+
+    # Strategy info
+    st.info(
+        f"**Strategy: {summary.get('strategy_name', 'N/A')}** — "
+        f"{summary.get('strategy_description', '')}"
+    )
+
+    # Key metrics
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Candidates Ranked", summary.get("pool_size_before_query", "N/A"))
+    with c2:
+        st.metric("Images Queried", summary.get("n_queried", "N/A"))
+    with c3:
+        stats = summary.get("uncertainty_stats", {})
+        st.metric("Mean Uncertainty", f"{stats.get('mean', 0):.4f}")
+
+    # Uncertainty stats
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Min Uncertainty", f"{stats.get('min', 0):.4f}")
+    with c2:
+        st.metric("Max Uncertainty", f"{stats.get('max', 0):.4f}")
+    with c3:
+        st.metric("Mean", f"{stats.get('mean', 0):.4f}")
+    with c4:
+        st.metric("Std Dev", f"{stats.get('std', 0):.4f}")
+
+    # Grouped bar chart: queried vs labeled class distribution
+    queried_dist = summary.get("queried_class_distribution", {})
+    labeled_dist = summary.get("labeled_class_distribution", {})
+    all_classes = sorted(set(list(queried_dist.keys()) + list(labeled_dist.keys())))
+
+    if all_classes:
+        # Normalize labeled distribution to percentages for fair comparison
+        labeled_total = sum(labeled_dist.values()) or 1
+        queried_total = sum(queried_dist.values()) or 1
+
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            name="Queried Batch (%)",
+            x=all_classes,
+            y=[100.0 * queried_dist.get(c, 0) / queried_total for c in all_classes],
+            marker_color="#FF5722",
+        ))
+        fig.add_trace(go.Bar(
+            name="Labeled Pool (%)",
+            x=all_classes,
+            y=[100.0 * labeled_dist.get(c, 0) / labeled_total for c in all_classes],
+            marker_color="#2196F3",
+        ))
+        fig.update_layout(
+            barmode="group",
+            title="Class Distribution: Queried Batch vs. Labeled Pool",
+            xaxis_title="Class",
+            yaxis_title="Percentage (%)",
+            height=400,
+            margin=dict(l=40, r=20, t=50, b=100),
+            xaxis_tickangle=-45 if len(all_classes) > 10 else 0,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Top uncertain images table
+    top_uncertain = summary.get("top_uncertain", [])
+    if top_uncertain:
+        with st.expander(f"Top {len(top_uncertain)} Most Uncertain Images"):
+            rows = []
+            for rank, item in enumerate(top_uncertain, 1):
+                rows.append({
+                    "Rank": rank,
+                    "Image ID": item.get("image_id"),
+                    "Predicted Class": item.get("predicted_class"),
+                    "Confidence": f"{item.get('predicted_confidence', 0):.4f}",
+                    "Uncertainty": f"{item.get('uncertainty_score', 0):.4f}",
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+
+def render_umap_evolution(
+    metrics_history: List[Dict[str, Any]],
+    snap: Dict[str, Any],
+    widget_prefix: str = "live",
+) -> None:
+    """Show UMAP embeddings across cycles with queried-point highlighting."""
+    import numpy as np
+
+    st.markdown("### UMAP Evolution Across Cycles")
+
+    run_dir = str(snap.get("run_dir", ""))
+    if not run_dir or not metrics_history:
+        st.info("UMAP evolution will appear after at least two cycles complete.")
+        return
+
+    # Determine which cycles have embedding files
+    all_cycles = [m.get("cycle", i + 1) for i, m in enumerate(metrics_history)]
+    available_cycles = [
+        c for c in all_cycles
+        if (Path(run_dir) / "embeddings" / f"cycle_{c}.npz").exists()
+    ]
+
+    if len(available_cycles) < 2:
+        st.info("At least 2 cycles with embeddings are needed for the evolution view.")
+        return
+
+    class_names = list(snap.get("class_names", []))
+
+    # Color mode
+    color_mode = st.radio(
+        "Color by",
+        options=["Pool Membership", "Class Label"],
+        horizontal=True,
+        key=f"{widget_prefix}_umap_evo_color_mode",
+    )
+
+    # Display mode
+    display_mode = st.radio(
+        "Display mode",
+        options=["Slider", "Side-by-side"],
+        horizontal=True,
+        key=f"{widget_prefix}_umap_evo_display_mode",
+    )
+
+    if display_mode == "Slider":
+        selected_cycle = st.select_slider(
+            "Cycle",
+            options=available_cycles,
+            value=available_cycles[-1],
+            key=f"{widget_prefix}_umap_evo_slider",
+        )
+        emb_data = _load_all_embeddings(run_dir, tuple([selected_cycle]))
+        if selected_cycle not in emb_data:
+            st.warning(f"Failed to load embeddings for cycle {selected_cycle}.")
+            return
+        d = emb_data[selected_cycle]
+        title = f"UMAP — Cycle {selected_cycle} ({len(d['coords'])} points)"
+        fig = _build_umap_figure(
+            d["coords"], d["labels"], d["pool"],
+            class_names, color_mode, title,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        n_queried = int(np.sum(d["pool"] == 2))
+        if n_queried > 0:
+            st.caption(f"{n_queried} queried points highlighted (from previous cycle's query).")
+
+    else:  # Side-by-side
+        max_cols = 4
+        selected_cycles = st.multiselect(
+            "Select cycles to compare",
+            options=available_cycles,
+            default=available_cycles[:min(max_cols, len(available_cycles))],
+            key=f"{widget_prefix}_umap_evo_multi",
+        )
+        if not selected_cycles:
+            st.info("Select at least one cycle.")
+            return
+        selected_cycles = selected_cycles[:max_cols]
+
+        emb_data = _load_all_embeddings(run_dir, tuple(selected_cycles))
+        cols = st.columns(len(selected_cycles))
+        for i, (col, cyc) in enumerate(zip(cols, selected_cycles)):
+            with col:
+                if cyc not in emb_data:
+                    st.warning(f"Cycle {cyc}: no data")
+                    continue
+                d = emb_data[cyc]
+                title = f"Cycle {cyc}"
+                show_legend = (i == 0) and color_mode == "Pool Membership"
+                fig = _build_umap_figure(
+                    d["coords"], d["labels"], d["pool"],
+                    class_names, color_mode, title,
+                    height=400, show_legend=show_legend,
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                n_queried = int(np.sum(d["pool"] == 2))
+                if n_queried > 0:
+                    st.caption(f"{n_queried} queried pts")
 
 
 def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:
@@ -647,4 +902,8 @@ def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:
     render_confusion_matrix(metrics_history, selected_snap, widget_prefix=widget_prefix)
     st.markdown("---")
     render_embedding_plot(metrics_history, selected_snap, widget_prefix=widget_prefix)
+    st.markdown("---")
+    render_query_summary(metrics_history, selected_snap, widget_prefix=widget_prefix)
+    st.markdown("---")
+    render_umap_evolution(metrics_history, selected_snap, widget_prefix=widget_prefix)
     st.markdown("---")

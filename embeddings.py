@@ -7,7 +7,7 @@ Usage in active_loop.py:
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 import numpy as np
 import logging
 
@@ -98,11 +98,17 @@ def build_cycle_embeddings(
     exp_dir: Path,
     cycle: int,
     rng: np.random.Generator,
+    queried_abs_indices: Optional[List[int]] = None,
 ) -> Optional[str]:
     """High-level helper called from active_loop.finalize_cycle().
 
     Extracts embeddings for the labeled pool + a capped sample of the
     unlabeled pool, runs UMAP, and saves the result.
+
+    Args:
+        queried_abs_indices: Absolute dataset indices of samples queried in
+            the *previous* cycle.  These are now in the labeled pool and will
+            be marked as pool=2 ("Queried this cycle") in the saved .npz.
 
     Returns:
         Path to the .npz file, or None if umap-learn is not installed.
@@ -145,6 +151,18 @@ def build_cycle_embeddings(
     all_embeddings = np.vstack([emb_labeled, emb_unlabeled])
     all_labels = np.concatenate([lbl_labeled, lbl_unlabeled])
     all_pool = np.concatenate([pool_labeled, pool_unlabeled])
+
+    # Mark previously-queried samples (now in labeled pool) as pool=2
+    if queried_abs_indices:
+        queried_set = set(queried_abs_indices)
+        labeled_indices = data_manager.get_labeled_indices()
+        marked = 0
+        for i, abs_idx in enumerate(labeled_indices):
+            if abs_idx in queried_set:
+                all_pool[i] = 2
+                marked += 1
+        if marked:
+            logger.info("Marked %d queried points as pool=2 in cycle %d UMAP", marked, cycle)
 
     coords_2d = compute_umap_projection(all_embeddings)
     return save_cycle_embeddings(exp_dir, cycle, coords_2d, all_labels, all_pool)
