@@ -157,6 +157,8 @@ def render_metrics_table(metrics_history: List[Dict[str, Any]]) -> None:
     rows = []
     for metrics in metrics_history:
         ece = metrics.get("ece")
+        ece_cal = metrics.get("ece_calibrated")
+        temp = metrics.get("temperature")
         rows.append(
             {
                 "Cycle": metrics.get("cycle", "N/A"),
@@ -167,6 +169,8 @@ def render_metrics_table(metrics_history: List[Dict[str, Any]]) -> None:
                 "Precision": f"{metrics.get('test_precision', 0):.3f}",
                 "Recall": f"{metrics.get('test_recall', 0):.3f}",
                 "ECE": f"{ece:.4f}" if ece is not None else "N/A",
+                "ECE (cal.)": f"{ece_cal:.4f}" if ece_cal is not None else "N/A",
+                "Temp.": f"{temp:.2f}" if temp is not None else "N/A",
             }
         )
     df = pd.DataFrame(rows)
@@ -213,16 +217,39 @@ def render_accuracy_progression_chart(metrics_history: List[Dict[str, Any]]) -> 
 
 def render_ece_chart(metrics_history: List[Dict[str, Any]]) -> None:
     st.markdown("### Calibration (ECE) Across Cycles")
-    ece_rows = [
-        {"Cycle": m.get("cycle", i + 1), "ECE": m["ece"]}
-        for i, m in enumerate(metrics_history)
-        if m.get("ece") is not None
-    ]
+    ece_rows = []
+    for i, m in enumerate(metrics_history):
+        if m.get("ece") is None:
+            continue
+        row: Dict[str, Any] = {"Cycle": m.get("cycle", i + 1), "ECE (raw)": m["ece"]}
+        if m.get("ece_calibrated") is not None:
+            row["ECE (calibrated)"] = m["ece_calibrated"]
+        ece_rows.append(row)
     if not ece_rows:
         st.info("ECE values will appear after cycles complete (requires calibration to be enabled)")
         return
     df = pd.DataFrame(ece_rows)
-    st.line_chart(df, x="Cycle", y="ECE", height=250)
+    y_cols = ["ECE (raw)"]
+    if "ECE (calibrated)" in df.columns:
+        y_cols.append("ECE (calibrated)")
+    st.line_chart(df, x="Cycle", y=y_cols, height=250)
+
+    # Show temperature evolution if available
+    temp_rows = [
+        {"Cycle": m.get("cycle", i + 1), "Temperature": m["temperature"]}
+        for i, m in enumerate(metrics_history)
+        if m.get("temperature") is not None
+    ]
+    if temp_rows:
+        with st.expander("Learned Temperature per Cycle"):
+            temp_df = pd.DataFrame(temp_rows)
+            st.line_chart(temp_df, x="Cycle", y="Temperature", height=200)
+            latest_t = temp_rows[-1]["Temperature"]
+            st.caption(
+                f"T > 1.0 = model was overconfident (softened), "
+                f"T < 1.0 = model was underconfident (sharpened). "
+                f"Latest T = {latest_t:.4f}"
+            )
 
 
 def render_best_cycle_summary(metrics_history: List[Dict[str, Any]]) -> None:
@@ -806,6 +833,128 @@ def render_umap_evolution(
                 n_queried = int(np.sum(d["pool"] == 2))
                 if n_queried > 0:
                     st.caption(f"{n_queried} queried pts")
+
+
+def render_comparison_view(controller: Controller, snap: Dict[str, Any]) -> None:
+    """Compare multiple runs side-by-side: accuracy, F1, ECE curves."""
+    st.title("Run Comparison")
+    st.markdown("---")
+
+    exp_dir = str(getattr(controller.config.experiment, "exp_dir", "experiments"))
+    persisted_runs = _discover_persisted_runs(exp_dir)
+
+    runs_with_data = [r for r in persisted_runs if r.get("completed_cycles", 0) > 0]
+    if len(runs_with_data) < 2:
+        st.info("At least 2 completed runs are needed for comparison. Run experiments with different strategies or models first.")
+        return
+
+    run_options = {r["key"]: r for r in runs_with_data}
+    selected_keys = st.multiselect(
+        "Select runs to compare",
+        options=list(run_options.keys()),
+        default=list(run_options.keys())[:min(4, len(run_options))],
+        format_func=lambda k: run_options[k]["label"],
+        key="comparison_run_selector",
+    )
+
+    if len(selected_keys) < 2:
+        st.info("Select at least 2 runs to compare.")
+        return
+
+    selected_runs = [run_options[k] for k in selected_keys]
+
+    # Build short labels for the legend
+    def _short_label(run: Dict[str, Any]) -> str:
+        model = run.get("model_name", "?")
+        strategy = run.get("strategy", "?")
+        return f"{model} / {strategy}"
+
+    # --- Test Accuracy Comparison ---
+    st.markdown("### Test Accuracy")
+    acc_df = pd.DataFrame()
+    for run in selected_runs:
+        label = _short_label(run)
+        history = run.get("metrics_history", [])
+        if not history:
+            continue
+        labeled_sizes = [m.get("labeled_pool_size", 0) for m in history]
+        accuracies = [m.get("test_accuracy", 0) * 100 for m in history]
+        run_df = pd.DataFrame({"Labeled Samples": labeled_sizes, label: accuracies})
+        if acc_df.empty:
+            acc_df = run_df
+        else:
+            acc_df = acc_df.merge(run_df, on="Labeled Samples", how="outer")
+    if not acc_df.empty:
+        acc_df = acc_df.sort_values("Labeled Samples")
+        y_cols = [c for c in acc_df.columns if c != "Labeled Samples"]
+        st.line_chart(acc_df, x="Labeled Samples", y=y_cols, height=400)
+    st.markdown("---")
+
+    # --- F1 Score Comparison ---
+    st.markdown("### F1 Score")
+    f1_df = pd.DataFrame()
+    for run in selected_runs:
+        label = _short_label(run)
+        history = run.get("metrics_history", [])
+        if not history:
+            continue
+        labeled_sizes = [m.get("labeled_pool_size", 0) for m in history]
+        f1_scores = [m.get("test_f1", 0) for m in history]
+        run_df = pd.DataFrame({"Labeled Samples": labeled_sizes, label: f1_scores})
+        if f1_df.empty:
+            f1_df = run_df
+        else:
+            f1_df = f1_df.merge(run_df, on="Labeled Samples", how="outer")
+    if not f1_df.empty:
+        f1_df = f1_df.sort_values("Labeled Samples")
+        y_cols = [c for c in f1_df.columns if c != "Labeled Samples"]
+        st.line_chart(f1_df, x="Labeled Samples", y=y_cols, height=400)
+    st.markdown("---")
+
+    # --- ECE Comparison ---
+    st.markdown("### Calibration (ECE)")
+    ece_df = pd.DataFrame()
+    for run in selected_runs:
+        label = _short_label(run)
+        history = run.get("metrics_history", [])
+        if not history:
+            continue
+        ece_rows = [(m.get("labeled_pool_size", 0), m.get("ece")) for m in history if m.get("ece") is not None]
+        if not ece_rows:
+            continue
+        labeled_sizes, ece_vals = zip(*ece_rows)
+        run_df = pd.DataFrame({"Labeled Samples": list(labeled_sizes), label: list(ece_vals)})
+        if ece_df.empty:
+            ece_df = run_df
+        else:
+            ece_df = ece_df.merge(run_df, on="Labeled Samples", how="outer")
+    if not ece_df.empty:
+        ece_df = ece_df.sort_values("Labeled Samples")
+        y_cols = [c for c in ece_df.columns if c != "Labeled Samples"]
+        st.line_chart(ece_df, x="Labeled Samples", y=y_cols, height=300)
+    else:
+        st.info("No ECE data available for the selected runs.")
+    st.markdown("---")
+
+    # --- Final Results Summary Table ---
+    st.markdown("### Final Results Summary")
+    summary_rows = []
+    for run in selected_runs:
+        history = run.get("metrics_history", [])
+        if not history:
+            continue
+        final = history[-1]
+        summary_rows.append({
+            "Run": _short_label(run),
+            "Cycles": run.get("completed_cycles", 0),
+            "Final Labeled": final.get("labeled_pool_size", 0),
+            "Test Acc": f"{final.get('test_accuracy', 0) * 100:.2f}%",
+            "F1": f"{final.get('test_f1', 0):.3f}",
+            "ECE": f"{final.get('ece', 0):.4f}" if final.get("ece") is not None else "N/A",
+            "ECE (cal.)": f"{final.get('ece_calibrated', 0):.4f}" if final.get("ece_calibrated") is not None else "N/A",
+        })
+    if summary_rows:
+        st.dataframe(pd.DataFrame(summary_rows), hide_index=True, use_container_width=True)
 
 
 def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:

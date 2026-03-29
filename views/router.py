@@ -35,13 +35,19 @@ def render(snap: Optional[Dict] = None) -> None:
                 "Try Stop and restart the experiment."
             )
 
-    main_tab, results_tab, explorer_tab = st.tabs(["Main", "Results", "Dataset Explorer"])
+    main_tab, results_tab, compare_tab, explorer_tab = st.tabs(
+        ["Main", "Results", "Compare Runs", "Dataset Explorer"]
+    )
     with main_tab:
         _render_state_view(controller, snap, current_state)
     with results_tab:
         from views.results import render_results_view
 
         render_results_view(controller, snap)
+    with compare_tab:
+        from views.results import render_comparison_view
+
+        render_comparison_view(controller, snap)
     with explorer_tab:
         from views.explorer import render_explorer_view
 
