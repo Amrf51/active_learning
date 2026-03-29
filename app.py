@@ -39,30 +39,39 @@ def _target_poll_mode(state: AppState) -> str:
     return "off"
 
 
-def init_session_state() -> None:
-    """Initialize config + controller once per Streamlit session."""
-    if "initialized" in st.session_state:
-        return
-
+@st.cache_resource
+def get_controller():
+    """Process-level singleton so the Controller survives browser refreshes."""
     from config import load_config
 
     config = load_config()
-    controller = Controller(config)
+    return config, Controller(config)
 
+
+def init_session_state() -> None:
+    """Initialize config + controller once per Streamlit session."""
+    config, controller = get_controller()
+
+    # Always point session_state at the cached singleton
     st.session_state.config = config
     st.session_state.controller = controller
-    st.session_state.experiment_history = []
-    st.session_state.last_event_version = -1
-    st.session_state.current_cycle_id = None
-    st.session_state.annotations = {}
-    st.session_state.poll_mode = "off"
-    st.session_state.initialized = True
+
+    # Only init ephemeral UI state once per session
+    if "initialized" not in st.session_state:
+        st.session_state.experiment_history = []
+        st.session_state.last_event_version = -1
+        st.session_state.current_cycle_id = None
+        st.session_state.annotations = {}
+        st.session_state.poll_mode = "off"
+        st.session_state.initialized = True
 
 
 def shutdown_handler() -> None:
     """Best-effort cleanup on process exit."""
     try:
         controller = st.session_state.get("controller")
+        if controller is None:
+            _, controller = get_controller()
         if controller is not None:
             controller.stop_experiment(join_timeout=2.0)
     except Exception:  # pylint: disable=broad-exception-caught
