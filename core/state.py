@@ -54,7 +54,9 @@ class CycleMetrics:
     test_recall: float
     per_class_metrics: Optional[dict] = None
     confusion_matrix_path: Optional[str] = None
-    
+    ece: Optional[float] = None
+    embeddings_path: Optional[str] = None
+
     def model_dump(self) -> dict:
         """Convert to dictionary for serialization (Pydantic-style method name)."""
         return {
@@ -70,6 +72,8 @@ class CycleMetrics:
             "test_recall": self.test_recall,
             "per_class_metrics": self.per_class_metrics,
             "confusion_matrix_path": self.confusion_matrix_path,
+            "ece": self.ece,
+            "embeddings_path": self.embeddings_path,
         }
 
 
@@ -135,3 +139,26 @@ class ProbeImage:
             "probe_type": self.probe_type,
             "predictions_by_cycle": self.predictions_by_cycle
         }
+
+
+@dataclass
+class QuerySummary:
+    """
+    Summary of a single query cycle: why and how images were selected.
+
+    Persisted as cycle_N_query_summary.json for experiment tracking.
+    """
+    cycle: int
+    strategy_name: str
+    strategy_description: str
+    pool_size_before_query: int
+    n_queried: int
+    uncertainty_stats: dict          # min, max, mean, std of queried batch
+    queried_class_distribution: dict # class_name -> count
+    labeled_class_distribution: dict # class_name -> count (before query applied)
+    top_uncertain: list              # dicts: image_id, uncertainty_score, predicted_class, predicted_confidence
+    queried_image_ids: list          # all queried absolute image IDs
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for serialization."""
+        return {k: v for k, v in self.__dict__.items()}

@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 import pandas as pd
 import streamlit as st
 
-from controller import Controller
+from core.controller import Controller
 
 
 def _resolve_pool_sizes(snap: Dict[str, Any]) -> tuple[int, int]:

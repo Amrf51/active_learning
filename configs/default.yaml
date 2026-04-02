@@ -35,7 +35,7 @@ active_learning:
   batch_size_al: 50           # samples per query
   sampling_strategy: "entropy" # "entropy", "margin", "least_confidence", "random"
   uncertainty_method: "entropy"
-  reset_mode: "pretrained"    # "pretrained", "head_only", "none"
+  reset_mode: "continue"      # "continue", "pretrained", "head_only", "none"
   step_mode: false            # true = require "Next Step" to start each new cycle
   auto_annotate: true         # Auto-annotate with ground truth for simulation
 
