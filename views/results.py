@@ -14,7 +14,7 @@ import streamlit as st
 import yaml
 from PIL import Image
 
-from controller import Controller
+from core.controller import Controller
 
 
 def _load_display_image(image_path: str) -> Image.Image:

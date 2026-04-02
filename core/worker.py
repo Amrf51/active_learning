@@ -15,13 +15,13 @@ from uuid import uuid4
 import torch
 from torch.utils.data import DataLoader
 
-from active_loop import ActiveLearningLoop
-from data_manager import ALDataManager
-from dataloader import get_datasets
-from events import Event, EventType, Inbox
-from models import get_model
-from strategies import get_strategy
-from trainer import Trainer
+from .active_loop import ActiveLearningLoop
+from ml.data_manager import ALDataManager
+from ml.dataloader import get_datasets
+from .events import Event, EventType, Inbox
+from ml.models import get_model
+from ml.strategies import get_strategy
+from ml.trainer import Trainer
 
 logger = logging.getLogger(__name__)
 

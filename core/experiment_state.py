@@ -13,7 +13,7 @@ import uuid
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from events import Inbox
+from .events import Inbox
 
 
 class AppState(Enum):

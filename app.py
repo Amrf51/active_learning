@@ -8,9 +8,9 @@ from typing import List
 
 import streamlit as st
 
-from controller import Controller
-from events import Event, EventType
-from experiment_state import AppState
+from core.controller import Controller
+from core.events import Event, EventType
+from core.experiment_state import AppState
 
 logging.basicConfig(
     level=logging.INFO,

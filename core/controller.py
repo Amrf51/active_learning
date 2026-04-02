@@ -14,9 +14,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from worker import run_experiment
-from events import Event, EventType
-from experiment_state import AppState, ExperimentState
+from .worker import run_experiment
+from .events import Event, EventType
+from .experiment_state import AppState, ExperimentState
 
 logger = logging.getLogger(__name__)
 

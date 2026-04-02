@@ -139,7 +139,7 @@ def build_cycle_embeddings(
     else:
         sampled = unlabeled_indices
 
-    from data_manager import PoolSubset
+    from .data_manager import PoolSubset
     from torch.utils.data import DataLoader
     subset = PoolSubset(data_manager.dataset, sampled)
     unlabeled_loader = DataLoader(

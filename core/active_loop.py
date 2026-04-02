@@ -26,14 +26,14 @@ from typing import Dict, List, Callable, Optional, Tuple
 from torch.utils.data import DataLoader
 import logging
 
-from state import (
+from .state import (
     EpochMetrics,
     CycleMetrics,
     QueriedImage,
     QuerySummary,
     ProbeImage,
 )
-from embeddings import build_cycle_embeddings
+from ml.embeddings import build_cycle_embeddings
 
 logger = logging.getLogger(__name__)
 

@@ -9,8 +9,8 @@ from typing import Dict, Optional
 
 import streamlit as st
 
-from controller import Controller
-from experiment_state import AppState
+from core.controller import Controller
+from core.experiment_state import AppState
 
 
 STALE_HEARTBEAT_SECONDS = 60.0

@@ -11,8 +11,8 @@ from typing import Any, Dict, List
 import streamlit as st
 from PIL import Image
 
-from controller import Controller
-from events import Event, EventType
+from core.controller import Controller
+from core.events import Event, EventType
 
 logger = logging.getLogger(__name__)
 

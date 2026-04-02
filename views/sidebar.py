@@ -14,10 +14,10 @@ The sidebar collects user configuration and dispatches commands to the Controlle
 import streamlit as st
 from typing import Dict, Any, Optional
 import logging
-from controller import Controller
-from events import Event, EventType
-from experiment_state import AppState
-from models import get_model_families, get_model_card
+from core.controller import Controller
+from core.events import Event, EventType
+from core.experiment_state import AppState
+from ml.models import get_model_families, get_model_card
 
 logger = logging.getLogger(__name__)
 

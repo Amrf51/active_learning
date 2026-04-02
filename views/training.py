@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 
 import streamlit as st
 
-from controller import Controller
+from core.controller import Controller
 
 
 def render_epoch_progress(snap: Dict[str, Any], total_epochs: int) -> None:
