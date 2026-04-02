@@ -8,9 +8,9 @@ from typing import List
 
 import streamlit as st
 
-from controller import Controller
-from events import Event, EventType
-from experiment_state import AppState
+from core.controller import Controller
+from core.events import Event, EventType
+from core.experiment_state import AppState
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,30 +39,39 @@ def _target_poll_mode(state: AppState) -> str:
     return "off"
 
 
-def init_session_state() -> None:
-    """Initialize config + controller once per Streamlit session."""
-    if "initialized" in st.session_state:
-        return
-
+@st.cache_resource
+def get_controller():
+    """Process-level singleton so the Controller survives browser refreshes."""
     from config import load_config
 
     config = load_config()
-    controller = Controller(config)
+    return config, Controller(config)
 
+
+def init_session_state() -> None:
+    """Initialize config + controller once per Streamlit session."""
+    config, controller = get_controller()
+
+    # Always point session_state at the cached singleton
     st.session_state.config = config
     st.session_state.controller = controller
-    st.session_state.experiment_history = []
-    st.session_state.last_event_version = -1
-    st.session_state.current_cycle_id = None
-    st.session_state.annotations = {}
-    st.session_state.poll_mode = "off"
-    st.session_state.initialized = True
+
+    # Only init ephemeral UI state once per session
+    if "initialized" not in st.session_state:
+        st.session_state.experiment_history = []
+        st.session_state.last_event_version = -1
+        st.session_state.current_cycle_id = None
+        st.session_state.annotations = {}
+        st.session_state.poll_mode = "off"
+        st.session_state.initialized = True
 
 
 def shutdown_handler() -> None:
     """Best-effort cleanup on process exit."""
     try:
         controller = st.session_state.get("controller")
+        if controller is None:
+            _, controller = get_controller()
         if controller is not None:
             controller.stop_experiment(join_timeout=2.0)
     except Exception:  # pylint: disable=broad-exception-caught
@@ -86,8 +95,8 @@ def _handle_ui_effects(events: List[Event]) -> None:
             st.session_state.pop("last_annotation_feedback", None)
 
 
-def _drain_inbox_and_render() -> None:
-    """Drain worker inbox once and render routed UI."""
+def _drain_inbox_and_render() -> dict:
+    """Drain worker inbox once, render routed UI, and return the snapshot used."""
     from views.router import render
 
     controller = st.session_state.controller
@@ -98,13 +107,13 @@ def _drain_inbox_and_render() -> None:
         _handle_ui_effects(events)
     st.session_state.last_event_version = new_ver
 
-    render()
-
-
-def _ensure_poll_mode_matches_state() -> None:
-    """Switch polling mode when state changes and trigger full rerun."""
-    controller = st.session_state.controller
     snap = controller.get_snapshot()
+    render(snap)
+    return snap
+
+
+def _ensure_poll_mode_matches_state(snap: dict) -> None:
+    """Switch polling mode when state changes and trigger full rerun."""
     desired_mode = _target_poll_mode(snap["app_state"])
     current_mode = st.session_state.get("poll_mode", "off")
     if desired_mode != current_mode:
@@ -115,15 +124,15 @@ def _ensure_poll_mode_matches_state() -> None:
 @st.fragment(run_every="0.5s")
 def fast_live_update_fragment() -> None:
     """Fast polling for short-latency states."""
-    _drain_inbox_and_render()
-    _ensure_poll_mode_matches_state()
+    snap = _drain_inbox_and_render()
+    _ensure_poll_mode_matches_state(snap)
 
 
 @st.fragment(run_every="1.5s")
 def slow_live_update_fragment() -> None:
     """Reduced polling cadence for long-running states."""
-    _drain_inbox_and_render()
-    _ensure_poll_mode_matches_state()
+    snap = _drain_inbox_and_render()
+    _ensure_poll_mode_matches_state(snap)
 
 
 def static_render_fragment() -> None:

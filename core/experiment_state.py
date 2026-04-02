@@ -5,6 +5,7 @@ Thread-safe shared experiment state for Streamlit UI + backend thread.
 from __future__ import annotations
 
 import copy
+import queue
 import threading
 import time
 import traceback
@@ -12,7 +13,7 @@ import uuid
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from events import Inbox
+from .events import Inbox
 
 
 class AppState(Enum):
@@ -30,7 +31,7 @@ class AppState(Enum):
 
 
 class ExperimentState:
-    """Single source of truth shared between UI thread and backend thread."""
+    """Single source of truth for UI state. Manipulated only by the Controller."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -52,17 +53,16 @@ class ExperimentState:
         self.last_error: Optional[Dict[str, str]] = None
         self.progress_detail: str = "Idle"
 
-        # Thread control
-        self.stop_event = threading.Event()
-        self.next_step_event = threading.Event()
-        self.annotations_ready = threading.Event()
-        self.annotations_data: List[Dict[str, Any]] = []
+        # Thread management
         self.thread: Optional[threading.Thread] = None
         self.thread_status: str = "stopped"
         self.run_id: str = ""
         self.heartbeat_ts: float = time.time()
         self.query_token: str = ""
         self.run_dir: str = ""
+
+        # Command queue: Controller → Worker (one fresh queue per run)
+        self.command_queue: Optional[queue.Queue] = None  # type: ignore[type-arg]
 
         # Event inbox for worker → controller communication
         self.inbox = Inbox()
@@ -86,17 +86,14 @@ class ExperimentState:
             self.unlabeled_class_distribution = {}
             self.last_error = None
             self.progress_detail = "Ready"
-            self.annotations_data = []
             self.run_id = new_run_id
             self.thread = None
             self.thread_status = "starting"
             self.heartbeat_ts = time.time()
             self.query_token = ""
             self.run_dir = ""
+            self.command_queue = None
 
-        self.stop_event.clear()
-        self.next_step_event.clear()
-        self.annotations_ready.clear()
         self.inbox.reset()
         return new_run_id
 
@@ -156,39 +153,6 @@ class ExperimentState:
                 "traceback": tb,
             }
             self.heartbeat_ts = time.time()
-
-    def set_annotations(self, run_id: str, cycle: int, annotations: List[Dict[str, Any]]) -> bool:
-        """
-        Accept user annotations only for the active run/cycle while annotating.
-        """
-        with self._lock:
-            if self.run_id != run_id:
-                return False
-            if self.current_cycle != cycle:
-                return False
-            if self.app_state != AppState.ANNOTATING:
-                return False
-            self.annotations_data = copy.deepcopy(annotations)
-            self.heartbeat_ts = time.time()
-        self.annotations_ready.set()
-        return True
-
-    def clear_annotations(self) -> None:
-        """Clear annotation payload + signal event."""
-        with self._lock:
-            self.annotations_data = []
-        self.annotations_ready.clear()
-
-    def consume_annotations(self, run_id: str, cycle: int) -> Optional[List[Dict[str, Any]]]:
-        """Consume annotations if they belong to the current run/cycle."""
-        with self._lock:
-            if self.run_id != run_id or self.current_cycle != cycle:
-                return None
-            data = copy.deepcopy(self.annotations_data)
-            self.annotations_data = []
-            self.heartbeat_ts = time.time()
-        self.annotations_ready.clear()
-        return data
 
     def is_run_active(self, run_id: str) -> bool:
         """Check whether run_id still matches active run."""

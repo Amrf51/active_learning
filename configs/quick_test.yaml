@@ -1,19 +1,38 @@
 # ──────────────────────────────────────
-# Quick Test Configuration
-# Fast debugging config with minimal resources
+# Smoke-test config — kaggle-vehicle (4 classes, 400 images)
+# Fast end-to-end verification of all A0–A6 + B1–B3 features
 # ──────────────────────────────────────
 
 experiment:
-  name: "quick_test"
+  name: "smoke_test_4class"
 
 model:
-  name: "mobilenetv3_small_100"
+  name: "mobilenetv3_small_100"   # lightest pretrained model
 
 training:
-  epochs: 2
+  epochs: 3
   batch_size: 16
+  learning_rate: 1.0e-4
+  weight_decay: 1.0e-4
+  optimizer: "adamw"
+  early_stopping_patience: 2
+  scheduler: "cosine"
+  warmup_epochs: 1                # 1-epoch warmup (short run)
+  grad_clip_norm: 1.0
+  label_smoothing: 0.1
+  backbone_lr_factor: 0.1
+  freeze_backbone_epochs: 1       # freeze epoch 1, unfreeze at epoch 2
+  loss_fn: "cross_entropy"
+  supcon_temperature: 0.07
+  supcon_weight: 0.5
 
 active_learning:
   num_cycles: 3
-  initial_pool_size: 50
-  batch_size_al: 20
+  initial_pool_size: 16           # 4 per class — stratified guarantees all 4 covered
+  batch_size_al: 10
+  sampling_strategy: "entropy"
+  uncertainty_method: "entropy"
+  reset_mode: "continue"          # exercises full A0 freeze/unfreeze path
+  step_mode: false
+  auto_annotate: true
+  stratified_init: true

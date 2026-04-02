@@ -20,8 +20,9 @@ from typing import Dict, Tuple, Optional, List, Callable
 import logging
 
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
-from models import get_model
-from state import EpochMetrics
+from .models import get_model, extract_features, get_feature_dim
+from .losses import SupConLoss, ProjectionHead
+from core.state import EpochMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +55,24 @@ class Trainer:
         self.checkpoint_dir = self.exp_dir / "checkpoints"
         self.checkpoint_dir.mkdir(exist_ok=True)
         
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss(
+            label_smoothing=self.config.training.label_smoothing
+        )
+
+        # SupCon / combined loss: create projection head alongside the model
+        loss_fn = self.config.training.loss_fn
+        if loss_fn in ("supcon", "combined"):
+            feat_dim = get_feature_dim(self.model)
+            self.projection_head = ProjectionHead(in_dim=feat_dim).to(device)
+            self.supcon_criterion = SupConLoss(
+                temperature=self.config.training.supcon_temperature
+            )
+        else:
+            self.projection_head = None
+            self.supcon_criterion = None
+
         self.optimizer = self._create_optimizer()
+        self.scheduler = self._create_scheduler()
         
         self.history = {
             "train_loss": [],
@@ -68,79 +85,174 @@ class Trainer:
         self.best_val_accuracy = 0.0
         self.best_epoch = 0
         self.patience_counter = 0
-        
+        self._backbone_frozen = False
+        self.temperature = 1.0  # learned by calibrate_temperature(); 1.0 = no scaling
+
         logger.info(f"Trainer initialized | Device: {device}")
     
+    def _get_head_module(self):
+        """Return the classification head module (fc / classifier / head)."""
+        return (
+            getattr(self.model, 'fc', None)
+            or getattr(self.model, 'classifier', None)
+            or getattr(self.model, 'head', None)
+        )
+
     def _create_optimizer(self):
-        """Create optimizer based on config."""
+        """Create optimizer with discriminative LR: backbone at reduced rate, head at full rate."""
         name = self.config.training.optimizer.lower()
         lr = self.config.training.learning_rate
         wd = self.config.training.weight_decay
-        
+        backbone_lr = lr * self.config.training.backbone_lr_factor
+
+        head_module = self._get_head_module()
+        if head_module is None:
+            params = [{"params": self.model.parameters(), "lr": lr}]
+        else:
+            head_ids = {id(p) for p in head_module.parameters()}
+            backbone_params = [p for p in self.model.parameters() if id(p) not in head_ids]
+            head_params = [p for p in self.model.parameters() if id(p) in head_ids]
+            params = [
+                {"params": backbone_params, "lr": backbone_lr},
+                {"params": head_params, "lr": lr},
+            ]
+
+        # Projection head (SupCon) trained at the same rate as the classifier head
+        if self.projection_head is not None:
+            params.append({"params": self.projection_head.parameters(), "lr": lr})
+
         if name == "adam":
-            return optim.Adam(self.model.parameters(), lr=lr, weight_decay=wd)
+            return optim.Adam(params, weight_decay=wd)
         elif name == "sgd":
-            return optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=wd)
+            return optim.SGD(params, momentum=0.9, weight_decay=wd)
         elif name == "adamw":
-            return optim.AdamW(self.model.parameters(), lr=lr, weight_decay=wd)
+            return optim.AdamW(params, weight_decay=wd)
         else:
             raise ValueError(f"Unknown optimizer: {name}")
     
-    def reset_model_weights(self, mode: str = "pretrained"):
+    def freeze_backbone(self):
+        """Freeze all backbone parameters; head stays trainable."""
+        head_module = self._get_head_module()
+        head_ids = {id(p) for p in head_module.parameters()} if head_module else set()
+        for param in self.model.parameters():
+            if id(param) not in head_ids:
+                param.requires_grad = False
+        logger.info("Backbone frozen — head-only training active")
+
+    def unfreeze_backbone(self):
+        """Unfreeze all parameters for full fine-tuning."""
+        for param in self.model.parameters():
+            param.requires_grad = True
+        logger.info("Backbone unfrozen — discriminative LR fine-tuning active")
+
+    def _create_scheduler(self, skip_warmup: bool = False):
         """
-        Reset model weights based on specified mode.
-        
+        Create LR scheduler with optional linear warmup.
+
         Args:
-            mode: Reset strategy
-                - "pretrained": Reload fresh ImageNet weights
-                - "head_only": Keep backbone, reset classification head only
-                - "none": No reset, continue from current state
+            skip_warmup: If True, skip the warmup phase (used when rebuilding
+                         the scheduler after backbone unfreeze, since warmup is done).
         """
-        if mode == "none":
-            logger.info("Reset mode: none - keeping current weights")
+        sched = self.config.training.scheduler
+        warmup = 0 if skip_warmup else self.config.training.warmup_epochs
+        total_epochs = self.config.training.epochs
+
+        if sched == "none":
+            return None
+
+        if sched == "cosine":
+            main = optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer, T_max=max(1, total_epochs - warmup)
+            )
+            if warmup > 0:
+                warmup_sched = optim.lr_scheduler.LinearLR(
+                    self.optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup
+                )
+                return optim.lr_scheduler.SequentialLR(
+                    self.optimizer, schedulers=[warmup_sched, main], milestones=[warmup]
+                )
+            return main
+        elif sched == "plateau":
+            # ReduceLROnPlateau requires the metric value at each step, which is
+            # incompatible with SequentialLR. Skip warmup for plateau.
+            return optim.lr_scheduler.ReduceLROnPlateau(
+                self.optimizer, mode="max", factor=0.5, patience=2
+            )
+        else:
+            raise ValueError(f"Unknown scheduler: {sched}")
+
+    def reset_model_weights(self, mode: str = "continue", cycle: int = 1):
+        """
+        Reset model for a new AL cycle.
+
+        Modes:
+            "continue"  — Preferred. Cycle 1: freeze backbone so the random head
+                          can warm up without corrupting pretrained features.
+                          Cycle 2+: keep all weights, reset optimizer/tracking only.
+            "pretrained" — Reload ImageNet weights every cycle (independent experiments).
+            "head_only"  — Keep backbone, reset head. Freeze backbone for warmup.
+            "none"       — Keep everything, reset optimizer + tracking.
+        """
+        if mode == "continue":
+            if cycle == 1:
+                # Backbone is already pretrained; freeze it so the random head
+                # has safe warmup epochs before full fine-tuning begins.
+                self.freeze_backbone()
+                self._backbone_frozen = True
+            else:
+                # Carry forward all learned weights; just reset optimizer momentum
+                # and tracking so the new cycle starts with a clean LR schedule.
+                self.unfreeze_backbone()
+                self._backbone_frozen = False
             self.optimizer = self._create_optimizer()
+            self.scheduler = self._create_scheduler()
             self._reset_tracking()
             return
-        
-        if mode == "head_only":
-            logger.info("Reset mode: head_only - resetting classification head")
-            if hasattr(self.model, 'fc'):
-                self.model.fc.reset_parameters()
-            elif hasattr(self.model, 'classifier'):
-                if isinstance(self.model.classifier, nn.Sequential):
-                    for layer in self.model.classifier:
-                        if hasattr(layer, 'reset_parameters'):
-                            layer.reset_parameters()
-                else:
-                    self.model.classifier.reset_parameters()
-            elif hasattr(self.model, 'head'):
-                if isinstance(self.model.head, nn.Sequential):
-                    for layer in self.model.head:
-                        if hasattr(layer, 'reset_parameters'):
-                            layer.reset_parameters()
-                else:
-                    self.model.head.reset_parameters()
-            
-            self.optimizer = self._create_optimizer()
-            self._reset_tracking()
-            return
-        
+
         if mode == "pretrained":
-            logger.info("Reset mode: pretrained - reloading ImageNet weights")
-            model_name = self.config.model.name
-            num_classes = self.config.model.num_classes
-            pretrained = self.config.model.pretrained
+            logger.info("Reset mode: pretrained — reloading ImageNet weights")
             self.model = get_model(
-                name=model_name,
-                num_classes=num_classes,
-                pretrained=pretrained,
+                name=self.config.model.name,
+                num_classes=self.config.model.num_classes,
+                pretrained=self.config.model.pretrained,
                 device=self.device
             )
+            if self.projection_head is not None:
+                feat_dim = get_feature_dim(self.model)
+                self.projection_head = ProjectionHead(in_dim=feat_dim).to(self.device)
+            self.freeze_backbone()
+            self._backbone_frozen = True
             self.optimizer = self._create_optimizer()
+            self.scheduler = self._create_scheduler()
             self._reset_tracking()
-            logger.info("Model reset to pretrained state complete")
             return
-        
+
+        if mode == "head_only":
+            logger.info("Reset mode: head_only — resetting classification head")
+            head_module = self._get_head_module()
+            if head_module is not None:
+                if isinstance(head_module, nn.Sequential):
+                    for layer in head_module:
+                        if hasattr(layer, 'reset_parameters'):
+                            layer.reset_parameters()
+                else:
+                    head_module.reset_parameters()
+            self.freeze_backbone()
+            self._backbone_frozen = True
+            self.optimizer = self._create_optimizer()
+            self.scheduler = self._create_scheduler()
+            self._reset_tracking()
+            return
+
+        if mode == "none":
+            logger.info("Reset mode: none — keeping weights, resetting optimizer + tracking")
+            self.unfreeze_backbone()
+            self._backbone_frozen = False
+            self.optimizer = self._create_optimizer()
+            self.scheduler = self._create_scheduler()
+            self._reset_tracking()
+            return
+
         raise ValueError(f"Unknown reset mode: {mode}")
     
     def _reset_tracking(self):
@@ -167,19 +279,46 @@ class Trainer:
             Tuple of (avg_loss, accuracy)
         """
         self.model.train()
+        if self.projection_head is not None:
+            self.projection_head.train()
         total_loss = 0.0
         all_preds = []
         all_labels = []
-        
+
+        loss_fn = self.config.training.loss_fn
+        alpha = self.config.training.supcon_weight
+
         for batch_idx, (images, labels) in enumerate(train_loader):
             images = images.to(self.device)
             labels = labels.to(self.device)
-            
-            outputs = self.model(images)
-            loss = self.criterion(outputs, labels)
-            
+
+            if loss_fn != "cross_entropy" and self.projection_head is not None:
+                # Register hook before the single forward pass so both CE and
+                # SupCon share the same computation graph (no double pass).
+                hook_out = {}
+                def _hook(m, i, o):
+                    hook_out['feat'] = o
+                handle = self.model.global_pool.register_forward_hook(_hook)
+                outputs = self.model(images)
+                handle.remove()
+                feats = hook_out['feat'].view(hook_out['feat'].size(0), -1)
+                proj = self.projection_head(feats)
+                sc_loss = self.supcon_criterion(proj, labels)
+                ce_loss = self.criterion(outputs, labels)
+                if loss_fn == "supcon":
+                    loss = sc_loss
+                else:  # combined
+                    loss = (1 - alpha) * ce_loss + alpha * sc_loss
+            else:
+                outputs = self.model(images)
+                loss = self.criterion(outputs, labels)
+
             self.optimizer.zero_grad()
             loss.backward()
+            if self.config.training.grad_clip_norm > 0:
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.config.training.grad_clip_norm
+                )
             self.optimizer.step()
             
             total_loss += loss.item()
@@ -245,8 +384,19 @@ class Trainer:
         Returns:
             EpochMetrics with training results
         """
+        # Unfreeze backbone once the warmup/freeze period is over.
+        # Also rebuild optimizer + scheduler so backbone params get proper Adam
+        # state initialized from scratch (frozen params have no optimizer state).
+        freeze_epochs = self.config.training.freeze_backbone_epochs
+        if self._backbone_frozen and epoch_num > freeze_epochs:
+            self.unfreeze_backbone()
+            self._backbone_frozen = False
+            self.optimizer = self._create_optimizer()
+            self.scheduler = self._create_scheduler(skip_warmup=True)
+            logger.info(f"Epoch {epoch_num}: backbone unfrozen, optimizer rebuilt with discriminative LR")
+
         train_loss, train_acc = self.train_epoch(train_loader)
-        
+
         val_loss, val_acc = None, None
         if val_loader is not None:
             val_loss, val_acc = self.validate(val_loader)
@@ -262,12 +412,19 @@ class Trainer:
                 self.best_val_accuracy = val_acc
                 self.best_epoch = epoch_num
                 self.patience_counter = 0
-                
+
                 if self.config.checkpoint.save_best_model:
                     self._save_checkpoint(epoch_num, is_best=True)
             else:
                 self.patience_counter += 1
-        
+
+        if self.scheduler is not None:
+            if isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+                if val_acc is not None:
+                    self.scheduler.step(val_acc)
+            else:
+                self.scheduler.step()
+
         current_lr = self.optimizer.param_groups[0]['lr']
         
         return EpochMetrics(
@@ -359,15 +516,20 @@ class Trainer:
         self.model.eval()
         all_preds = []
         all_labels = []
-        
+        all_probs = []
+
         with torch.no_grad():
             for images, labels in test_loader:
                 images = images.to(self.device)
                 outputs = self.model(images)
-                _, preds = outputs.max(1)
+                probs = F.softmax(outputs, dim=1)
+                _, preds = probs.max(1)
                 all_preds.extend(preds.cpu().numpy())
                 all_labels.extend(labels.cpu().numpy())
-        
+                all_probs.append(probs.cpu().numpy())
+
+        all_probs = np.vstack(all_probs)
+
         accuracy = accuracy_score(all_labels, all_preds)
         precision, recall, f1, _ = precision_recall_fscore_support(
             all_labels, all_preds, average="weighted", zero_division=0
@@ -382,11 +544,46 @@ class Trainer:
             np.save(save_cm_path, cm)
             logger.info(f"Confusion matrix saved to {save_cm_path}")
         
+        # Expected Calibration Error (ECE) — 15 equal-width confidence bins
+        confidences = all_probs.max(axis=1)
+        correct = (np.array(all_preds) == np.array(all_labels)).astype(float)
+        n_bins = 15
+        bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
+        ece = 0.0
+        for i in range(n_bins):
+            mask = (confidences >= bin_edges[i]) & (confidences < bin_edges[i + 1])
+            if mask.sum() > 0:
+                bin_conf = confidences[mask].mean()
+                bin_acc = correct[mask].mean()
+                ece += mask.sum() * abs(bin_conf - bin_acc)
+        ece = float(ece / len(all_labels))
+
+        # ECE after Temperature Scaling (reuse same bins, no extra GPU forward pass)
+        scaled_logits_all = []
+        with torch.no_grad():
+            for images, _ in test_loader:
+                logits = self.model(images.to(self.device))
+                scaled_logits_all.append((logits / self.temperature).cpu().numpy())
+        scaled_logits_all = np.vstack(scaled_logits_all)
+        exp_l = np.exp(scaled_logits_all - scaled_logits_all.max(axis=1, keepdims=True))
+        scaled_probs = exp_l / exp_l.sum(axis=1, keepdims=True)
+        scaled_conf = scaled_probs.max(axis=1)
+        scaled_correct = (scaled_probs.argmax(axis=1) == np.array(all_labels)).astype(float)
+        ece_calibrated = 0.0
+        for i in range(n_bins):
+            mask = (scaled_conf >= bin_edges[i]) & (scaled_conf < bin_edges[i + 1])
+            if mask.sum() > 0:
+                ece_calibrated += mask.sum() * abs(scaled_conf[mask].mean() - scaled_correct[mask].mean())
+        ece_calibrated = float(ece_calibrated / len(all_labels))
+
         metrics = {
             "test_accuracy": float(accuracy),
             "test_precision": float(precision),
             "test_recall": float(recall),
             "test_f1": float(f1),
+            "ece": ece,
+            "ece_calibrated": ece_calibrated,
+            "temperature": self.temperature,
         }
         if save_cm_path is not None:
             metrics["confusion_matrix_path"] = str(save_cm_path)
@@ -407,11 +604,43 @@ class Trainer:
         
         logger.info(
             f"Test Results | Acc: {accuracy:.4f}, P: {precision:.4f}, "
-            f"R: {recall:.4f}, F1: {f1:.4f}"
+            f"R: {recall:.4f}, F1: {f1:.4f}, "
+            f"ECE: {ece:.4f}, ECE(T={self.temperature:.2f}): {ece_calibrated:.4f}"
         )
         
         return metrics
-    
+
+    def calibrate_temperature(self, val_loader: DataLoader) -> float:
+        """
+        Post-hoc temperature scaling: learn scalar T on the validation set.
+        Minimizes NLL of softmax(logits / T) using LBFGS.
+        Stores result in self.temperature for use in evaluate().
+        """
+        self.model.eval()
+        all_logits, all_labels = [], []
+        with torch.no_grad():
+            for images, labels in val_loader:
+                logits = self.model(images.to(self.device))
+                all_logits.append(logits.cpu())
+                all_labels.append(labels)
+        all_logits = torch.cat(all_logits)
+        all_labels = torch.cat(all_labels)
+
+        temperature = nn.Parameter(torch.ones(1) * 1.5)
+        optimizer = torch.optim.LBFGS([temperature], lr=0.01, max_iter=50)
+        criterion = nn.CrossEntropyLoss()
+
+        def eval_step():
+            optimizer.zero_grad()
+            loss = criterion(all_logits / temperature, all_labels)
+            loss.backward()
+            return loss
+
+        optimizer.step(eval_step)
+        self.temperature = float(temperature.item())
+        logger.info(f"Temperature Scaling | learned T={self.temperature:.4f}")
+        return self.temperature
+
     def get_predictions_for_indices(
         self,
         indices: List[int],
@@ -592,14 +821,32 @@ class Trainer:
         checkpoint = torch.load(path, map_location=self.device)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        
+
         if "history" in checkpoint:
             self.history = checkpoint["history"]
         if "best_val_accuracy" in checkpoint:
             self.best_val_accuracy = checkpoint["best_val_accuracy"]
-        
+
         logger.info(f"Checkpoint loaded: {path}")
+
+    def restore_best_model(self):
+        """Reload best-checkpoint weights before evaluation (A3 fix)."""
+        path = self.checkpoint_dir / "best_model.pth"
+        if path.exists():
+            checkpoint = torch.load(path, map_location=self.device)
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+            logger.info(f"Restored best model from {path}")
+        else:
+            logger.warning("No best_model.pth found — evaluating with final model state")
     
+    def get_embeddings(self, dataloader) -> Tuple[np.ndarray, np.ndarray]:
+        """Extract penultimate-layer embeddings for all samples in dataloader.
+
+        Returns:
+            Tuple of (embeddings [N, D], labels [N]) as numpy arrays
+        """
+        return extract_features(self.model, dataloader, self.device)
+
     def save_training_log(self):
         """Save training history to files."""
         history_path = self.exp_dir / "training_history.json"

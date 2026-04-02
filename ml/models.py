@@ -3,7 +3,8 @@
 import timm
 import torch
 import torch.nn as nn
-from typing import Optional
+import numpy as np
+from typing import Optional, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,67 @@ def get_model(name: str, num_classes: int, pretrained: bool = True, device: str 
     
     model = model.to(device)
     return model
+
+
+def get_feature_dim(model: nn.Module) -> int:
+    """Return the penultimate-layer embedding dimension of a TIMM model.
+
+    TIMM exposes this reliably via `model.num_features`.
+    """
+    if hasattr(model, 'num_features'):
+        return model.num_features
+    # Fallback: run a dummy single-sample forward and check global_pool output
+    if hasattr(model, 'global_pool'):
+        hook_output = {}
+        def _hook(module, inp, out):
+            hook_output['dim'] = out.view(out.size(0), -1).size(1)
+        handle = model.global_pool.register_forward_hook(_hook)
+        dummy = torch.zeros(1, 3, 224, 224, device=next(model.parameters()).device)
+        model.eval()
+        with torch.no_grad():
+            model(dummy)
+        handle.remove()
+        return hook_output['dim']
+    raise RuntimeError("Cannot determine feature dimension for this model.")
+
+
+def extract_features(
+    model: nn.Module,
+    dataloader,
+    device: str,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Extract penultimate-layer embeddings via a forward hook on global_pool.
+
+    Args:
+        model: TIMM model (any architecture that has a global_pool layer)
+        dataloader: DataLoader yielding (images, labels) batches
+        device: Device string
+
+    Returns:
+        Tuple of (embeddings [N, D], labels [N]) as numpy arrays
+    """
+    if not hasattr(model, 'global_pool'):
+        raise RuntimeError("Model does not have a global_pool attribute. "
+                           "Feature extraction requires a TIMM model.")
+
+    features, labels_out = [], []
+    hook_output = {}
+
+    def _hook(module, inp, out):
+        hook_output['feat'] = out.detach()
+
+    handle = model.global_pool.register_forward_hook(_hook)
+    model.eval()
+    with torch.no_grad():
+        for images, labels in dataloader:
+            images = images.to(device)
+            model(images)
+            feat = hook_output['feat'].view(hook_output['feat'].size(0), -1)
+            features.append(feat.cpu().numpy())
+            labels_out.extend(labels.numpy())
+
+    handle.remove()
+    return np.vstack(features), np.array(labels_out)
 
 
 def get_model_info(model: nn.Module) -> dict:
