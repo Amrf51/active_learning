@@ -31,13 +31,23 @@ def build_al_loop(config: Any, run_dir: Path) -> ActiveLearningLoop:
     exp_dir = Path(run_dir)
     exp_dir.mkdir(parents=True, exist_ok=True)
 
-    datasets = get_datasets(
-        data_dir=config.data.data_dir,
-        val_split=config.data.val_split,
-        test_split=config.data.test_split,
-        augmentation=config.data.augmentation,
-        seed=config.experiment.seed,
-    )
+    if config.data.test_dir:
+        from ml.dataloader import get_datasets_presplit
+        datasets = get_datasets_presplit(
+            train_dir=config.data.data_dir,
+            test_dir=config.data.test_dir,
+            val_split=config.data.val_split,
+            augmentation=config.data.augmentation,
+            seed=config.experiment.seed,
+        )
+    else:
+        datasets = get_datasets(
+            data_dir=config.data.data_dir,
+            val_split=config.data.val_split,
+            test_split=config.data.test_split,
+            augmentation=config.data.augmentation,
+            seed=config.experiment.seed,
+        )
 
     train_dataset = datasets["train_dataset"]
     class_names = datasets["class_names"]

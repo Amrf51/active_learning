@@ -31,6 +31,7 @@ class ExperimentConfig:
 @dataclass
 class DataConfig:
     data_dir: str = "data/raw"
+    test_dir: Optional[str] = None
     val_split: float = 0.15
     test_split: float = 0.15
     augmentation: bool = True

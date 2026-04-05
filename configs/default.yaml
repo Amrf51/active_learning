@@ -3,15 +3,16 @@
 # ──────────────────────────────────────
 
 experiment:
-  name: "mwpTest"
+  name: "stanford_cars_al"
   seed: 42
   device: "auto"             # "auto", "cuda", "cpu"
   exp_dir: "experiments/"
 
 data:
-  data_dir: "data/raw/kaggle-vehicle"
+  data_dir: "data/raw/Standford_Cars/car_data/train"
+  test_dir: "data/raw/Standford_Cars/car_data/test"  # official test split
   val_split: 0.15
-  test_split: 0.15
+  test_split: 0.0            # ignored when test_dir is set
   augmentation: true
   num_workers: 0  # Set to 0 to avoid multiprocessing issues
   image_size: 224

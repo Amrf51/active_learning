@@ -317,6 +317,99 @@ def get_dataloaders(
     return train_loader, val_loader, test_loader, dataset_info
 
 
+def get_datasets_presplit(
+    train_dir: str,
+    test_dir: str,
+    val_split: float = 0.15,
+    augmentation: bool = True,
+    seed: int = 42,
+) -> Dict:
+    """Load dataset using official pre-made train/test split directories.
+
+    Carves a validation set out of the train folder only.
+    The test folder is used as-is (e.g. Stanford Cars official split).
+
+    Args:
+        train_dir: Path to train folder (ImageFolder structure)
+        test_dir: Path to test folder (ImageFolder structure, same classes)
+        val_split: Fraction of train images to use for validation
+        augmentation: Whether to apply augmentation to training data
+        seed: Random seed for reproducibility
+
+    Returns:
+        Dict with train_dataset, val_dataset, test_dataset, full_dataset,
+        train_indices, class_names, num_classes, splits_info
+    """
+    train_path = Path(train_dir)
+    test_path = Path(test_dir)
+
+    if not train_path.exists():
+        raise FileNotFoundError(f"Train directory not found: {train_path}")
+    if not test_path.exists():
+        raise FileNotFoundError(f"Test directory not found: {test_path}")
+
+    # Scan train folder for class names and size
+    temp = FilteredImageFolder(root=str(train_path))
+    total_train = len(temp)
+    class_names = temp.classes
+    del temp
+
+    logger.info(f"Train folder: {total_train} images, {len(class_names)} classes")
+
+    # Shuffle and split train → train + val
+    np.random.seed(seed)
+    indices = np.random.permutation(total_train)
+    val_size = int(total_train * val_split)
+    val_indices = indices[:val_size].tolist()
+    train_indices = indices[val_size:].tolist()
+
+    # Build transforms
+    train_transform = get_transforms(augmentation=augmentation, phase="train")
+    eval_transform = get_transforms(augmentation=False, phase="val")
+
+    # Full train dataset with per-index transform routing (needed by ALDataManager)
+    full_dataset = ImageFolderWithIndex(
+        root=str(train_path),
+        train_indices=train_indices,
+        val_indices=val_indices,
+        test_indices=[],
+        train_transform=train_transform,
+        eval_transform=eval_transform,
+    )
+
+    train_dataset = SplitSubset(full_dataset, train_indices)
+    val_dataset = SplitSubset(full_dataset, val_indices)
+
+    # Official test set — loaded directly with eval transform
+    test_dataset = FilteredImageFolder(root=str(test_path), transform=eval_transform)
+    test_size = len(test_dataset)
+
+    logger.info(
+        f"Splits — Train: {len(train_indices)}, Val: {val_size}, Test: {test_size}"
+    )
+
+    splits_info = {
+        "total_samples": total_train + test_size,
+        "train_samples": len(train_indices),
+        "val_samples": val_size,
+        "test_samples": test_size,
+        "train_percentage": f"{100 * len(train_indices) / total_train:.1f}%",
+        "val_percentage": f"{100 * val_size / total_train:.1f}%",
+        "seed": seed,
+    }
+
+    return {
+        "train_dataset": train_dataset,
+        "val_dataset": val_dataset,
+        "test_dataset": test_dataset,
+        "full_dataset": full_dataset,
+        "train_indices": train_indices,
+        "class_names": class_names,
+        "num_classes": len(class_names),
+        "splits_info": splits_info,
+    }
+
+
 def get_class_names(data_dir: str) -> List[str]:
     """Get class names from data directory."""
     dataset = FilteredImageFolder(root=data_dir)
