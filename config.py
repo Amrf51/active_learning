@@ -129,19 +129,16 @@ class Config:
         # Validate data config
         if not (0.0 < self.data.val_split < 1.0):
             errors.append(f"data.val_split must be between 0 and 1, got {self.data.val_split}")
-        if not (0.0 < self.data.test_split < 1.0):
-            errors.append(f"data.test_split must be between 0 and 1, got {self.data.test_split}")
-        if self.data.val_split + self.data.test_split >= 1.0:
-            errors.append(f"data.val_split + data.test_split must be < 1.0")
+        if self.data.test_dir is None:
+            # test_split only applies when there is no dedicated test directory
+            if not (0.0 < self.data.test_split < 1.0):
+                errors.append(f"data.test_split must be between 0 and 1, got {self.data.test_split}")
+            if self.data.val_split + self.data.test_split >= 1.0:
+                errors.append(f"data.val_split + data.test_split must be < 1.0")
         if self.data.num_workers < 0:
             errors.append(f"data.num_workers must be >= 0, got {self.data.num_workers}")
         if self.data.image_size <= 0:
             errors.append(f"data.image_size must be > 0, got {self.data.image_size}")
-        
-        # Check data directory exists
-        data_path = Path(self.data.data_dir)
-        if not data_path.exists():
-            errors.append(f"data.data_dir does not exist: {self.data.data_dir}")
         
         # Validate training config
         if self.training.epochs <= 0:
