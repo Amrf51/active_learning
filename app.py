@@ -12,6 +12,16 @@ from core.controller import Controller
 from core.events import Event, EventType
 from core.experiment_state import AppState
 
+logging.getLogger("streamlit").setLevel(logging.ERROR)
+
+# Suppress sklearn false-positive regression warning (small labeled pool, many classes)
+warnings.filterwarnings(
+    "ignore",
+    message="The number of unique classes is greater than 50%",
+    category=UserWarning,
+    module="sklearn"
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
