@@ -599,7 +599,7 @@ def render_embedding_plot(
     class_names = list(snap.get("class_names", []))
     title = f"UMAP — Cycle {selected_cycle} ({len(coords)} points)"
     fig = _build_umap_figure(coords, labels, pool, class_names, color_mode, title)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
     st.caption(f"Source: {emb_path}")
 
 
@@ -716,7 +716,7 @@ def render_query_summary(
             margin=dict(l=40, r=20, t=50, b=100),
             xaxis_tickangle=-45 if len(all_classes) > 10 else 0,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     # Top uncertain images table
     top_uncertain = summary.get("top_uncertain", [])
@@ -731,7 +731,7 @@ def render_query_summary(
                     "Confidence": f"{item.get('predicted_confidence', 0):.4f}",
                     "Uncertainty": f"{item.get('uncertainty_score', 0):.4f}",
                 })
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
 
 
 def render_umap_evolution(
@@ -795,7 +795,7 @@ def render_umap_evolution(
             d["coords"], d["labels"], d["pool"],
             class_names, color_mode, title,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         n_queried = int(np.sum(d["pool"] == 2))
         if n_queried > 0:
@@ -829,7 +829,7 @@ def render_umap_evolution(
                     class_names, color_mode, title,
                     height=400, show_legend=show_legend,
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
                 n_queried = int(np.sum(d["pool"] == 2))
                 if n_queried > 0:
                     st.caption(f"{n_queried} queried pts")
@@ -954,7 +954,7 @@ def render_comparison_view(controller: Controller, snap: Dict[str, Any]) -> None
             "ECE (cal.)": f"{final.get('ece_calibrated', 0):.4f}" if final.get("ece_calibrated") is not None else "N/A",
         })
     if summary_rows:
-        st.dataframe(pd.DataFrame(summary_rows), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(summary_rows), hide_index=True, width='stretch')
 
 
 def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:
