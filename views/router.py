@@ -13,7 +13,7 @@ from core.controller import Controller
 from core.experiment_state import AppState
 
 
-STALE_HEARTBEAT_SECONDS = 60.0
+STALE_HEARTBEAT_SECONDS = 120.0
 
 
 def render(snap: Optional[Dict] = None) -> None:

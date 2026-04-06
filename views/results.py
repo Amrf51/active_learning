@@ -43,7 +43,7 @@ def _safe_read_yaml(path: Path) -> Dict[str, Any]:
         return {}
 
 
-@st.cache_data(show_spinner=False, ttl=3)
+@st.cache_data(show_spinner=False, ttl=30)
 def _discover_persisted_runs(exp_dir: str) -> List[Dict[str, Any]]:
     """
     Discover runs from experiment folders on disk.

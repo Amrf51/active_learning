@@ -377,7 +377,9 @@ def run_experiment(
 
             al_loop.trainer.restore_best_model()
             test_metrics = al_loop.run_evaluation()
-            cycle_metrics = al_loop.finalize_cycle(test_metrics).model_dump()
+            cycle_metrics = al_loop.finalize_cycle(
+                test_metrics, heartbeat_fn=lambda: None
+            ).model_dump()
             probe_images = _serialize_probe_images(al_loop)
             pool_stats = _pool_stats(al_loop)
             _emit_event(

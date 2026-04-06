@@ -390,8 +390,10 @@ class ActiveLearningLoop:
             return np.array([], dtype=int)
 
         n_query = min(al_config.batch_size_al, pool_info["unlabeled"])
+        # Inference needs no gradients → use 2x batch size for better GPU utilisation
+        inference_batch_size = self.config.training.batch_size * 2
         unlabeled_loader = self.data_manager.get_unlabeled_loader(
-            batch_size=self.config.training.batch_size,
+            batch_size=inference_batch_size,
             shuffle=False,
             num_workers=self.config.data.num_workers
         )
@@ -779,19 +781,24 @@ class ActiveLearningLoop:
         
         return result
     
-    def finalize_cycle(self, test_metrics: Dict) -> CycleMetrics:
+    def finalize_cycle(
+        self,
+        test_metrics: Dict,
+        heartbeat_fn: Optional[Callable[[], None]] = None,
+    ) -> CycleMetrics:
         """
         Create and store cycle metrics after completion.
-        
+
         Args:
             test_metrics: Test evaluation metrics
-            
+            heartbeat_fn: Optional callback to keep worker heartbeat fresh.
+
         Returns:
             CycleMetrics for this cycle
         """
         pool_info = self.data_manager.get_pool_info()
         training_summary = self.trainer.get_training_summary()
-        
+
         embeddings_path = build_cycle_embeddings(
             trainer=self.trainer,
             data_manager=self.data_manager,
@@ -799,6 +806,7 @@ class ActiveLearningLoop:
             cycle=self.current_cycle,
             rng=self._rng,
             queried_abs_indices=self._last_queried_abs_indices,
+            heartbeat_fn=heartbeat_fn,
         )
 
         cycle_metrics = CycleMetrics(
