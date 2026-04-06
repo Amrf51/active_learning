@@ -4,6 +4,7 @@ app.py - Streamlit entrypoint for the threaded Active Learning UI.
 
 import atexit
 import logging
+import warnings
 from typing import List
 
 import streamlit as st
@@ -12,15 +13,22 @@ from core.controller import Controller
 from core.events import Event, EventType
 from core.experiment_state import AppState
 
+# Suppress noisy logs
 logging.getLogger("streamlit").setLevel(logging.ERROR)
+logging.getLogger("PIL").setLevel(logging.WARNING)
+logging.getLogger("torch").setLevel(logging.WARNING)
+logging.getLogger("torchvision").setLevel(logging.WARNING)
 
 # Suppress sklearn false-positive regression warning (small labeled pool, many classes)
 warnings.filterwarnings(
     "ignore",
     message="The number of unique classes is greater than 50%",
     category=UserWarning,
-    module="sklearn"
+    module="sklearn",
 )
+# Suppress other common noisy warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="torch")
+warnings.filterwarnings("ignore", message=".*deprecated.*", category=DeprecationWarning)
 
 logging.basicConfig(
     level=logging.INFO,
