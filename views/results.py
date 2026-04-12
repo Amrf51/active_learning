@@ -552,58 +552,6 @@ def _build_umap_figure(
     return fig
 
 
-def render_embedding_plot(
-    metrics_history: List[Dict[str, Any]],
-    snap: Dict[str, Any],
-    widget_prefix: str = "live",
-) -> None:
-    st.markdown("### UMAP Embedding Visualization")
-    if not metrics_history:
-        st.info("Embedding plot will appear after at least one cycle completes")
-        return
-
-    cycle_options = [m.get("cycle", i + 1) for i, m in enumerate(metrics_history)]
-    selected_cycle = st.selectbox(
-        "Cycle",
-        options=cycle_options,
-        index=len(cycle_options) - 1,
-        key=f"{widget_prefix}_embedding_cycle",
-    )
-    selected_metric = next(
-        (m for m in metrics_history if m.get("cycle", None) == selected_cycle),
-        metrics_history[-1],
-    )
-
-    emb_path = _resolve_embeddings_path(selected_metric, str(snap.get("run_dir", "")))
-    if emb_path is None:
-        st.info("Embedding file not found for the selected cycle (umap-learn may not have been installed during the run).")
-        return
-
-    try:
-        import numpy as np
-
-        data = np.load(emb_path)
-        coords = data["coords"]
-        labels = data["labels"]
-        pool = data["pool"]
-    except Exception as exc:  # pylint: disable=broad-exception-caught
-        st.error(f"Failed to load embedding file: {exc}")
-        return
-
-    color_mode = st.radio(
-        "Color by",
-        options=["Class Label", "Pool Membership"],
-        horizontal=True,
-        key=f"{widget_prefix}_embedding_color_mode",
-    )
-
-    class_names = list(snap.get("class_names", []))
-    title = f"UMAP — Cycle {selected_cycle} ({len(coords)} points)"
-    fig = _build_umap_figure(coords, labels, pool, class_names, color_mode, title)
-    st.plotly_chart(fig, width='stretch')
-    st.caption(f"Source: {emb_path}")
-
-
 @st.cache_data(show_spinner=False, ttl=60)
 def _load_all_embeddings(run_dir: str, cycle_numbers: tuple) -> Dict[int, Dict]:
     """Load embedding .npz files for multiple cycles (cached)."""
@@ -1043,8 +991,6 @@ def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:
     render_probe_predictions(metrics_history, selected_snap, widget_prefix=widget_prefix)
     st.markdown("---")
     render_confusion_matrix(metrics_history, selected_snap, widget_prefix=widget_prefix)
-    st.markdown("---")
-    render_embedding_plot(metrics_history, selected_snap, widget_prefix=widget_prefix)
     st.markdown("---")
     render_query_summary(metrics_history, selected_snap, widget_prefix=widget_prefix)
     st.markdown("---")
