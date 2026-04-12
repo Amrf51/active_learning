@@ -881,67 +881,51 @@ def render_comparison_view(controller: Controller, snap: Dict[str, Any]) -> None
 
     # --- Test Accuracy Comparison ---
     st.markdown("### Test Accuracy")
-    acc_df = pd.DataFrame()
+    acc_rows = []
     for run in selected_runs:
         label = run_labels[run["key"]]
-        history = run.get("metrics_history", [])
-        if not history:
-            continue
-        labeled_sizes = [m.get("labeled_pool_size", 0) for m in history]
-        accuracies = [m.get("test_accuracy", 0) * 100 for m in history]
-        run_df = pd.DataFrame({"Labeled Samples": labeled_sizes, label: accuracies})
-        if acc_df.empty:
-            acc_df = run_df
-        else:
-            acc_df = acc_df.merge(run_df, on="Labeled Samples", how="outer")
-    if not acc_df.empty:
-        acc_df = acc_df.sort_values("Labeled Samples")
-        y_cols = [c for c in acc_df.columns if c != "Labeled Samples"]
-        st.line_chart(acc_df, x="Labeled Samples", y=y_cols, height=400)
+        for m in run.get("metrics_history", []):
+            acc_rows.append({
+                "Labeled Samples": m.get("labeled_pool_size", 0),
+                "Test Accuracy": m.get("test_accuracy", 0) * 100,
+                "Run": label,
+            })
+    if acc_rows:
+        acc_df = pd.DataFrame(acc_rows).sort_values("Labeled Samples")
+        st.line_chart(acc_df, x="Labeled Samples", y="Test Accuracy", color="Run", height=400)
     st.markdown("---")
 
     # --- F1 Score Comparison ---
     st.markdown("### F1 Score")
-    f1_df = pd.DataFrame()
+    f1_rows = []
     for run in selected_runs:
         label = run_labels[run["key"]]
-        history = run.get("metrics_history", [])
-        if not history:
-            continue
-        labeled_sizes = [m.get("labeled_pool_size", 0) for m in history]
-        f1_scores = [m.get("test_f1", 0) for m in history]
-        run_df = pd.DataFrame({"Labeled Samples": labeled_sizes, label: f1_scores})
-        if f1_df.empty:
-            f1_df = run_df
-        else:
-            f1_df = f1_df.merge(run_df, on="Labeled Samples", how="outer")
-    if not f1_df.empty:
-        f1_df = f1_df.sort_values("Labeled Samples")
-        y_cols = [c for c in f1_df.columns if c != "Labeled Samples"]
-        st.line_chart(f1_df, x="Labeled Samples", y=y_cols, height=400)
+        for m in run.get("metrics_history", []):
+            f1_rows.append({
+                "Labeled Samples": m.get("labeled_pool_size", 0),
+                "F1 Score": m.get("test_f1", 0),
+                "Run": label,
+            })
+    if f1_rows:
+        f1_df = pd.DataFrame(f1_rows).sort_values("Labeled Samples")
+        st.line_chart(f1_df, x="Labeled Samples", y="F1 Score", color="Run", height=400)
     st.markdown("---")
 
     # --- ECE Comparison ---
     st.markdown("### Calibration (ECE)")
-    ece_df = pd.DataFrame()
+    ece_rows = []
     for run in selected_runs:
         label = run_labels[run["key"]]
-        history = run.get("metrics_history", [])
-        if not history:
-            continue
-        ece_rows = [(m.get("labeled_pool_size", 0), m.get("ece")) for m in history if m.get("ece") is not None]
-        if not ece_rows:
-            continue
-        labeled_sizes, ece_vals = zip(*ece_rows)
-        run_df = pd.DataFrame({"Labeled Samples": list(labeled_sizes), label: list(ece_vals)})
-        if ece_df.empty:
-            ece_df = run_df
-        else:
-            ece_df = ece_df.merge(run_df, on="Labeled Samples", how="outer")
-    if not ece_df.empty:
-        ece_df = ece_df.sort_values("Labeled Samples")
-        y_cols = [c for c in ece_df.columns if c != "Labeled Samples"]
-        st.line_chart(ece_df, x="Labeled Samples", y=y_cols, height=300)
+        for m in run.get("metrics_history", []):
+            if m.get("ece") is not None:
+                ece_rows.append({
+                    "Labeled Samples": m.get("labeled_pool_size", 0),
+                    "ECE": m.get("ece"),
+                    "Run": label,
+                })
+    if ece_rows:
+        ece_df = pd.DataFrame(ece_rows).sort_values("Labeled Samples")
+        st.line_chart(ece_df, x="Labeled Samples", y="ECE", color="Run", height=300)
     else:
         st.info("No ECE data available for the selected runs.")
     st.markdown("---")
