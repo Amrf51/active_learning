@@ -5,6 +5,7 @@ Results dashboard for completed/ongoing active learning runs.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -863,17 +864,26 @@ def render_comparison_view(controller: Controller, snap: Dict[str, Any]) -> None
 
     selected_runs = [run_options[k] for k in selected_keys]
 
-    # Build short labels for the legend
-    def _short_label(run: Dict[str, Any]) -> str:
+    # Build short labels for the legend, disambiguating when model/strategy collide
+    def _base_label(run: Dict[str, Any]) -> str:
         model = run.get("model_name", "?")
         strategy = run.get("strategy", "?")
         return f"{model} / {strategy}"
+
+    raw_labels = [_base_label(r) for r in selected_runs]
+    dupes = {lbl for lbl, cnt in Counter(raw_labels).items() if cnt > 1}
+    run_labels: Dict[str, str] = {}
+    for run, raw in zip(selected_runs, raw_labels):
+        if raw in dupes:
+            run_labels[run["key"]] = f"{raw} ({run.get('modified_at', '?')})"
+        else:
+            run_labels[run["key"]] = raw
 
     # --- Test Accuracy Comparison ---
     st.markdown("### Test Accuracy")
     acc_df = pd.DataFrame()
     for run in selected_runs:
-        label = _short_label(run)
+        label = run_labels[run["key"]]
         history = run.get("metrics_history", [])
         if not history:
             continue
@@ -894,7 +904,7 @@ def render_comparison_view(controller: Controller, snap: Dict[str, Any]) -> None
     st.markdown("### F1 Score")
     f1_df = pd.DataFrame()
     for run in selected_runs:
-        label = _short_label(run)
+        label = run_labels[run["key"]]
         history = run.get("metrics_history", [])
         if not history:
             continue
@@ -915,7 +925,7 @@ def render_comparison_view(controller: Controller, snap: Dict[str, Any]) -> None
     st.markdown("### Calibration (ECE)")
     ece_df = pd.DataFrame()
     for run in selected_runs:
-        label = _short_label(run)
+        label = run_labels[run["key"]]
         history = run.get("metrics_history", [])
         if not history:
             continue
@@ -945,7 +955,7 @@ def render_comparison_view(controller: Controller, snap: Dict[str, Any]) -> None
             continue
         final = history[-1]
         summary_rows.append({
-            "Run": _short_label(run),
+            "Run": run_labels[run["key"]],
             "Cycles": run.get("completed_cycles", 0),
             "Final Labeled": final.get("labeled_pool_size", 0),
             "Test Acc": f"{final.get('test_accuracy', 0) * 100:.2f}%",
