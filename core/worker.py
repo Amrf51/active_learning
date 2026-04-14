@@ -53,19 +53,24 @@ def build_al_loop(config: Any, run_dir: Path) -> ActiveLearningLoop:
     class_names = datasets["class_names"]
     pin = torch.cuda.is_available()
 
+    nw = config.data.num_workers
+    persist = nw > 0
+
     val_loader = DataLoader(
         datasets["val_dataset"],
         batch_size=config.training.batch_size,
         shuffle=False,
-        num_workers=config.data.num_workers,
+        num_workers=nw,
         pin_memory=pin,
+        persistent_workers=persist,
     )
     test_loader = DataLoader(
         datasets["test_dataset"],
         batch_size=config.training.batch_size,
         shuffle=False,
-        num_workers=config.data.num_workers,
+        num_workers=nw,
         pin_memory=pin,
+        persistent_workers=persist,
     )
 
     if config.model.num_classes is None:

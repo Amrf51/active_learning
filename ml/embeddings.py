@@ -165,7 +165,8 @@ def build_cycle_embeddings(
     from torch.utils.data import DataLoader
     subset = PoolSubset(data_manager.dataset, sampled)
     unlabeled_loader = DataLoader(
-        subset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        subset, batch_size=batch_size, shuffle=False,
+        num_workers=num_workers, persistent_workers=num_workers > 0,
     )
     emb_unlabeled, lbl_unlabeled = trainer.get_embeddings(unlabeled_loader)
     pool_unlabeled = np.ones(len(lbl_unlabeled), dtype=np.int8)  # 1 = unlabeled

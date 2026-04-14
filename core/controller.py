@@ -30,8 +30,10 @@ class Controller:
         self.state = ExperimentState()
 
     def _enforce_ui_safety(self, config: Any) -> None:
-        # Streamlit mode should not spawn dataloader workers.
-        config.data.num_workers = 0
+        import sys
+        if sys.platform == "win32":
+            # DataLoader workers inside a daemon thread deadlock on Windows.
+            config.data.num_workers = 0
 
     def _sanitize_experiment_name(self, name: Any) -> str:
         """Return a filesystem-safe experiment folder name."""

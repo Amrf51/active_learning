@@ -408,7 +408,9 @@ def render_experiment_controls(
             from config import load_config
 
             new_config = load_config(overrides=config_overrides)
-            new_config.data.num_workers = 0
+            import sys
+            if sys.platform == "win32":
+                new_config.data.num_workers = 0
             st.session_state.config = new_config
             run_id = controller.dispatch(
                 Event(

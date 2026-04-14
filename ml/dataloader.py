@@ -283,29 +283,33 @@ def get_dataloaders(
     )
     
     pin = torch.cuda.is_available()
-    
+    persist = num_workers > 0
+
     train_loader = DataLoader(
         datasets["train_dataset"],
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        pin_memory=pin
+        pin_memory=pin,
+        persistent_workers=persist,
     )
-    
+
     val_loader = DataLoader(
         datasets["val_dataset"],
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=pin
+        pin_memory=pin,
+        persistent_workers=persist,
     )
-    
+
     test_loader = DataLoader(
         datasets["test_dataset"],
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=pin
+        pin_memory=pin,
+        persistent_workers=persist,
     )
     
     dataset_info = {
