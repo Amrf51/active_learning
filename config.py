@@ -53,7 +53,7 @@ class TrainingConfig:
     learning_rate: float = 1e-4
     weight_decay: float = 1e-4
     optimizer: str = "adamw"
-    early_stopping_patience: int = 3
+    early_stopping_patience: int = 0  # 0 = disabled; N > 0 = stop after N epochs without improvement
     scheduler: str = "cosine"       # options: "cosine", "plateau", "none"
     warmup_epochs: int = 2
     grad_clip_norm: float = 1.0     # set to 0 to disable
@@ -165,6 +165,8 @@ class Config:
             errors.append(f"training.label_smoothing must be in [0, 1), got {self.training.label_smoothing}")
         if not (0.0 < self.training.backbone_lr_factor <= 1.0):
             errors.append(f"training.backbone_lr_factor must be in (0, 1], got {self.training.backbone_lr_factor}")
+        if self.training.early_stopping_patience < 0:
+            errors.append(f"training.early_stopping_patience must be >= 0 (0 = disabled), got {self.training.early_stopping_patience}")
         if self.training.freeze_backbone_epochs < 0:
             errors.append(f"training.freeze_backbone_epochs must be >= 0, got {self.training.freeze_backbone_epochs}")
         valid_loss_fns = ["cross_entropy", "supcon", "combined"]

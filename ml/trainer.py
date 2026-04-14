@@ -439,11 +439,15 @@ class Trainer:
     def should_stop_early(self) -> bool:
         """
         Check if early stopping criteria is met.
-        
+
         Returns:
-            True if training should stop
+            True if training should stop.
+            Always returns False when early_stopping_patience == 0 (disabled).
         """
-        return self.patience_counter >= self.config.training.early_stopping_patience
+        patience = self.config.training.early_stopping_patience
+        if patience == 0:
+            return False
+        return self.patience_counter >= patience
     
     def train(
         self,

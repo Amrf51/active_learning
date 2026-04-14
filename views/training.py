@@ -128,6 +128,10 @@ def render_current_metrics(epoch_metrics: List[Dict[str, Any]]) -> None:
         st.metric(label="Val Accuracy", value=f"{val_acc * 100:.2f}%" if val_acc is not None else "N/A")
     if latest.get("learning_rate") is not None:
         st.caption(f"Learning Rate: {latest['learning_rate']:.2e}")
+    if latest.get("early_stopped"):
+        patience = latest.get("patience", "?")
+        epoch = latest.get("epoch", len(epoch_metrics))
+        st.info(f"Early stopping triggered after epoch {epoch} (patience {patience})")
 
 
 def render_training_view(controller: Controller, snap: Dict[str, Any]) -> None:

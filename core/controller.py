@@ -81,16 +81,20 @@ class Controller:
             case EventType.EPOCH_DONE:
                 snap = self.state.snapshot()
                 metrics = dict(event.data.get("metrics", {}))
+                if event.data.get("early_stopped"):
+                    metrics["early_stopped"] = True
+                    metrics["patience"] = int(event.data.get("patience", 0))
                 epoch_metrics = list(snap["epoch_metrics"])
                 epoch_metrics.append(metrics)
                 epoch = int(event.data.get("epoch", metrics.get("epoch", 0)))
                 total_epochs = int(event.data.get("total_epochs", 0))
+                early_tag = " (early stopped)" if event.data.get("early_stopped") else ""
                 self.state.update_for_run(
                     event.run_id,
                     app_state=AppState.TRAINING,
                     current_epoch=epoch,
                     epoch_metrics=epoch_metrics,
-                    progress_detail=f"Cycle {event.cycle} - Epoch {epoch}/{total_epochs}",
+                    progress_detail=f"Cycle {event.cycle} - Epoch {epoch}/{total_epochs}{early_tag}",
                 )
             case EventType.EVAL_COMPLETE:
                 snap = self.state.snapshot()

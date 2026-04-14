@@ -28,7 +28,7 @@ training:
   learning_rate: 1.0e-4
   weight_decay: 1.0e-4
   optimizer: "adam"          # "adam", "adamw", "sgd"
-  early_stopping_patience: 3
+  early_stopping_patience: 0    # 0 = disabled; set > 0 to enable (e.g. 5)
 
 active_learning:
   num_cycles: 10

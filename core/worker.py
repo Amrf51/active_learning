@@ -352,23 +352,35 @@ def run_experiment(
                 metrics_dict = _as_dict(metrics)
                 if not metrics_dict:
                     metrics_dict = {"epoch": epoch}
+
+                early_stopped = al_loop.should_stop_early()
+
+                event_data = {
+                    "epoch": epoch,
+                    "total_epochs": epochs,
+                    "metrics": metrics_dict,
+                }
+                if early_stopped:
+                    event_data["early_stopped"] = True
+                    event_data["patience"] = int(config.training.early_stopping_patience)
+
                 _emit_event(
                     event_inbox,
                     EventType.EPOCH_DONE,
                     run_id=run_id,
                     cycle=cycle,
-                    data={
-                        "epoch": epoch,
-                        "total_epochs": epochs,
-                        "metrics": metrics_dict,
-                    },
+                    data=event_data,
                 )
 
                 if _check_stop(command_queue):
                     _exit_stopped(event_inbox, run_id, cycle, al_loop, run_dir)
                     return
 
-                if al_loop.should_stop_early():
+                if early_stopped:
+                    logger.info(
+                        "Cycle %d: early stopping after epoch %d/%d (patience %d)",
+                        cycle, epoch, epochs, config.training.early_stopping_patience,
+                    )
                     break
 
             if _check_stop(command_queue):
