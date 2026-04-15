@@ -496,6 +496,7 @@ def _build_umap_figure(
     title: str,
     height: int = 550,
     show_legend: bool = True,
+    uncertainty=None,
 ):
     """Build a Plotly Figure for a single UMAP embedding snapshot."""
     import plotly.graph_objects as go
@@ -524,6 +525,23 @@ def _build_umap_figure(
                     ),
                 )
             )
+    elif color_mode == "Uncertainty" and uncertainty is not None:
+        fig.add_trace(
+            go.Scattergl(
+                x=coords[:, 0].tolist(),
+                y=coords[:, 1].tolist(),
+                mode="markers",
+                name="Uncertainty",
+                marker=dict(
+                    size=4,
+                    opacity=0.7,
+                    color=uncertainty.tolist(),
+                    colorscale="Plasma",
+                    colorbar=dict(title="Entropy", thickness=14),
+                    showscale=True,
+                ),
+            )
+        )
     else:
         unique_labels = sorted(set(int(l) for l in labels))
         for label_idx in unique_labels:
@@ -568,6 +586,7 @@ def _load_all_embeddings(run_dir: str, cycle_numbers: tuple) -> Dict[int, Dict]:
                 "coords": data["coords"],
                 "labels": data["labels"],
                 "pool": data["pool"],
+                "uncertainty": data["uncertainty"] if "uncertainty" in data else None,
             }
         except Exception:
             continue
@@ -711,10 +730,23 @@ def render_umap_evolution(
 
     class_names = list(snap.get("class_names", []))
 
-    # Color mode
+    # Peek at available cycles to know whether any have uncertainty data.
+    # Load all available embeddings once so we can check the uncertainty field.
+    preview_data = _load_all_embeddings(run_dir, tuple(available_cycles))
+    has_uncertainty = any(
+        preview_data.get(c, {}).get("uncertainty") is not None
+        for c in available_cycles
+    )
+
+    # Color mode — "Uncertainty" only shown when data is present in the .npz files
+    color_options = ["Pool Membership"]
+    if has_uncertainty:
+        color_options.append("Uncertainty")
+    color_options.append("Class Label")
+
     color_mode = st.radio(
         "Color by",
-        options=["Pool Membership", "Class Label"],
+        options=color_options,
         horizontal=True,
         key=f"{widget_prefix}_umap_evo_color_mode",
     )
@@ -743,6 +775,7 @@ def render_umap_evolution(
         fig = _build_umap_figure(
             d["coords"], d["labels"], d["pool"],
             class_names, color_mode, title,
+            uncertainty=d.get("uncertainty"),
         )
         st.plotly_chart(fig, width='stretch')
 
@@ -777,6 +810,7 @@ def render_umap_evolution(
                     d["coords"], d["labels"], d["pool"],
                     class_names, color_mode, title,
                     height=400, show_legend=show_legend,
+                    uncertainty=d.get("uncertainty"),
                 )
                 st.plotly_chart(fig, width='stretch')
                 n_queried = int(np.sum(d["pool"] == 2))

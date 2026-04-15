@@ -99,11 +99,12 @@ def _run_umap_background(
     all_pool: np.ndarray,
     exp_dir: Path,
     cycle: int,
+    uncertainty_scores: Optional[np.ndarray] = None,
 ) -> None:
     """Run UMAP projection + save in a background thread."""
     try:
         coords_2d = compute_umap_projection(all_embeddings)
-        save_cycle_embeddings(exp_dir, cycle, coords_2d, all_labels, all_pool)
+        save_cycle_embeddings(exp_dir, cycle, coords_2d, all_labels, all_pool, uncertainty_scores)
     except Exception:
         logger.exception("Background UMAP failed for cycle %d", cycle)
 
@@ -189,12 +190,26 @@ def build_cycle_embeddings(
         if marked:
             logger.info("Marked %d queried points as pool=2 in cycle %d UMAP", marked, cycle)
 
+    # Compute entropy-based uncertainty for every point (second inference pass).
+    # Labeled points typically have low entropy; unlabeled points span the full range,
+    # making the colormap useful for showing where the AL strategy focuses.
+    uncertainty_scores: Optional[np.ndarray] = None
+    try:
+        _, prob_labeled = trainer.get_predictions_for_loader(labeled_loader)
+        _, prob_unlabeled = trainer.get_predictions_for_loader(unlabeled_loader)
+        all_probs = np.vstack([prob_labeled, prob_unlabeled])
+        uncertainty_scores = trainer.compute_uncertainty_scores(all_probs, method="entropy")
+        if heartbeat_fn:
+            heartbeat_fn()
+    except Exception:
+        logger.warning("Uncertainty score computation failed — UMAP will be saved without uncertainty.", exc_info=True)
+
     # Deterministic path — return immediately, UMAP runs in background
     expected_path = str(Path(exp_dir) / "embeddings" / f"cycle_{cycle}.npz")
 
     threading.Thread(
         target=_run_umap_background,
-        args=(all_embeddings, all_labels, all_pool, exp_dir, cycle),
+        args=(all_embeddings, all_labels, all_pool, exp_dir, cycle, uncertainty_scores),
         daemon=True,
     ).start()
 
