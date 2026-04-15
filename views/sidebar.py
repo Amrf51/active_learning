@@ -293,7 +293,7 @@ def render_al_settings() -> Dict[str, Any]:
     num_cycles = st.sidebar.slider(
         "Number of Cycles",
         min_value=1,
-        max_value=20,
+        max_value=50,
         value=10,
         help="Total number of active learning cycles to run"
     )
