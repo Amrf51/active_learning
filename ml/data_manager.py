@@ -229,7 +229,7 @@ class ALDataManager:
         self,
         batch_size: int = 32,
         shuffle: bool = True,
-        num_workers: int
+        num_workers: int = 0
     ) -> DataLoader:
         """Get DataLoader for labeled samples."""
         subset = PoolSubset(self.dataset, self._labeled_list)
@@ -247,7 +247,7 @@ class ALDataManager:
         self,
         batch_size: int = 32,
         shuffle: bool = False,
-        num_workers: int
+        num_workers: int = 0
     ) -> DataLoader:
         """Get DataLoader for unlabeled samples."""
         subset = PoolSubset(self.dataset, self._unlabeled_list)
