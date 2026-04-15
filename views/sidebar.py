@@ -320,7 +320,6 @@ def render_al_settings() -> Dict[str, Any]:
         initial_pool_size = st.number_input(
             "Initial Pool Size",
             min_value=10,
-            max_value=500,
             value=100,
             help="Number of labeled samples to start with"
         )
