@@ -61,7 +61,7 @@ def _discover_persisted_runs(exp_dir: str) -> List[Dict[str, Any]]:
         latest = metrics[-1]
         if not isinstance(latest, dict):
             return []
-        per_class = latest.get("per_class")
+        per_class = latest.get("per_class") or latest.get("per_class_metrics")
         if isinstance(per_class, dict):
             return [str(name) for name in per_class.keys()]
         return []
