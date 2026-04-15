@@ -257,7 +257,7 @@ def get_dataloaders(
     val_split: float = 0.15,
     test_split: float = 0.15,
     augmentation: bool = True,
-    num_workers: int,
+    num_workers: int = 0,
     seed: int = 42
 ) -> Tuple[DataLoader, DataLoader, DataLoader, Dict]:
     """Convenience function that returns DataLoaders directly.
