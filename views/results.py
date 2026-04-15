@@ -467,7 +467,7 @@ def _render_top_confused_pairs(cm, class_names: List[str], top_k: int) -> None:
         st.info("No off-diagonal confusions found.")
         return
 
-    st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(records), width='stretch', hide_index=True)
 
 
 def _render_body_type_matrix(cm, class_names: List[str], cycle: int) -> None:
