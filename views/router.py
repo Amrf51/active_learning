@@ -16,8 +16,12 @@ from core.experiment_state import AppState
 STALE_HEARTBEAT_SECONDS = 120.0
 
 
-def render(snap: Optional[Dict] = None) -> None:
-    """Route to the correct state view using one atomic snapshot."""
+def render_main_tab(snap: Optional[Dict] = None) -> None:
+    """Render only the main-tab content (no st.tabs call).
+
+    Called by polling fragments so only the Main tab re-renders on each tick —
+    Results/Compare/Explorer tabs are rendered once per full page rerun in app.py.
+    """
     controller: Optional[Controller] = st.session_state.get("controller")
     if controller is None:
         st.error("Controller not initialized. Please restart the application.")
@@ -35,22 +39,36 @@ def render(snap: Optional[Dict] = None) -> None:
                 "Try Stop and restart the experiment."
             )
 
+    _render_state_view(controller, snap, current_state)
+
+
+def render(snap: Optional[Dict] = None) -> None:
+    """Route to the correct state view using one atomic snapshot.
+
+    No longer called from polling fragments (app.py handles tab creation).
+    Retained for any external callers or future use.
+    """
+    controller: Optional[Controller] = st.session_state.get("controller")
+    if controller is None:
+        st.error("Controller not initialized. Please restart the application.")
+        return
+
+    if snap is None:
+        snap = controller.get_snapshot()
+
+    from views.results import render_results_view, render_comparison_view
+    from views.explorer import render_explorer_view
+
     main_tab, results_tab, compare_tab, explorer_tab = st.tabs(
         ["Main", "Results", "Compare Runs", "Dataset Explorer"]
     )
     with main_tab:
-        _render_state_view(controller, snap, current_state)
+        render_main_tab(snap)
     with results_tab:
-        from views.results import render_results_view
-
         render_results_view(controller, snap)
     with compare_tab:
-        from views.results import render_comparison_view
-
         render_comparison_view(controller, snap)
     with explorer_tab:
-        from views.explorer import render_explorer_view
-
         render_explorer_view(controller, snap)
 
 
