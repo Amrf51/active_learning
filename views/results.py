@@ -400,6 +400,114 @@ def _resolve_confusion_matrix_path(metric: Dict[str, Any], run_dir: str) -> Path
     return None
 
 
+_BODY_TYPE_KEYWORDS = [
+    ("Convertible", ["convertible"]),
+    ("Coupe", ["coupe"]),
+    ("Wagon", ["wagon", "estate"]),
+    ("Van", ["cargo van", "minivan", " van"]),
+    ("Cab", [
+        "regular cab", "extended cab", "supercrew cab", "crew cab",
+        "club cab", "quad cab", "access cab", "king cab", "double cab",
+    ]),
+    ("Truck", ["truck", "pickup"]),
+    ("Hatchback", ["hatchback"]),
+    ("SUV", ["suv", "4wd", "awd"]),
+    ("Sedan", ["sedan"]),
+]
+_BODY_TYPE_FALLBACK = "Other"
+
+
+def _class_to_body_type(class_name: str) -> str:
+    lower = class_name.lower()
+    for body_type, keywords in _BODY_TYPE_KEYWORDS:
+        if any(kw in lower for kw in keywords):
+            return body_type
+    return _BODY_TYPE_FALLBACK
+
+
+def _build_body_type_matrix(cm, class_names: List[str]):
+    import numpy as np
+
+    labels = [_class_to_body_type(n) for n in class_names]
+    # Preserve encounter order so the matrix rows/cols match natural grouping
+    seen: dict = {}
+    for lbl in labels:
+        if lbl not in seen:
+            seen[lbl] = len(seen)
+    body_types = list(seen.keys())
+    n = len(body_types)
+    agg = np.zeros((n, n), dtype=np.int64)
+    for r, lbl_r in enumerate(labels):
+        for c, lbl_c in enumerate(labels):
+            agg[seen[lbl_r], seen[lbl_c]] += cm[r, c]
+    return agg, body_types
+
+
+def _render_top_confused_pairs(cm, class_names: List[str], top_k: int) -> None:
+    import numpy as np
+
+    cm_no_diag = cm.copy()
+    np.fill_diagonal(cm_no_diag, 0)
+    flat_idx = np.argsort(cm_no_diag.ravel())[::-1][:top_k]
+    rows, cols = np.unravel_index(flat_idx, cm.shape)
+
+    records = []
+    for rank, (r, c) in enumerate(zip(rows, cols), 1):
+        count = int(cm_no_diag[r, c])
+        if count == 0:
+            break
+        records.append({
+            "Rank": rank,
+            "True class": class_names[r],
+            "Predicted as": class_names[c],
+            "Count": count,
+        })
+
+    if not records:
+        st.info("No off-diagonal confusions found.")
+        return
+
+    st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
+
+
+def _render_body_type_matrix(cm, class_names: List[str], cycle: int) -> None:
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    agg, body_types = _build_body_type_matrix(cm, class_names)
+    row_sums = agg.sum(axis=1, keepdims=True).clip(1)
+    norm = agg / row_sums
+
+    n = len(body_types)
+    fig, ax = plt.subplots(figsize=(max(5, n), max(4, n - 1)))
+    im = ax.imshow(norm, cmap="Blues", vmin=0, vmax=1)
+    threshold = 0.5
+    for i in range(n):
+        for j in range(n):
+            color = "white" if norm[i, j] > threshold else "black"
+            ax.text(j, i, str(int(agg[i, j])), ha="center", va="center",
+                    fontsize=9, color=color)
+    ax.set_xticks(range(n))
+    ax.set_xticklabels(body_types, rotation=45, ha="right")
+    ax.set_yticks(range(n))
+    ax.set_yticklabels(body_types)
+    ax.set_xlabel("Predicted body type")
+    ax.set_ylabel("True body type")
+    ax.set_title(f"Cycle {cycle} — confusion by body type (row-normalised)")
+    fig.colorbar(im, ax=ax, label="Recall within true body type", fraction=0.046, pad=0.04)
+    fig.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
+
+    # Show how many classes landed in each bucket
+    from collections import Counter as _Counter
+    bucket_counts = _Counter(_class_to_body_type(cls) for cls in class_names)
+    st.caption(
+        "Classes per bucket: "
+        + "  |  ".join(f"{bt}: {bucket_counts[bt]}" for bt in body_types)
+    )
+
+
 def render_confusion_matrix(
     metrics_history: List[Dict[str, Any]],
     snap: Dict[str, Any],
@@ -428,7 +536,6 @@ def render_confusion_matrix(
         return
 
     try:
-        import matplotlib.pyplot as plt
         import numpy as np
 
         cm = np.load(cm_path)
@@ -445,29 +552,20 @@ def render_confusion_matrix(
     if len(class_names) != num_classes:
         class_names = [str(i) for i in range(num_classes)]
 
-    fig_size = min(14, max(6, num_classes * 0.7))
-    fig, ax = plt.subplots(figsize=(fig_size, fig_size))
-    image = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
-    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
-    ax.set_title(f"Cycle {selected_cycle} Confusion Matrix")
-    ax.set_xlabel("Predicted Label")
-    ax.set_ylabel("True Label")
+    with st.expander("Most confused pairs", expanded=True):
+        top_k = st.slider(
+            "Show top N pairs",
+            min_value=10,
+            max_value=50,
+            value=20,
+            step=5,
+            key=f"{widget_prefix}_cm_top_k",
+        )
+        _render_top_confused_pairs(cm, class_names, top_k)
 
-    ax.set_xticks(range(num_classes))
-    ax.set_yticks(range(num_classes))
-    ax.set_xticklabels(class_names, rotation=45, ha="right")
-    ax.set_yticklabels(class_names)
+    with st.expander("Confusion by body type", expanded=True):
+        _render_body_type_matrix(cm, class_names, selected_cycle)
 
-    if num_classes <= 25:
-        threshold = cm.max() / 2.0 if cm.size else 0
-        for i in range(num_classes):
-            for j in range(num_classes):
-                value = int(cm[i, j])
-                color = "white" if value > threshold else "black"
-                ax.text(j, i, str(value), ha="center", va="center", color=color, fontsize=8)
-
-    fig.tight_layout()
-    st.pyplot(fig, width="stretch")
     st.caption(f"Source: {cm_path}")
 
 
