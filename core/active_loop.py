@@ -289,7 +289,7 @@ class ActiveLearningLoop:
         self.current_train_loader = self.data_manager.get_labeled_loader(
             batch_size=self.config.training.batch_size,
             shuffle=True,
-            num_workers=self.config.data.num_workers
+            num_workers=6
         )
         loader_elapsed = time.perf_counter() - loader_start
         total_elapsed = time.perf_counter() - cycle_start
@@ -395,7 +395,7 @@ class ActiveLearningLoop:
         unlabeled_loader = self.data_manager.get_unlabeled_loader(
             batch_size=inference_batch_size,
             shuffle=False,
-            num_workers=self.config.data.num_workers
+            num_workers=6
         )
 
         supports_heartbeat = False

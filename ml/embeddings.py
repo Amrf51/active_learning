@@ -140,7 +140,7 @@ def build_cycle_embeddings(
         logger.warning("umap-learn not installed — skipping embedding projection.")
         return None
 
-    num_workers = trainer.config.data.num_workers
+    num_workers = 6
     batch_size = trainer.config.training.batch_size
 
     # Labeled pool
