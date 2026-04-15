@@ -35,7 +35,7 @@ class DataConfig:
     val_split: float = 0.15
     test_split: float = 0.15
     augmentation: bool = True
-    num_workers: int = 4
+    num_workers: int = 6
     image_size: int = 224
 
 

@@ -81,7 +81,7 @@ Never share mutable state between threads except through these two channels.
 
 **Controller is a singleton.** `get_controller()` uses `@st.cache_resource` — same instance across browser refreshes. Do not re-create it per render.
 
-**`num_workers` must stay 0.** The controller sets `config.data.num_workers = 0` before spawning the worker. PyTorch DataLoader workers inside a daemon thread deadlock on Windows and inside Streamlit's execution model. Do not change this.
+**`num_workers` is platform-dependent.** On Windows, DataLoader workers inside a daemon thread deadlock — the controller forces `config.data.num_workers = 0` in that case. On Linux (e.g. the university JupyterHub cluster), workers function correctly and `num_workers=6` is confirmed working. Do not set a non-zero value when running on Windows.
 
 ## Output Directory Structure
 
@@ -110,5 +110,5 @@ experiments/
 - **Do not read `controller.state.*` directly from view code.** Always go through `controller.get_snapshot()`.
 - **Do not emit events from the UI thread.** Events flow worker → inbox → controller only.
 - **Do not add blocking calls to view render functions.** Views must return quickly; long work belongs in the worker thread.
-- **Do not set `data.num_workers` to a non-zero value** in Streamlit mode — it will deadlock.
+- **Do not set `data.num_workers` to a non-zero value on Windows** — it will deadlock inside Streamlit's daemon thread. On Linux (university cluster) `num_workers=6` works fine.
 - **Do not use `st.cache_data` on objects that store experiment state** — state changes won't invalidate the cache.
