@@ -225,9 +225,10 @@ class Controller:
         command_queue: "queue.Queue[Any]" = queue.Queue()
         self.state.command_queue = command_queue
 
+        heartbeat_fn = lambda: self.state.touch_heartbeat(run_id)  # noqa: E731
         thread = threading.Thread(
             target=run_experiment,
-            args=(command_queue, self.state.inbox, config, run_dir, run_id),
+            args=(command_queue, self.state.inbox, config, run_dir, run_id, heartbeat_fn),
             daemon=True,
             name=f"ALThread-{run_id[:8]}",
         )

@@ -9,7 +9,7 @@ import queue
 import time
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
 import torch
@@ -286,6 +286,7 @@ def run_experiment(
     config: Any,
     run_dir: Path,
     run_id: str,
+    heartbeat_fn: Optional[Callable[[], None]] = None,
 ) -> None:
     """
     Entry point for the backend daemon thread.
@@ -395,7 +396,7 @@ def run_experiment(
             al_loop.trainer.restore_best_model()
             test_metrics = al_loop.run_evaluation()
             cycle_metrics = al_loop.finalize_cycle(
-                test_metrics, heartbeat_fn=lambda: None
+                test_metrics, heartbeat_fn=heartbeat_fn
             ).model_dump()
             probe_images = _serialize_probe_images(al_loop)
             pool_stats = _pool_stats(al_loop)
@@ -438,7 +439,7 @@ def run_experiment(
                     return
 
                 auto_annotate_start = time.perf_counter()
-                summary = al_loop.query_and_auto_annotate(heartbeat_fn=lambda: None)
+                summary = al_loop.query_and_auto_annotate(heartbeat_fn=heartbeat_fn)
                 auto_annotate_elapsed = time.perf_counter() - auto_annotate_start
                 logger.info(
                     "Cycle %s timing | auto_query_apply=%.2fs | queried=%s applied=%s",
@@ -469,7 +470,7 @@ def run_experiment(
                 continue
 
             query_start = time.perf_counter()
-            queried_images = al_loop.query_samples(heartbeat_fn=lambda: None)
+            queried_images = al_loop.query_samples(heartbeat_fn=heartbeat_fn)
             query_elapsed = time.perf_counter() - query_start
             logger.info(
                 "Cycle %s timing | manual_query_build_payload=%.2fs | queried=%s",
