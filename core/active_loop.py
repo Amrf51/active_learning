@@ -390,8 +390,9 @@ class ActiveLearningLoop:
             return np.array([], dtype=int)
 
         n_query = min(al_config.batch_size_al, pool_info["unlabeled"])
-        # Inference needs no gradients → use 2x batch size for better GPU utilisation
-        inference_batch_size = self.config.training.batch_size * 2
+        # Inference needs no gradients → use a larger batch for better GPU utilisation
+        # and to reduce the number of loop iterations (critical on Windows with num_workers=0)
+        inference_batch_size = max(256, self.config.training.batch_size * 4)
         unlabeled_loader = self.data_manager.get_unlabeled_loader(
             batch_size=inference_batch_size,
             shuffle=False,
