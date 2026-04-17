@@ -371,6 +371,67 @@ Ein vollständig funktionsfähiges, interaktives Active-Learning-Framework, das 
 - **Temperature Scaling** als Post-Hoc-Kalibrierungsfix ist niedrig-riskant und produziert einen sauberen Thesis-Vergleich (Raw-ECE vs. Scaled-ECE).
 - Das Framework ist erweiterbar: Neue Strategien brauchen nur eine Funktion mit der richtigen Signatur + Eintrag im Registry-Dict. Neue Events: Enum-Variante + Worker-Emit + Controller-Case.
 
+## Experiments
+
+> **Dauer:** ~3–4 Minuten gesamt
+
+---
+
+### Folie 1 — Lernkurven-Chart (4 Strategien)
+
+> „Ich zeige euch jetzt die ersten Experimente, die ich mit dem System durchgeführt habe.
+>
+> Wir haben vier Active-Learning-Strategien miteinander verglichen: Entropy Sampling, Least Confidence, Margin Sampling — und als Baseline einfaches Random Sampling.
+>
+> Das Setup war für alle vier identisch: ResNet50 als vortrainiertes Modell, der Stanford Cars Datensatz mit 196 Fahrzeugklassen, und 30 Active-Learning-Zyklen. Wir starten mit 1.000 beschrifteten Bildern und fragen pro Zyklus 100 neue an — am Ende also 3.900 Labels insgesamt.
+>
+> Was ihr hier seht, ist die Testgenauigkeit über die Anzahl der beschrifteten Bilder. Alle vier Kurven steigen — das System lernt, Zyklus für Zyklus, mit jedem neuen Label dazu.
+>
+> Am Ende landen alle Strategien bei rund 52 bis 53 Prozent Testgenauigkeit. Das klingt auf den ersten Blick nicht viel — aber bei 196 teils sehr ähnlichen Fahrzeugklassen ist das ein durchaus solides Ergebnis für diesen Labelumfang."
+
+**Screenshot:** Compare-Tab → „Test Accuracy" — alle 4 Runs ausgewählt
+
+---
+
+### Folie 1 — Key Insights
+
+> „Was interessanter ist als die finale Genauigkeit: das Verhalten in den frühen Zyklen.
+>
+> Entropy Sampling ist dort konsistent vorne — das bedeutet, es braucht weniger Labels, um den gleichen Genauigkeitspunkt zu erreichen. Genau das ist der Kerngedanke von Active Learning: mit weniger Daten mehr herausholen.
+>
+> Besonders auffällig ist Margin Sampling: In den Zyklen 4 bis 9 stagniert die Kurve fast komplett. Das liegt daran, dass Margin Sampling auf den Abstand zwischen den zwei wahrscheinlichsten Klassen schaut — wenn das Modell aber noch schlecht kalibriert ist, ist dieses Signal reines Rauschen. Das Modell wählt Bilder aus, die ihm zufällig schwer vorkommen, aber nicht wirklich informativ sind. Das ist ein bekannter Kaltstart-Effekt, den wir hier empirisch beobachten konnten.
+>
+> Interessant ist auch: Random Sampling ist erstaunlich schwer zu schlagen. Das zeigt, dass bei einem so vielfältigen Datensatz fast jedes zufällig gewählte Bild eine gewisse Information trägt."
+
+**Screenshot:** Compare-Tab → „Final Results Summary" Tabelle (rechts unten auf der Folie)
+
+---
+
+### Folie 2 — Was das System demonstriert
+
+> „Diese Experimente zeigen vor allem eines: das Framework funktioniert. Vier verschiedene Strategien, jeweils 30 Zyklen, vollständig automatisiert durchgelaufen — mit einheitlichem Setup, reproduzierbarer Konfiguration und sauber gespeicherten Ergebnissen pro Lauf.
+>
+> Das System ist in der Lage, solche Vergleichsexperimente strukturiert und nachvollziehbar durchzuführen — was die Grundlage für aussagekräftige Evaluierungen ist."
+
+**Screenshots:**
+- Results-Tab → UMAP Evolution, Side-by-side: Zyklus 1 vs. Zyklus 30 (Pool Membership)
+- Results-Tab → „Confusion by body type" Heatmap (letzter Zyklus)
+
+---
+
+### Folie 2 — Nächste Schritte
+
+> „Gleichzeitig sehen wir klar, wo die nächsten Experimente ansetzen müssen.
+>
+> Erstens fehlt uns noch eine vollüberwachte Obergrenze — also ein Modell, das auf allen verfügbaren Daten trainiert wird. Erst dann können wir sagen, wie viel Dateneinsparung Active Learning wirklich bringt.
+>
+> Zweitens trainieren wir derzeit jeden Zyklus genau 20 Epochen — egal wie viele Daten vorhanden sind. In frühen Zyklen ist das zu viel, in späteren zu wenig. Mit echtem Early Stopping wird jeder Zyklus fairer.
+>
+> Drittens haben wir bisher nur einen einzigen Seed verwendet. Für statistisch belastbare Aussagen brauchen wir mehrere Durchläufe.
+>
+> Und schließlich möchte ich eine diversitätsbasierte Strategie wie Core-Set testen — die nicht nur auf Unsicherheit schaut, sondern auch darauf, dass die ausgewählten Bilder sich möglichst unterscheiden. Das könnte gerade in frühen Zyklen die Schwäche von Margin Sampling ausgleichen.
+>
+> Die Infrastruktur steht — die nächsten Experimente werden deutlich aussagekräftiger sein."
 ---
 
 ## Timing-Empfehlung
