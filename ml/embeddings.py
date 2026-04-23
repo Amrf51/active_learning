@@ -154,26 +154,30 @@ def build_cycle_embeddings(
 
     # Unlabeled pool (capped)
     unlabeled_indices = data_manager._unlabeled_list
-    if len(unlabeled_indices) > UMAP_UNLABELED_SAMPLE_LIMIT:
-        sample_idx = rng.choice(
-            len(unlabeled_indices), size=UMAP_UNLABELED_SAMPLE_LIMIT, replace=False
+    emb_unlabeled = np.empty((0, emb_labeled.shape[1]), dtype=emb_labeled.dtype)
+    lbl_unlabeled = np.empty(0, dtype=lbl_labeled.dtype)
+    unlabeled_loader = None
+    if len(unlabeled_indices) > 0:
+        if len(unlabeled_indices) > UMAP_UNLABELED_SAMPLE_LIMIT:
+            sample_idx = rng.choice(
+                len(unlabeled_indices), size=UMAP_UNLABELED_SAMPLE_LIMIT, replace=False
+            )
+            sampled = [unlabeled_indices[i] for i in sample_idx]
+        else:
+            sampled = unlabeled_indices
+
+        from .data_manager import PoolSubset
+        from torch.utils.data import DataLoader
+        subset = PoolSubset(data_manager.dataset, sampled)
+        unlabeled_loader = DataLoader(
+            subset, batch_size=batch_size, shuffle=False,
+            num_workers=num_workers, persistent_workers=num_workers > 0,
         )
-        sampled = [unlabeled_indices[i] for i in sample_idx]
-    else:
-        sampled = unlabeled_indices
+        emb_unlabeled, lbl_unlabeled = trainer.get_embeddings(unlabeled_loader)
+        if heartbeat_fn:
+            heartbeat_fn()
 
-    from .data_manager import PoolSubset
-    from torch.utils.data import DataLoader
-    subset = PoolSubset(data_manager.dataset, sampled)
-    unlabeled_loader = DataLoader(
-        subset, batch_size=batch_size, shuffle=False,
-        num_workers=num_workers, persistent_workers=num_workers > 0,
-    )
-    emb_unlabeled, lbl_unlabeled = trainer.get_embeddings(unlabeled_loader)
     pool_unlabeled = np.ones(len(lbl_unlabeled), dtype=np.int8)  # 1 = unlabeled
-    if heartbeat_fn:
-        heartbeat_fn()
-
     all_embeddings = np.vstack([emb_labeled, emb_unlabeled])
     all_labels = np.concatenate([lbl_labeled, lbl_unlabeled])
     all_pool = np.concatenate([pool_labeled, pool_unlabeled])
@@ -196,8 +200,11 @@ def build_cycle_embeddings(
     uncertainty_scores: Optional[np.ndarray] = None
     try:
         _, prob_labeled = trainer.get_predictions_for_loader(labeled_loader)
-        _, prob_unlabeled = trainer.get_predictions_for_loader(unlabeled_loader)
-        all_probs = np.vstack([prob_labeled, prob_unlabeled])
+        if unlabeled_loader is not None:
+            _, prob_unlabeled = trainer.get_predictions_for_loader(unlabeled_loader)
+            all_probs = np.vstack([prob_labeled, prob_unlabeled])
+        else:
+            all_probs = prob_labeled
         uncertainty_scores = trainer.compute_uncertainty_scores(all_probs, method="entropy")
         if heartbeat_fn:
             heartbeat_fn()
