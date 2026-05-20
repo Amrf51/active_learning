@@ -1,0 +1,18 @@
+experiment:
+  name: "resnet50_supervised_baseline"
+
+model:
+  name: "resnet50"
+  pretrained: true
+
+training:
+  epochs: 20
+  batch_size: 64
+  learning_rate: 1.0e-4
+  early_stopping_patience: 5
+
+active_learning:
+  num_cycles: 1       # single cycle = no AL querying
+  initial_pool_size: 99999  # larger than dataset → all images labeled from the start
+  batch_size_al: 1    # unused but must be > 0
+  auto_annotate: true
