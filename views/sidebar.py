@@ -208,7 +208,7 @@ def render_training_hyperparameters() -> Dict[str, Any]:
     epochs = st.sidebar.slider(
         "Epochs per Cycle",
         min_value=1,
-        max_value=1000,
+        max_value=100,
         value=10,
         help="Maximum training epochs per active learning cycle (may stop earlier if early stopping is enabled)"
     )
