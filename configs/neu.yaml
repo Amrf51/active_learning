@@ -1,0 +1,54 @@
+# NEU Surface Defect Database — second thesis pillar.
+# IDENTICAL pipeline to the Stanford Cars experiment (results/config_entropy.yaml):
+# only the dataset paths and AL pool sizes differ. Do NOT tune hyperparameters here —
+# an identical config is the experiment. seed + sampling_strategy are overridden from the UI.
+experiment:
+  name: NEU_Experiment
+  seed: 42                                  # overridden from the UI for the 3-seed grid (42/123/7)
+  device: cuda
+  exp_dir: experiments/
+data:
+  data_dir: Neu_Surface/train/images        # official train split (ImageFolder, 6 classes)
+  test_dir: Neu_Surface/validation/images    # official validation split — used as the test set
+  val_split: 0.15                            # val carved from the 1440-image train pool
+  test_split: 0.0                            # ignored when test_dir is set
+  augmentation: true
+  num_workers: 6                             # cluster value; set 0 for local macOS smoke runs
+  image_size: 224
+model:
+  name: resnet50
+  pretrained: true
+  num_classes: null                          # auto-detected as 6
+training:
+  epochs: 20
+  batch_size: 32
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  optimizer: adamw
+  early_stopping_patience: 0
+  scheduler: cosine
+  warmup_epochs: 2
+  grad_clip_norm: 1.0
+  label_smoothing: 0.1
+  backbone_lr_factor: 0.1
+  freeze_backbone_epochs: 2
+  loss_fn: combined
+  supcon_temperature: 0.07
+  supcon_weight: 0.5
+active_learning:
+  num_cycles: 30
+  initial_pool_size: 120                     # ~20/class (vs 1000 / ~5-per-class on Cars)
+  batch_size_al: 30                          # query batch (vs 100 on Cars)
+  sampling_strategy: random                  # overridden from the UI per run
+  uncertainty_method: entropy
+  reset_mode: continue
+  step_mode: false
+  auto_annotate: true
+  stratified_init: true
+checkpoint:
+  save_best_model: true
+  save_best_per_cycle: true
+  save_every_n_epochs: 5
+logging:
+  level: INFO
+  log_to_file: true
