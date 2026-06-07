@@ -197,12 +197,6 @@ def render_submit_button(
 
     num_annotated = len(relevant)
     num_required = len(queried_images)
-    progress = min(1.0, num_annotated / num_required) if num_required > 0 else 0.0
-
-    st.progress(
-        progress,
-        text=f"Annotated: {num_annotated} / {num_required}",
-    )
 
     submit_disabled = num_annotated < num_required
     if st.button(
@@ -275,6 +269,9 @@ def render_annotation_feedback() -> None:
             st.write(f"{icon} Image {ann['image_id']}: {label_name}")
 
 
+_GALLERY_PAGE_SIZE = 40
+
+
 def render_gallery_view(controller: Controller, snap: Dict[str, Any]) -> None:
     st.title("Gallery of Uncertainty")
     st.markdown(f"Cycle {snap['current_cycle']} - Please label the selected samples")
@@ -283,6 +280,7 @@ def render_gallery_view(controller: Controller, snap: Dict[str, Any]) -> None:
     cycle_id = (snap["run_id"], snap["current_cycle"])
     if st.session_state.get("gallery_cycle_id") != cycle_id:
         st.session_state["gallery_cycle_id"] = cycle_id
+        st.session_state["gallery_page"] = 0
         st.session_state.annotations = {}
         st.session_state.pop("last_annotation_feedback", None)
 
@@ -291,23 +289,64 @@ def render_gallery_view(controller: Controller, snap: Dict[str, Any]) -> None:
         st.warning("No images available for annotation")
         return
 
+    total_images = len(queried_images)
+    total_pages = max(1, (total_images + _GALLERY_PAGE_SIZE - 1) // _GALLERY_PAGE_SIZE)
+    page = st.session_state.get("gallery_page", 0)
+    page = max(0, min(page, total_pages - 1))  # clamp in case total changed
+    page_images = queried_images[page * _GALLERY_PAGE_SIZE : (page + 1) * _GALLERY_PAGE_SIZE]
+
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Samples to Annotate", len(queried_images))
+        st.metric("Samples to Annotate", total_images)
     with col2:
         config_overrides = st.session_state.get("config_overrides", {})
         strategy = config_overrides.get("active_learning.sampling_strategy", "Unknown")
         st.metric("Strategy", str(strategy).capitalize())
     with col3:
-        avg_uncertainty = sum(img.get("uncertainty_score", 0) for img in queried_images) / len(queried_images)
+        avg_uncertainty = sum(img.get("uncertainty_score", 0) for img in queried_images) / total_images
         st.metric("Avg Uncertainty", f"{avg_uncertainty:.3f}")
 
     st.markdown("---")
     render_annotation_feedback()
 
+    # Overall progress across all pages
+    all_ids = {img["image_id"] for img in queried_images}
+    num_annotated = len(all_ids & st.session_state.get("annotations", {}).keys())
+    st.progress(
+        min(1.0, num_annotated / total_images),
+        text=f"Annotated: {num_annotated} / {total_images}",
+    )
+
+    # Page navigation
+    current_ids = {img["image_id"] for img in page_images}
+    page_done = current_ids.issubset(st.session_state.get("annotations", {}).keys())
+    is_last_page = page >= total_pages - 1
+
+    nav_col1, nav_col2, nav_col3 = st.columns([1, 2, 1])
+    with nav_col1:
+        if st.button("← Prev", disabled=(page == 0), key="gallery_prev"):
+            st.session_state["gallery_page"] = page - 1
+            st.rerun()
+    with nav_col2:
+        st.markdown(
+            f"<div style='text-align:center; padding-top:6px;'>"
+            f"<b>Page {page + 1} of {total_pages}</b> &nbsp;·&nbsp; "
+            f"Images {page * _GALLERY_PAGE_SIZE + 1}–{min((page + 1) * _GALLERY_PAGE_SIZE, total_images)}</div>",
+            unsafe_allow_html=True,
+        )
+    with nav_col3:
+        if st.button(
+            "Next →",
+            disabled=(is_last_page or not page_done),
+            key="gallery_next",
+            help="Annotate all images on this page before advancing" if not page_done else "",
+        ):
+            st.session_state["gallery_page"] = page + 1
+            st.rerun()
+
     st.markdown("### Selected Images")
     available_classes = get_available_classes(snap)
-    render_image_grid(queried_images, available_classes, num_columns=4)
+    render_image_grid(page_images, available_classes, num_columns=4)
 
     st.markdown("---")
     col1, col2 = st.columns(2)
@@ -315,15 +354,19 @@ def render_gallery_view(controller: Controller, snap: Dict[str, Any]) -> None:
         if render_auto_label_button(queried_images):
             st.rerun()
     with col2:
-        if render_submit_button(controller, queried_images, snap):
-            st.success("Annotations submitted. Training will continue automatically.")
-            st.rerun()
+        if is_last_page:
+            if render_submit_button(controller, queried_images, snap):
+                st.success("Annotations submitted. Training will continue automatically.")
+                st.rerun()
+        else:
+            st.info("Navigate to the last page to submit all annotations.")
 
     st.markdown("---")
     st.info(
         "Instructions:\n"
         "1. Review each image and predicted label.\n"
         "2. Select corrected labels where needed.\n"
-        "3. Optional: Auto-label all with ground truth.\n"
-        "4. Submit annotations to continue."
+        "3. Click Next → to advance pages (annotate current page first).\n"
+        "4. Optional: Auto-label all with ground truth.\n"
+        "5. Submit annotations on the last page to continue."
     )

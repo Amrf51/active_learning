@@ -5,6 +5,7 @@ Results dashboard for completed/ongoing active learning runs.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -43,7 +44,7 @@ def _safe_read_yaml(path: Path) -> Dict[str, Any]:
         return {}
 
 
-@st.cache_data(show_spinner=False, ttl=3)
+@st.cache_data(show_spinner=False, ttl=30)
 def _discover_persisted_runs(exp_dir: str) -> List[Dict[str, Any]]:
     """
     Discover runs from experiment folders on disk.
@@ -60,7 +61,7 @@ def _discover_persisted_runs(exp_dir: str) -> List[Dict[str, Any]]:
         latest = metrics[-1]
         if not isinstance(latest, dict):
             return []
-        per_class = latest.get("per_class")
+        per_class = latest.get("per_class") or latest.get("per_class_metrics")
         if isinstance(per_class, dict):
             return [str(name) for name in per_class.keys()]
         return []
@@ -399,6 +400,114 @@ def _resolve_confusion_matrix_path(metric: Dict[str, Any], run_dir: str) -> Path
     return None
 
 
+_BODY_TYPE_KEYWORDS = [
+    ("Convertible", ["convertible"]),
+    ("Coupe", ["coupe"]),
+    ("Wagon", ["wagon", "estate"]),
+    ("Van", ["cargo van", "minivan", " van"]),
+    ("Cab", [
+        "regular cab", "extended cab", "supercrew cab", "crew cab",
+        "club cab", "quad cab", "access cab", "king cab", "double cab",
+    ]),
+    ("Truck", ["truck", "pickup"]),
+    ("Hatchback", ["hatchback"]),
+    ("SUV", ["suv", "4wd", "awd"]),
+    ("Sedan", ["sedan"]),
+]
+_BODY_TYPE_FALLBACK = "Other"
+
+
+def _class_to_body_type(class_name: str) -> str:
+    lower = class_name.lower()
+    for body_type, keywords in _BODY_TYPE_KEYWORDS:
+        if any(kw in lower for kw in keywords):
+            return body_type
+    return _BODY_TYPE_FALLBACK
+
+
+def _build_body_type_matrix(cm, class_names: List[str]):
+    import numpy as np
+
+    labels = [_class_to_body_type(n) for n in class_names]
+    # Preserve encounter order so the matrix rows/cols match natural grouping
+    seen: dict = {}
+    for lbl in labels:
+        if lbl not in seen:
+            seen[lbl] = len(seen)
+    body_types = list(seen.keys())
+    n = len(body_types)
+    agg = np.zeros((n, n), dtype=np.int64)
+    for r, lbl_r in enumerate(labels):
+        for c, lbl_c in enumerate(labels):
+            agg[seen[lbl_r], seen[lbl_c]] += cm[r, c]
+    return agg, body_types
+
+
+def _render_top_confused_pairs(cm, class_names: List[str], top_k: int) -> None:
+    import numpy as np
+
+    cm_no_diag = cm.copy()
+    np.fill_diagonal(cm_no_diag, 0)
+    flat_idx = np.argsort(cm_no_diag.ravel())[::-1][:top_k]
+    rows, cols = np.unravel_index(flat_idx, cm.shape)
+
+    records = []
+    for rank, (r, c) in enumerate(zip(rows, cols), 1):
+        count = int(cm_no_diag[r, c])
+        if count == 0:
+            break
+        records.append({
+            "Rank": rank,
+            "True class": class_names[r],
+            "Predicted as": class_names[c],
+            "Count": count,
+        })
+
+    if not records:
+        st.info("No off-diagonal confusions found.")
+        return
+
+    st.dataframe(pd.DataFrame(records), width='stretch', hide_index=True)
+
+
+def _render_body_type_matrix(cm, class_names: List[str], cycle: int) -> None:
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    agg, body_types = _build_body_type_matrix(cm, class_names)
+    row_sums = agg.sum(axis=1, keepdims=True).clip(1)
+    norm = agg / row_sums
+
+    n = len(body_types)
+    fig, ax = plt.subplots(figsize=(max(5, n), max(4, n - 1)))
+    im = ax.imshow(norm, cmap="Blues", vmin=0, vmax=1)
+    threshold = 0.5
+    for i in range(n):
+        for j in range(n):
+            color = "white" if norm[i, j] > threshold else "black"
+            ax.text(j, i, str(int(agg[i, j])), ha="center", va="center",
+                    fontsize=9, color=color)
+    ax.set_xticks(range(n))
+    ax.set_xticklabels(body_types, rotation=45, ha="right")
+    ax.set_yticks(range(n))
+    ax.set_yticklabels(body_types)
+    ax.set_xlabel("Predicted body type")
+    ax.set_ylabel("True body type")
+    ax.set_title(f"Cycle {cycle} — confusion by body type (row-normalised)")
+    fig.colorbar(im, ax=ax, label="Recall within true body type", fraction=0.046, pad=0.04)
+    fig.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
+
+    # Show how many classes landed in each bucket
+    from collections import Counter as _Counter
+    bucket_counts = _Counter(_class_to_body_type(cls) for cls in class_names)
+    st.caption(
+        "Classes per bucket: "
+        + "  |  ".join(f"{bt}: {bucket_counts[bt]}" for bt in body_types)
+    )
+
+
 def render_confusion_matrix(
     metrics_history: List[Dict[str, Any]],
     snap: Dict[str, Any],
@@ -427,7 +536,6 @@ def render_confusion_matrix(
         return
 
     try:
-        import matplotlib.pyplot as plt
         import numpy as np
 
         cm = np.load(cm_path)
@@ -444,29 +552,20 @@ def render_confusion_matrix(
     if len(class_names) != num_classes:
         class_names = [str(i) for i in range(num_classes)]
 
-    fig_size = min(14, max(6, num_classes * 0.7))
-    fig, ax = plt.subplots(figsize=(fig_size, fig_size))
-    image = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
-    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
-    ax.set_title(f"Cycle {selected_cycle} Confusion Matrix")
-    ax.set_xlabel("Predicted Label")
-    ax.set_ylabel("True Label")
+    with st.expander("Most confused pairs", expanded=True):
+        top_k = st.slider(
+            "Show top N pairs",
+            min_value=10,
+            max_value=50,
+            value=20,
+            step=5,
+            key=f"{widget_prefix}_cm_top_k",
+        )
+        _render_top_confused_pairs(cm, class_names, top_k)
 
-    ax.set_xticks(range(num_classes))
-    ax.set_yticks(range(num_classes))
-    ax.set_xticklabels(class_names, rotation=45, ha="right")
-    ax.set_yticklabels(class_names)
+    with st.expander("Confusion by body type", expanded=True):
+        _render_body_type_matrix(cm, class_names, selected_cycle)
 
-    if num_classes <= 25:
-        threshold = cm.max() / 2.0 if cm.size else 0
-        for i in range(num_classes):
-            for j in range(num_classes):
-                value = int(cm[i, j])
-                color = "white" if value > threshold else "black"
-                ax.text(j, i, str(value), ha="center", va="center", color=color, fontsize=8)
-
-    fig.tight_layout()
-    st.pyplot(fig, width="stretch")
     st.caption(f"Source: {cm_path}")
 
 
@@ -495,6 +594,7 @@ def _build_umap_figure(
     title: str,
     height: int = 550,
     show_legend: bool = True,
+    uncertainty=None,
 ):
     """Build a Plotly Figure for a single UMAP embedding snapshot."""
     import plotly.graph_objects as go
@@ -523,6 +623,23 @@ def _build_umap_figure(
                     ),
                 )
             )
+    elif color_mode == "Uncertainty" and uncertainty is not None:
+        fig.add_trace(
+            go.Scattergl(
+                x=coords[:, 0].tolist(),
+                y=coords[:, 1].tolist(),
+                mode="markers",
+                name="Uncertainty",
+                marker=dict(
+                    size=4,
+                    opacity=0.7,
+                    color=uncertainty.tolist(),
+                    colorscale="Plasma",
+                    colorbar=dict(title="Entropy", thickness=14),
+                    showscale=True,
+                ),
+            )
+        )
     else:
         unique_labels = sorted(set(int(l) for l in labels))
         for label_idx in unique_labels:
@@ -551,58 +668,6 @@ def _build_umap_figure(
     return fig
 
 
-def render_embedding_plot(
-    metrics_history: List[Dict[str, Any]],
-    snap: Dict[str, Any],
-    widget_prefix: str = "live",
-) -> None:
-    st.markdown("### UMAP Embedding Visualization")
-    if not metrics_history:
-        st.info("Embedding plot will appear after at least one cycle completes")
-        return
-
-    cycle_options = [m.get("cycle", i + 1) for i, m in enumerate(metrics_history)]
-    selected_cycle = st.selectbox(
-        "Cycle",
-        options=cycle_options,
-        index=len(cycle_options) - 1,
-        key=f"{widget_prefix}_embedding_cycle",
-    )
-    selected_metric = next(
-        (m for m in metrics_history if m.get("cycle", None) == selected_cycle),
-        metrics_history[-1],
-    )
-
-    emb_path = _resolve_embeddings_path(selected_metric, str(snap.get("run_dir", "")))
-    if emb_path is None:
-        st.info("Embedding file not found for the selected cycle (umap-learn may not have been installed during the run).")
-        return
-
-    try:
-        import numpy as np
-
-        data = np.load(emb_path)
-        coords = data["coords"]
-        labels = data["labels"]
-        pool = data["pool"]
-    except Exception as exc:  # pylint: disable=broad-exception-caught
-        st.error(f"Failed to load embedding file: {exc}")
-        return
-
-    color_mode = st.radio(
-        "Color by",
-        options=["Class Label", "Pool Membership"],
-        horizontal=True,
-        key=f"{widget_prefix}_embedding_color_mode",
-    )
-
-    class_names = list(snap.get("class_names", []))
-    title = f"UMAP — Cycle {selected_cycle} ({len(coords)} points)"
-    fig = _build_umap_figure(coords, labels, pool, class_names, color_mode, title)
-    st.plotly_chart(fig, use_container_width=True)
-    st.caption(f"Source: {emb_path}")
-
-
 @st.cache_data(show_spinner=False, ttl=60)
 def _load_all_embeddings(run_dir: str, cycle_numbers: tuple) -> Dict[int, Dict]:
     """Load embedding .npz files for multiple cycles (cached)."""
@@ -619,6 +684,7 @@ def _load_all_embeddings(run_dir: str, cycle_numbers: tuple) -> Dict[int, Dict]:
                 "coords": data["coords"],
                 "labels": data["labels"],
                 "pool": data["pool"],
+                "uncertainty": data["uncertainty"] if "uncertainty" in data else None,
             }
         except Exception:
             continue
@@ -716,7 +782,7 @@ def render_query_summary(
             margin=dict(l=40, r=20, t=50, b=100),
             xaxis_tickangle=-45 if len(all_classes) > 10 else 0,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     # Top uncertain images table
     top_uncertain = summary.get("top_uncertain", [])
@@ -731,7 +797,7 @@ def render_query_summary(
                     "Confidence": f"{item.get('predicted_confidence', 0):.4f}",
                     "Uncertainty": f"{item.get('uncertainty_score', 0):.4f}",
                 })
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
 
 
 def render_umap_evolution(
@@ -762,10 +828,23 @@ def render_umap_evolution(
 
     class_names = list(snap.get("class_names", []))
 
-    # Color mode
+    # Peek at available cycles to know whether any have uncertainty data.
+    # Load all available embeddings once so we can check the uncertainty field.
+    preview_data = _load_all_embeddings(run_dir, tuple(available_cycles))
+    has_uncertainty = any(
+        preview_data.get(c, {}).get("uncertainty") is not None
+        for c in available_cycles
+    )
+
+    # Color mode — "Uncertainty" only shown when data is present in the .npz files
+    color_options = ["Pool Membership"]
+    if has_uncertainty:
+        color_options.append("Uncertainty")
+    color_options.append("Class Label")
+
     color_mode = st.radio(
         "Color by",
-        options=["Pool Membership", "Class Label"],
+        options=color_options,
         horizontal=True,
         key=f"{widget_prefix}_umap_evo_color_mode",
     )
@@ -794,8 +873,9 @@ def render_umap_evolution(
         fig = _build_umap_figure(
             d["coords"], d["labels"], d["pool"],
             class_names, color_mode, title,
+            uncertainty=d.get("uncertainty"),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         n_queried = int(np.sum(d["pool"] == 2))
         if n_queried > 0:
@@ -828,8 +908,9 @@ def render_umap_evolution(
                     d["coords"], d["labels"], d["pool"],
                     class_names, color_mode, title,
                     height=400, show_legend=show_legend,
+                    uncertainty=d.get("uncertainty"),
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
                 n_queried = int(np.sum(d["pool"] == 2))
                 if n_queried > 0:
                     st.caption(f"{n_queried} queried pts")
@@ -863,75 +944,68 @@ def render_comparison_view(controller: Controller, snap: Dict[str, Any]) -> None
 
     selected_runs = [run_options[k] for k in selected_keys]
 
-    # Build short labels for the legend
-    def _short_label(run: Dict[str, Any]) -> str:
+    # Build short labels for the legend, disambiguating when model/strategy collide
+    def _base_label(run: Dict[str, Any]) -> str:
         model = run.get("model_name", "?")
         strategy = run.get("strategy", "?")
         return f"{model} / {strategy}"
 
+    raw_labels = [_base_label(r) for r in selected_runs]
+    dupes = {lbl for lbl, cnt in Counter(raw_labels).items() if cnt > 1}
+    run_labels: Dict[str, str] = {}
+    for run, raw in zip(selected_runs, raw_labels):
+        if raw in dupes:
+            run_labels[run["key"]] = f"{raw} ({run.get('modified_at', '?')})"
+        else:
+            run_labels[run["key"]] = raw
+
     # --- Test Accuracy Comparison ---
     st.markdown("### Test Accuracy")
-    acc_df = pd.DataFrame()
+    acc_rows = []
     for run in selected_runs:
-        label = _short_label(run)
-        history = run.get("metrics_history", [])
-        if not history:
-            continue
-        labeled_sizes = [m.get("labeled_pool_size", 0) for m in history]
-        accuracies = [m.get("test_accuracy", 0) * 100 for m in history]
-        run_df = pd.DataFrame({"Labeled Samples": labeled_sizes, label: accuracies})
-        if acc_df.empty:
-            acc_df = run_df
-        else:
-            acc_df = acc_df.merge(run_df, on="Labeled Samples", how="outer")
-    if not acc_df.empty:
-        acc_df = acc_df.sort_values("Labeled Samples")
-        y_cols = [c for c in acc_df.columns if c != "Labeled Samples"]
-        st.line_chart(acc_df, x="Labeled Samples", y=y_cols, height=400)
+        label = run_labels[run["key"]]
+        for m in run.get("metrics_history", []):
+            acc_rows.append({
+                "Labeled Samples": m.get("labeled_pool_size", 0),
+                "Test Accuracy": m.get("test_accuracy", 0) * 100,
+                "Run": label,
+            })
+    if acc_rows:
+        acc_df = pd.DataFrame(acc_rows).sort_values("Labeled Samples")
+        st.line_chart(acc_df, x="Labeled Samples", y="Test Accuracy", color="Run", height=400)
     st.markdown("---")
 
     # --- F1 Score Comparison ---
     st.markdown("### F1 Score")
-    f1_df = pd.DataFrame()
+    f1_rows = []
     for run in selected_runs:
-        label = _short_label(run)
-        history = run.get("metrics_history", [])
-        if not history:
-            continue
-        labeled_sizes = [m.get("labeled_pool_size", 0) for m in history]
-        f1_scores = [m.get("test_f1", 0) for m in history]
-        run_df = pd.DataFrame({"Labeled Samples": labeled_sizes, label: f1_scores})
-        if f1_df.empty:
-            f1_df = run_df
-        else:
-            f1_df = f1_df.merge(run_df, on="Labeled Samples", how="outer")
-    if not f1_df.empty:
-        f1_df = f1_df.sort_values("Labeled Samples")
-        y_cols = [c for c in f1_df.columns if c != "Labeled Samples"]
-        st.line_chart(f1_df, x="Labeled Samples", y=y_cols, height=400)
+        label = run_labels[run["key"]]
+        for m in run.get("metrics_history", []):
+            f1_rows.append({
+                "Labeled Samples": m.get("labeled_pool_size", 0),
+                "F1 Score": m.get("test_f1", 0),
+                "Run": label,
+            })
+    if f1_rows:
+        f1_df = pd.DataFrame(f1_rows).sort_values("Labeled Samples")
+        st.line_chart(f1_df, x="Labeled Samples", y="F1 Score", color="Run", height=400)
     st.markdown("---")
 
     # --- ECE Comparison ---
     st.markdown("### Calibration (ECE)")
-    ece_df = pd.DataFrame()
+    ece_rows = []
     for run in selected_runs:
-        label = _short_label(run)
-        history = run.get("metrics_history", [])
-        if not history:
-            continue
-        ece_rows = [(m.get("labeled_pool_size", 0), m.get("ece")) for m in history if m.get("ece") is not None]
-        if not ece_rows:
-            continue
-        labeled_sizes, ece_vals = zip(*ece_rows)
-        run_df = pd.DataFrame({"Labeled Samples": list(labeled_sizes), label: list(ece_vals)})
-        if ece_df.empty:
-            ece_df = run_df
-        else:
-            ece_df = ece_df.merge(run_df, on="Labeled Samples", how="outer")
-    if not ece_df.empty:
-        ece_df = ece_df.sort_values("Labeled Samples")
-        y_cols = [c for c in ece_df.columns if c != "Labeled Samples"]
-        st.line_chart(ece_df, x="Labeled Samples", y=y_cols, height=300)
+        label = run_labels[run["key"]]
+        for m in run.get("metrics_history", []):
+            if m.get("ece") is not None:
+                ece_rows.append({
+                    "Labeled Samples": m.get("labeled_pool_size", 0),
+                    "ECE": m.get("ece"),
+                    "Run": label,
+                })
+    if ece_rows:
+        ece_df = pd.DataFrame(ece_rows).sort_values("Labeled Samples")
+        st.line_chart(ece_df, x="Labeled Samples", y="ECE", color="Run", height=300)
     else:
         st.info("No ECE data available for the selected runs.")
     st.markdown("---")
@@ -945,7 +1019,7 @@ def render_comparison_view(controller: Controller, snap: Dict[str, Any]) -> None
             continue
         final = history[-1]
         summary_rows.append({
-            "Run": _short_label(run),
+            "Run": run_labels[run["key"]],
             "Cycles": run.get("completed_cycles", 0),
             "Final Labeled": final.get("labeled_pool_size", 0),
             "Test Acc": f"{final.get('test_accuracy', 0) * 100:.2f}%",
@@ -954,7 +1028,7 @@ def render_comparison_view(controller: Controller, snap: Dict[str, Any]) -> None
             "ECE (cal.)": f"{final.get('ece_calibrated', 0):.4f}" if final.get("ece_calibrated") is not None else "N/A",
         })
     if summary_rows:
-        st.dataframe(pd.DataFrame(summary_rows), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(summary_rows), hide_index=True, width='stretch')
 
 
 def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:
@@ -1049,8 +1123,6 @@ def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:
     render_probe_predictions(metrics_history, selected_snap, widget_prefix=widget_prefix)
     st.markdown("---")
     render_confusion_matrix(metrics_history, selected_snap, widget_prefix=widget_prefix)
-    st.markdown("---")
-    render_embedding_plot(metrics_history, selected_snap, widget_prefix=widget_prefix)
     st.markdown("---")
     render_query_summary(metrics_history, selected_snap, widget_prefix=widget_prefix)
     st.markdown("---")

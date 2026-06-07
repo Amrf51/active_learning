@@ -9,7 +9,7 @@ import queue
 import time
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
 import torch
@@ -31,31 +31,46 @@ def build_al_loop(config: Any, run_dir: Path) -> ActiveLearningLoop:
     exp_dir = Path(run_dir)
     exp_dir.mkdir(parents=True, exist_ok=True)
 
-    datasets = get_datasets(
-        data_dir=config.data.data_dir,
-        val_split=config.data.val_split,
-        test_split=config.data.test_split,
-        augmentation=config.data.augmentation,
-        seed=config.experiment.seed,
-    )
+    if config.data.test_dir:
+        from ml.dataloader import get_datasets_presplit
+        datasets = get_datasets_presplit(
+            train_dir=config.data.data_dir,
+            test_dir=config.data.test_dir,
+            val_split=config.data.val_split,
+            augmentation=config.data.augmentation,
+            seed=config.experiment.seed,
+        )
+    else:
+        datasets = get_datasets(
+            data_dir=config.data.data_dir,
+            val_split=config.data.val_split,
+            test_split=config.data.test_split,
+            augmentation=config.data.augmentation,
+            seed=config.experiment.seed,
+        )
 
     train_dataset = datasets["train_dataset"]
     class_names = datasets["class_names"]
     pin = torch.cuda.is_available()
 
+    nw = config.data.num_workers
+    persist = nw > 0
+
     val_loader = DataLoader(
         datasets["val_dataset"],
         batch_size=config.training.batch_size,
         shuffle=False,
-        num_workers=config.data.num_workers,
+        num_workers=nw,
         pin_memory=pin,
+        persistent_workers=persist,
     )
     test_loader = DataLoader(
         datasets["test_dataset"],
         batch_size=config.training.batch_size,
         shuffle=False,
-        num_workers=config.data.num_workers,
+        num_workers=nw,
         pin_memory=pin,
+        persistent_workers=persist,
     )
 
     if config.model.num_classes is None:
@@ -271,6 +286,7 @@ def run_experiment(
     config: Any,
     run_dir: Path,
     run_id: str,
+    heartbeat_fn: Optional[Callable[[], None]] = None,
 ) -> None:
     """
     Entry point for the backend daemon thread.
@@ -342,23 +358,35 @@ def run_experiment(
                 metrics_dict = _as_dict(metrics)
                 if not metrics_dict:
                     metrics_dict = {"epoch": epoch}
+
+                early_stopped = al_loop.should_stop_early()
+
+                event_data = {
+                    "epoch": epoch,
+                    "total_epochs": epochs,
+                    "metrics": metrics_dict,
+                }
+                if early_stopped:
+                    event_data["early_stopped"] = True
+                    event_data["patience"] = int(config.training.early_stopping_patience)
+
                 _emit_event(
                     event_inbox,
                     EventType.EPOCH_DONE,
                     run_id=run_id,
                     cycle=cycle,
-                    data={
-                        "epoch": epoch,
-                        "total_epochs": epochs,
-                        "metrics": metrics_dict,
-                    },
+                    data=event_data,
                 )
 
                 if _check_stop(command_queue):
                     _exit_stopped(event_inbox, run_id, cycle, al_loop, run_dir)
                     return
 
-                if al_loop.should_stop_early():
+                if early_stopped:
+                    logger.info(
+                        "Cycle %d: early stopping after epoch %d/%d (patience %d)",
+                        cycle, epoch, epochs, config.training.early_stopping_patience,
+                    )
                     break
 
             if _check_stop(command_queue):
@@ -367,7 +395,9 @@ def run_experiment(
 
             al_loop.trainer.restore_best_model()
             test_metrics = al_loop.run_evaluation()
-            cycle_metrics = al_loop.finalize_cycle(test_metrics).model_dump()
+            cycle_metrics = al_loop.finalize_cycle(
+                test_metrics, heartbeat_fn=heartbeat_fn
+            ).model_dump()
             probe_images = _serialize_probe_images(al_loop)
             pool_stats = _pool_stats(al_loop)
             _emit_event(
@@ -409,7 +439,7 @@ def run_experiment(
                     return
 
                 auto_annotate_start = time.perf_counter()
-                summary = al_loop.query_and_auto_annotate(heartbeat_fn=lambda: None)
+                summary = al_loop.query_and_auto_annotate(heartbeat_fn=heartbeat_fn)
                 auto_annotate_elapsed = time.perf_counter() - auto_annotate_start
                 logger.info(
                     "Cycle %s timing | auto_query_apply=%.2fs | queried=%s applied=%s",
@@ -440,7 +470,7 @@ def run_experiment(
                 continue
 
             query_start = time.perf_counter()
-            queried_images = al_loop.query_samples(heartbeat_fn=lambda: None)
+            queried_images = al_loop.query_samples(heartbeat_fn=heartbeat_fn)
             query_elapsed = time.perf_counter() - query_start
             logger.info(
                 "Cycle %s timing | manual_query_build_payload=%.2fs | queried=%s",

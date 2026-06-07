@@ -4,6 +4,7 @@ app.py - Streamlit entrypoint for the threaded Active Learning UI.
 
 import atexit
 import logging
+import warnings
 from typing import List
 
 import streamlit as st
@@ -11,6 +12,23 @@ import streamlit as st
 from core.controller import Controller
 from core.events import Event, EventType
 from core.experiment_state import AppState
+
+# Suppress noisy logs
+logging.getLogger("streamlit").setLevel(logging.ERROR)
+logging.getLogger("PIL").setLevel(logging.WARNING)
+logging.getLogger("torch").setLevel(logging.WARNING)
+logging.getLogger("torchvision").setLevel(logging.WARNING)
+
+# Suppress sklearn false-positive regression warning (small labeled pool, many classes)
+warnings.filterwarnings(
+    "ignore",
+    message="The number of unique classes is greater than 50%",
+    category=UserWarning,
+    module="sklearn",
+)
+# Suppress other common noisy warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="torch")
+warnings.filterwarnings("ignore", message=".*deprecated.*", category=DeprecationWarning)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -95,9 +113,13 @@ def _handle_ui_effects(events: List[Event]) -> None:
             st.session_state.pop("last_annotation_feedback", None)
 
 
-def _drain_inbox_and_render() -> dict:
-    """Drain worker inbox once, render routed UI, and return the snapshot used."""
-    from views.router import render
+def _drain_inbox_and_render_main() -> dict:
+    """Drain worker inbox once, render main-tab UI, and return the snapshot used.
+
+    Only renders the Main tab content so that polling fragments don't re-render
+    the Results/Compare/Explorer tabs on every tick.
+    """
+    from views.router import render_main_tab
 
     controller = st.session_state.controller
     last_ver = st.session_state.get("last_event_version", -1)
@@ -108,7 +130,7 @@ def _drain_inbox_and_render() -> dict:
     st.session_state.last_event_version = new_ver
 
     snap = controller.get_snapshot()
-    render(snap)
+    render_main_tab(snap)
     return snap
 
 
@@ -123,23 +145,25 @@ def _ensure_poll_mode_matches_state(snap: dict) -> None:
 
 @st.fragment(run_every="0.5s")
 def fast_live_update_fragment() -> None:
-    """Fast polling for short-latency states."""
-    snap = _drain_inbox_and_render()
+    """Fast polling for short-latency states — updates main tab only."""
+    snap = _drain_inbox_and_render_main()
     _ensure_poll_mode_matches_state(snap)
 
 
 @st.fragment(run_every="1.5s")
 def slow_live_update_fragment() -> None:
-    """Reduced polling cadence for long-running states."""
-    snap = _drain_inbox_and_render()
+    """Reduced polling cadence for long-running states — updates main tab only."""
+    snap = _drain_inbox_and_render_main()
     _ensure_poll_mode_matches_state(snap)
 
 
 def static_render_fragment() -> None:
-    """Render without periodic polling."""
-    from views.router import render
+    """Render main tab content without periodic polling."""
+    from views.router import render_main_tab
 
-    render()
+    controller = st.session_state.controller
+    snap = controller.get_snapshot()
+    render_main_tab(snap)
 
 
 def main() -> None:
@@ -167,12 +191,33 @@ def main() -> None:
         st.session_state.poll_mode = desired_mode
 
     mode = st.session_state.get("poll_mode", "off")
-    if mode == "fast":
-        fast_live_update_fragment()
-    elif mode == "slow":
-        slow_live_update_fragment()
-    else:
-        static_render_fragment()
+
+    # Tabs are created once per full page rerun (state transition, sidebar action, etc.).
+    # The polling fragment runs *inside* with main_tab: so only that tab's DOM is
+    # touched on each tick — Results/Compare/Explorer are unaffected by polling.
+    from views.results import render_results_view, render_comparison_view
+    from views.explorer import render_explorer_view
+
+    main_tab, results_tab, compare_tab, explorer_tab = st.tabs(
+        ["Main", "Results", "Compare Runs", "Dataset Explorer"]
+    )
+
+    with main_tab:
+        if mode == "fast":
+            fast_live_update_fragment()
+        elif mode == "slow":
+            slow_live_update_fragment()
+        else:
+            static_render_fragment()
+
+    with results_tab:
+        render_results_view(controller, snap)
+
+    with compare_tab:
+        render_comparison_view(controller, snap)
+
+    with explorer_tab:
+        render_explorer_view(controller, snap)
 
     st.divider()
     st.caption("Active Learning Framework v1.0 | Bachelor Thesis Project")

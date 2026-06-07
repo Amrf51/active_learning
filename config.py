@@ -31,10 +31,11 @@ class ExperimentConfig:
 @dataclass
 class DataConfig:
     data_dir: str = "data/raw"
+    test_dir: Optional[str] = None
     val_split: float = 0.15
     test_split: float = 0.15
     augmentation: bool = True
-    num_workers: int = 4
+    num_workers: int = 6
     image_size: int = 224
 
 
@@ -52,7 +53,7 @@ class TrainingConfig:
     learning_rate: float = 1e-4
     weight_decay: float = 1e-4
     optimizer: str = "adamw"
-    early_stopping_patience: int = 3
+    early_stopping_patience: int = 0  # 0 = disabled; N > 0 = stop after N epochs without improvement
     scheduler: str = "cosine"       # options: "cosine", "plateau", "none"
     warmup_epochs: int = 2
     grad_clip_norm: float = 1.0     # set to 0 to disable
@@ -128,19 +129,16 @@ class Config:
         # Validate data config
         if not (0.0 < self.data.val_split < 1.0):
             errors.append(f"data.val_split must be between 0 and 1, got {self.data.val_split}")
-        if not (0.0 < self.data.test_split < 1.0):
-            errors.append(f"data.test_split must be between 0 and 1, got {self.data.test_split}")
-        if self.data.val_split + self.data.test_split >= 1.0:
-            errors.append(f"data.val_split + data.test_split must be < 1.0")
+        if self.data.test_dir is None:
+            # test_split only applies when there is no dedicated test directory
+            if not (0.0 < self.data.test_split < 1.0):
+                errors.append(f"data.test_split must be between 0 and 1, got {self.data.test_split}")
+            if self.data.val_split + self.data.test_split >= 1.0:
+                errors.append(f"data.val_split + data.test_split must be < 1.0")
         if self.data.num_workers < 0:
             errors.append(f"data.num_workers must be >= 0, got {self.data.num_workers}")
         if self.data.image_size <= 0:
             errors.append(f"data.image_size must be > 0, got {self.data.image_size}")
-        
-        # Check data directory exists
-        data_path = Path(self.data.data_dir)
-        if not data_path.exists():
-            errors.append(f"data.data_dir does not exist: {self.data.data_dir}")
         
         # Validate training config
         if self.training.epochs <= 0:
@@ -167,6 +165,8 @@ class Config:
             errors.append(f"training.label_smoothing must be in [0, 1), got {self.training.label_smoothing}")
         if not (0.0 < self.training.backbone_lr_factor <= 1.0):
             errors.append(f"training.backbone_lr_factor must be in (0, 1], got {self.training.backbone_lr_factor}")
+        if self.training.early_stopping_patience < 0:
+            errors.append(f"training.early_stopping_patience must be >= 0 (0 = disabled), got {self.training.early_stopping_patience}")
         if self.training.freeze_backbone_epochs < 0:
             errors.append(f"training.freeze_backbone_epochs must be >= 0, got {self.training.freeze_backbone_epochs}")
         valid_loss_fns = ["cross_entropy", "supcon", "combined"]

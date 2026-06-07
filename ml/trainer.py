@@ -439,11 +439,15 @@ class Trainer:
     def should_stop_early(self) -> bool:
         """
         Check if early stopping criteria is met.
-        
+
         Returns:
-            True if training should stop
+            True if training should stop.
+            Always returns False when early_stopping_patience == 0 (disabled).
         """
-        return self.patience_counter >= self.config.training.early_stopping_patience
+        patience = self.config.training.early_stopping_patience
+        if patience == 0:
+            return False
+        return self.patience_counter >= patience
     
     def train(
         self,
@@ -517,24 +521,27 @@ class Trainer:
         all_preds = []
         all_labels = []
         all_probs = []
+        all_logits = []
 
         with torch.no_grad():
             for images, labels in test_loader:
                 images = images.to(self.device)
-                outputs = self.model(images)
-                probs = F.softmax(outputs, dim=1)
+                logits = self.model(images)
+                probs = F.softmax(logits, dim=1)
                 _, preds = probs.max(1)
                 all_preds.extend(preds.cpu().numpy())
                 all_labels.extend(labels.cpu().numpy())
                 all_probs.append(probs.cpu().numpy())
+                all_logits.append(logits.cpu().numpy())
 
         all_probs = np.vstack(all_probs)
+        all_logits = np.vstack(all_logits)
 
         accuracy = accuracy_score(all_labels, all_preds)
         precision, recall, f1, _ = precision_recall_fscore_support(
             all_labels, all_preds, average="weighted", zero_division=0
         )
-        
+
         # Compute and optionally save confusion matrix
         if save_cm_path is not None:
             cm = confusion_matrix(all_labels, all_preds)
@@ -543,7 +550,7 @@ class Trainer:
             # Save as numpy array (not in JSON - too large)
             np.save(save_cm_path, cm)
             logger.info(f"Confusion matrix saved to {save_cm_path}")
-        
+
         # Expected Calibration Error (ECE) — 15 equal-width confidence bins
         confidences = all_probs.max(axis=1)
         correct = (np.array(all_preds) == np.array(all_labels)).astype(float)
@@ -558,14 +565,9 @@ class Trainer:
                 ece += mask.sum() * abs(bin_conf - bin_acc)
         ece = float(ece / len(all_labels))
 
-        # ECE after Temperature Scaling (reuse same bins, no extra GPU forward pass)
-        scaled_logits_all = []
-        with torch.no_grad():
-            for images, _ in test_loader:
-                logits = self.model(images.to(self.device))
-                scaled_logits_all.append((logits / self.temperature).cpu().numpy())
-        scaled_logits_all = np.vstack(scaled_logits_all)
-        exp_l = np.exp(scaled_logits_all - scaled_logits_all.max(axis=1, keepdims=True))
+        # ECE after Temperature Scaling — reuse logits from the single forward pass
+        scaled_logits = all_logits / self.temperature
+        exp_l = np.exp(scaled_logits - scaled_logits.max(axis=1, keepdims=True))
         scaled_probs = exp_l / exp_l.sum(axis=1, keepdims=True)
         scaled_conf = scaled_probs.max(axis=1)
         scaled_correct = (scaled_probs.argmax(axis=1) == np.array(all_labels)).astype(float)

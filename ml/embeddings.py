@@ -7,7 +7,8 @@ Usage in active_loop.py:
 """
 
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
+import threading
 import numpy as np
 import logging
 
@@ -92,6 +93,22 @@ def save_cycle_embeddings(
     return str(path)
 
 
+def _run_umap_background(
+    all_embeddings: np.ndarray,
+    all_labels: np.ndarray,
+    all_pool: np.ndarray,
+    exp_dir: Path,
+    cycle: int,
+    uncertainty_scores: Optional[np.ndarray] = None,
+) -> None:
+    """Run UMAP projection + save in a background thread."""
+    try:
+        coords_2d = compute_umap_projection(all_embeddings)
+        save_cycle_embeddings(exp_dir, cycle, coords_2d, all_labels, all_pool, uncertainty_scores)
+    except Exception:
+        logger.exception("Background UMAP failed for cycle %d", cycle)
+
+
 def build_cycle_embeddings(
     trainer,
     data_manager,
@@ -99,16 +116,20 @@ def build_cycle_embeddings(
     cycle: int,
     rng: np.random.Generator,
     queried_abs_indices: Optional[List[int]] = None,
+    heartbeat_fn: Optional[Callable[[], None]] = None,
 ) -> Optional[str]:
     """High-level helper called from active_loop.finalize_cycle().
 
     Extracts embeddings for the labeled pool + a capped sample of the
-    unlabeled pool, runs UMAP, and saves the result.
+    unlabeled pool, runs UMAP in a background thread, and returns the
+    expected .npz path immediately.
 
     Args:
         queried_abs_indices: Absolute dataset indices of samples queried in
             the *previous* cycle.  These are now in the labeled pool and will
             be marked as pool=2 ("Queried this cycle") in the saved .npz.
+        heartbeat_fn: Optional callback to keep worker heartbeat fresh
+            during embedding extraction.
 
     Returns:
         Path to the .npz file, or None if umap-learn is not installed.
@@ -128,26 +149,35 @@ def build_cycle_embeddings(
     )
     emb_labeled, lbl_labeled = trainer.get_embeddings(labeled_loader)
     pool_labeled = np.zeros(len(lbl_labeled), dtype=np.int8)  # 0 = labeled
+    if heartbeat_fn:
+        heartbeat_fn()
 
     # Unlabeled pool (capped)
     unlabeled_indices = data_manager._unlabeled_list
-    if len(unlabeled_indices) > UMAP_UNLABELED_SAMPLE_LIMIT:
-        sample_idx = rng.choice(
-            len(unlabeled_indices), size=UMAP_UNLABELED_SAMPLE_LIMIT, replace=False
+    emb_unlabeled = np.empty((0, emb_labeled.shape[1]), dtype=emb_labeled.dtype)
+    lbl_unlabeled = np.empty(0, dtype=lbl_labeled.dtype)
+    unlabeled_loader = None
+    if len(unlabeled_indices) > 0:
+        if len(unlabeled_indices) > UMAP_UNLABELED_SAMPLE_LIMIT:
+            sample_idx = rng.choice(
+                len(unlabeled_indices), size=UMAP_UNLABELED_SAMPLE_LIMIT, replace=False
+            )
+            sampled = [unlabeled_indices[i] for i in sample_idx]
+        else:
+            sampled = unlabeled_indices
+
+        from .data_manager import PoolSubset
+        from torch.utils.data import DataLoader
+        subset = PoolSubset(data_manager.dataset, sampled)
+        unlabeled_loader = DataLoader(
+            subset, batch_size=batch_size, shuffle=False,
+            num_workers=num_workers, persistent_workers=num_workers > 0,
         )
-        sampled = [unlabeled_indices[i] for i in sample_idx]
-    else:
-        sampled = unlabeled_indices
+        emb_unlabeled, lbl_unlabeled = trainer.get_embeddings(unlabeled_loader)
+        if heartbeat_fn:
+            heartbeat_fn()
 
-    from .data_manager import PoolSubset
-    from torch.utils.data import DataLoader
-    subset = PoolSubset(data_manager.dataset, sampled)
-    unlabeled_loader = DataLoader(
-        subset, batch_size=batch_size, shuffle=False, num_workers=num_workers
-    )
-    emb_unlabeled, lbl_unlabeled = trainer.get_embeddings(unlabeled_loader)
     pool_unlabeled = np.ones(len(lbl_unlabeled), dtype=np.int8)  # 1 = unlabeled
-
     all_embeddings = np.vstack([emb_labeled, emb_unlabeled])
     all_labels = np.concatenate([lbl_labeled, lbl_unlabeled])
     all_pool = np.concatenate([pool_labeled, pool_unlabeled])
@@ -164,5 +194,30 @@ def build_cycle_embeddings(
         if marked:
             logger.info("Marked %d queried points as pool=2 in cycle %d UMAP", marked, cycle)
 
-    coords_2d = compute_umap_projection(all_embeddings)
-    return save_cycle_embeddings(exp_dir, cycle, coords_2d, all_labels, all_pool)
+    # Compute entropy-based uncertainty for every point (second inference pass).
+    # Labeled points typically have low entropy; unlabeled points span the full range,
+    # making the colormap useful for showing where the AL strategy focuses.
+    uncertainty_scores: Optional[np.ndarray] = None
+    try:
+        _, prob_labeled = trainer.get_predictions_for_loader(labeled_loader)
+        if unlabeled_loader is not None:
+            _, prob_unlabeled = trainer.get_predictions_for_loader(unlabeled_loader)
+            all_probs = np.vstack([prob_labeled, prob_unlabeled])
+        else:
+            all_probs = prob_labeled
+        uncertainty_scores = trainer.compute_uncertainty_scores(all_probs, method="entropy")
+        if heartbeat_fn:
+            heartbeat_fn()
+    except Exception:
+        logger.warning("Uncertainty score computation failed — UMAP will be saved without uncertainty.", exc_info=True)
+
+    # Deterministic path — return immediately, UMAP runs in background
+    expected_path = str(Path(exp_dir) / "embeddings" / f"cycle_{cycle}.npz")
+
+    threading.Thread(
+        target=_run_umap_background,
+        args=(all_embeddings, all_labels, all_pool, exp_dir, cycle, uncertainty_scores),
+        daemon=True,
+    ).start()
+
+    return expected_path

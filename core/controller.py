@@ -30,8 +30,10 @@ class Controller:
         self.state = ExperimentState()
 
     def _enforce_ui_safety(self, config: Any) -> None:
-        # Streamlit mode should not spawn dataloader workers.
-        config.data.num_workers = 0
+        import sys
+        if sys.platform == "win32":
+            # DataLoader workers inside a daemon thread deadlock on Windows.
+            config.data.num_workers = 0
 
     def _sanitize_experiment_name(self, name: Any) -> str:
         """Return a filesystem-safe experiment folder name."""
@@ -81,16 +83,20 @@ class Controller:
             case EventType.EPOCH_DONE:
                 snap = self.state.snapshot()
                 metrics = dict(event.data.get("metrics", {}))
+                if event.data.get("early_stopped"):
+                    metrics["early_stopped"] = True
+                    metrics["patience"] = int(event.data.get("patience", 0))
                 epoch_metrics = list(snap["epoch_metrics"])
                 epoch_metrics.append(metrics)
                 epoch = int(event.data.get("epoch", metrics.get("epoch", 0)))
                 total_epochs = int(event.data.get("total_epochs", 0))
+                early_tag = " (early stopped)" if event.data.get("early_stopped") else ""
                 self.state.update_for_run(
                     event.run_id,
                     app_state=AppState.TRAINING,
                     current_epoch=epoch,
                     epoch_metrics=epoch_metrics,
-                    progress_detail=f"Cycle {event.cycle} - Epoch {epoch}/{total_epochs}",
+                    progress_detail=f"Cycle {event.cycle} - Epoch {epoch}/{total_epochs}{early_tag}",
                 )
             case EventType.EVAL_COMPLETE:
                 snap = self.state.snapshot()
@@ -219,9 +225,10 @@ class Controller:
         command_queue: "queue.Queue[Any]" = queue.Queue()
         self.state.command_queue = command_queue
 
+        heartbeat_fn = lambda: self.state.touch_heartbeat(run_id)  # noqa: E731
         thread = threading.Thread(
             target=run_experiment,
-            args=(command_queue, self.state.inbox, config, run_dir, run_id),
+            args=(command_queue, self.state.inbox, config, run_dir, run_id, heartbeat_fn),
             daemon=True,
             name=f"ALThread-{run_id[:8]}",
         )

@@ -229,34 +229,36 @@ class ALDataManager:
         self,
         batch_size: int = 32,
         shuffle: bool = True,
-        num_workers: int = 4
+        num_workers: int = 0
     ) -> DataLoader:
         """Get DataLoader for labeled samples."""
         subset = PoolSubset(self.dataset, self._labeled_list)
-        
+
         return DataLoader(
             subset,
             batch_size=batch_size,
             shuffle=shuffle,
             num_workers=num_workers,
-            pin_memory=torch.cuda.is_available()
+            pin_memory=torch.cuda.is_available(),
+            persistent_workers=num_workers > 0,
         )
-    
+
     def get_unlabeled_loader(
         self,
         batch_size: int = 32,
         shuffle: bool = False,
-        num_workers: int = 4
+        num_workers: int = 0
     ) -> DataLoader:
         """Get DataLoader for unlabeled samples."""
         subset = PoolSubset(self.dataset, self._unlabeled_list)
-        
+
         return DataLoader(
             subset,
             batch_size=batch_size,
             shuffle=shuffle,
             num_workers=num_workers,
-            pin_memory=torch.cuda.is_available()
+            pin_memory=torch.cuda.is_available(),
+            persistent_workers=num_workers > 0,
         )
     
     def get_unlabeled_indices(self) -> List[int]:

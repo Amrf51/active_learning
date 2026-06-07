@@ -3,17 +3,18 @@
 # ──────────────────────────────────────
 
 experiment:
-  name: "mwpTest"
+  name: "stanford_cars_al"
   seed: 42
   device: "auto"             # "auto", "cuda", "cpu"
   exp_dir: "experiments/"
 
 data:
-  data_dir: "data/raw/kaggle-vehicle"
+  data_dir: "data/raw/Stanford_Cars/car_data/train"
+  test_dir: "data/raw/Stanford_Cars/car_data/test"  # official test split
   val_split: 0.15
-  test_split: 0.15
+  test_split: 0.0            # ignored when test_dir is set
   augmentation: true
-  num_workers: 0  # Set to 0 to avoid multiprocessing issues
+  num_workers: 6  # Parallel data loading (safe on Linux cluster)
   image_size: 224
 
 model:
@@ -27,7 +28,7 @@ training:
   learning_rate: 1.0e-4
   weight_decay: 1.0e-4
   optimizer: "adam"          # "adam", "adamw", "sgd"
-  early_stopping_patience: 3
+  early_stopping_patience: 0    # 0 = disabled; set > 0 to enable (e.g. 5)
 
 active_learning:
   num_cycles: 10

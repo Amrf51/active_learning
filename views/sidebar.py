@@ -156,10 +156,31 @@ def render_training_hyperparameters() -> Dict[str, Any]:
     epochs = st.sidebar.slider(
         "Epochs per Cycle",
         min_value=1,
-        max_value=20,
-        value=5,
-        help="Number of training epochs per active learning cycle"
+        max_value=1000,
+        value=10,
+        help="Maximum training epochs per active learning cycle (may stop earlier if early stopping is enabled)"
     )
+
+    enable_early_stopping = st.sidebar.checkbox(
+        "Enable Early Stopping",
+        value=False,
+        help="Stop training early if validation accuracy does not improve. "
+             "When disabled, all configured epochs will run."
+    )
+
+    if enable_early_stopping:
+        early_stopping = st.sidebar.slider(
+            "Early Stopping Patience",
+            min_value=1,
+            max_value=10,
+            value=5,
+            help="Stop training if validation accuracy does not improve for this many consecutive epochs"
+        )
+        st.sidebar.caption(
+            f"Training runs up to {epochs} epochs, stopping early after {early_stopping} epochs without improvement."
+        )
+    else:
+        early_stopping = 0
     
     batch_size = st.sidebar.select_slider(
         "Batch Size",
@@ -193,14 +214,6 @@ def render_training_hyperparameters() -> Dict[str, Any]:
             help="Optimization algorithm"
         )
         
-        early_stopping = st.number_input(
-            "Early Stopping Patience",
-            min_value=1,
-            max_value=10,
-            value=3,
-            help="Stop training if no improvement for N epochs"
-        )
-
         scheduler = st.selectbox(
             "LR Scheduler",
             ["cosine", "plateau", "none"],
@@ -280,7 +293,7 @@ def render_al_settings() -> Dict[str, Any]:
     num_cycles = st.sidebar.slider(
         "Number of Cycles",
         min_value=1,
-        max_value=20,
+        max_value=50,
         value=10,
         help="Total number of active learning cycles to run"
     )
@@ -307,7 +320,6 @@ def render_al_settings() -> Dict[str, Any]:
         initial_pool_size = st.number_input(
             "Initial Pool Size",
             min_value=10,
-            max_value=500,
             value=100,
             help="Number of labeled samples to start with"
         )
@@ -395,7 +407,9 @@ def render_experiment_controls(
             from config import load_config
 
             new_config = load_config(overrides=config_overrides)
-            new_config.data.num_workers = 0
+            import sys
+            if sys.platform == "win32":
+                new_config.data.num_workers = 0
             st.session_state.config = new_config
             run_id = controller.dispatch(
                 Event(

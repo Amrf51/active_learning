@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(streamlit run app.py)",
+      "Bash(python *)",
+      "Bash(pip install *)",
+      "Bash(pip show *)",
+      "Bash(pip list)",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(git stash*)",
+      "Bash(git checkout *)",
+      "Bash(ls *)",
+      "Bash(cat configs/*)",
+      "Bash(cat requirements.txt)",
+      "Bash(python -c *)",
+      "Bash(python -m json.tool *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(rm experiments/*)",
+      "Bash(rm data/*)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)"
+    ]
+  }
+}
