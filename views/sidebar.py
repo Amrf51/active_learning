@@ -12,7 +12,8 @@ The sidebar collects user configuration and dispatches commands to the Controlle
 """
 
 import streamlit as st
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
+from pathlib import Path
 import logging
 from core.controller import Controller
 from core.events import Event, EventType
@@ -51,6 +52,57 @@ def render_experiment_settings() -> str:
         st.sidebar.caption("Empty name reverted to default experiment name.")
 
     return experiment_name
+
+
+# ============================================================================
+# Config file picker + seed (enables dataset configs like neu.yaml + the seed grid)
+# ============================================================================
+
+def render_config_and_seed() -> Tuple[str, int]:
+    """
+    Render the base config-file selector and the seed control.
+
+    The selected YAML becomes the base config loaded at Start. ``default.yaml``
+    keeps the existing behavior (sidebar widgets drive everything); any other
+    config (e.g. ``neu.yaml``) is treated as authoritative for model/training/AL
+    settings, with only name/seed/strategy overridden from the sidebar.
+
+    Returns:
+        (selected_config_filename, seed)
+    """
+    st.sidebar.markdown("### Dataset / Config")
+
+    config_dir = Path("configs")
+    config_files = sorted(p.name for p in config_dir.glob("*.yaml"))
+    if "default.yaml" not in config_files:
+        config_files = ["default.yaml"] + config_files
+    default_idx = config_files.index("default.yaml")
+
+    selected_config = st.sidebar.selectbox(
+        "Base Config",
+        config_files,
+        index=default_idx,
+        help="Base YAML loaded at Start. 'default.yaml' uses the sidebar settings "
+             "below; any other config supplies model/training/AL settings itself.",
+    )
+
+    if selected_config != "default.yaml":
+        st.sidebar.caption(
+            f"Model, training and AL settings come from configs/{selected_config}. "
+            "Only the experiment name, seed and sampling strategy are taken from the sidebar."
+        )
+
+    seed = int(
+        st.sidebar.number_input(
+            "Seed",
+            min_value=0,
+            value=42,
+            step=1,
+            help="Random seed for the run (vary across 42/123/7 for the seed grid).",
+        )
+    )
+
+    return selected_config, seed
 
 
 # ============================================================================
@@ -365,6 +417,7 @@ def render_experiment_controls(
     controller: Controller,
     snap: Dict[str, Any],
     config_overrides: Dict[str, Any],
+    selected_config: str = "default.yaml",
 ) -> None:
     """
     Render experiment control buttons (Start/Stop).
@@ -403,10 +456,25 @@ def render_experiment_controls(
         help="Start the first active learning cycle" if not start_disabled else "Cannot start from current state"
     ):
         try:
-            # Use overrides computed from current sidebar widget values.
             from config import load_config
 
-            new_config = load_config(overrides=config_overrides)
+            if selected_config and selected_config != "default.yaml":
+                # An experiment config (e.g. neu.yaml) is authoritative for
+                # model/training/AL settings; only override what the run varies.
+                minimal_overrides = {
+                    "experiment.name": config_overrides["experiment.name"],
+                    "experiment.seed": config_overrides["experiment.seed"],
+                    "active_learning.sampling_strategy": config_overrides[
+                        "active_learning.sampling_strategy"
+                    ],
+                }
+                new_config = load_config(
+                    config_path=f"configs/{selected_config}",
+                    overrides=minimal_overrides,
+                )
+            else:
+                # default.yaml: sidebar widget values drive everything.
+                new_config = load_config(overrides=config_overrides)
             import sys
             if sys.platform == "win32":
                 new_config.data.num_workers = 0
@@ -511,14 +579,16 @@ def render_sidebar(controller: Controller) -> Dict[str, Any]:
     
     # Render all sections
     experiment_name = render_experiment_settings()
+    selected_config, seed = render_config_and_seed()
     model_name = render_model_selection()
     strategy = render_strategy_selection()
     training_params = render_training_hyperparameters()
     al_params = render_al_settings()
-    
+
     # Build config overrides dictionary
     config_overrides = {
         "experiment.name": experiment_name,
+        "experiment.seed": seed,
         "model.name": model_name,
         "active_learning.sampling_strategy": strategy,
         "training.epochs": training_params["epochs"],
@@ -548,7 +618,7 @@ def render_sidebar(controller: Controller) -> Dict[str, Any]:
 
     # Render controls using current overrides (not previous rerun values).
     snap = controller.get_snapshot()
-    render_experiment_controls(controller, snap, config_overrides)
+    render_experiment_controls(controller, snap, config_overrides, selected_config)
     
     return config_overrides
 
