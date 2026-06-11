@@ -1,5 +1,6 @@
 # Data directories
 data/
+Neu_Surface
 
 # Python cache
 __pycache__/
