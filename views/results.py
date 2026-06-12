@@ -216,6 +216,105 @@ def render_accuracy_progression_chart(metrics_history: List[Dict[str, Any]]) -> 
             st.metric(label="Improvement", value=f"+{improvement:.2f}%", delta=f"{improvement:.2f}%")
 
 
+def render_learning_curve_budget(metrics_history: List[Dict[str, Any]]) -> None:
+    """Canonical AL learning curve: test accuracy vs number of labeled samples."""
+    st.markdown("### Accuracy vs Labeled Budget")
+    if not metrics_history:
+        st.info("Learning curve will appear after cycles complete")
+        return
+
+    df = pd.DataFrame(
+        {
+            "Labeled Samples": [m.get("labeled_pool_size", 0) for m in metrics_history],
+            "Test Accuracy": [m.get("test_accuracy", 0) * 100 for m in metrics_history],
+            "Val Accuracy": [m.get("best_val_accuracy", 0) * 100 for m in metrics_history],
+        }
+    ).sort_values("Labeled Samples")
+    st.line_chart(df, x="Labeled Samples", y=["Test Accuracy", "Val Accuracy"], height=400)
+    st.caption(
+        "Test/validation accuracy as a function of labeled-pool size — the standard "
+        "active-learning budget curve (x-axis = annotation cost)."
+    )
+
+
+def render_per_class_evolution(
+    metrics_history: List[Dict[str, Any]],
+    widget_prefix: str = "live",
+) -> None:
+    """Per-class precision/recall/F1 evolution across cycles.
+
+    Reads ``per_class_metrics`` ({class: {precision, recall, f1}}) saved per cycle.
+    For high class counts, defaults to the most-improved and least-performing
+    classes so the chart stays legible.
+    """
+    st.markdown("### Per-Class Metrics Evolution")
+
+    per_class_cycles = [m.get("per_class_metrics") for m in metrics_history]
+    if not any(per_class_cycles):
+        st.info("Per-class metrics will appear after cycle evaluation (requires class names).")
+        return
+
+    metric_key = {"F1": "f1", "Precision": "precision", "Recall": "recall"}[
+        st.radio(
+            "Metric",
+            options=["F1", "Precision", "Recall"],
+            horizontal=True,
+            key=f"{widget_prefix}_per_class_metric",
+        )
+    ]
+
+    cycles = [m.get("cycle", i + 1) for i, m in enumerate(metrics_history)]
+    # class -> list of metric values aligned to `cycles` (None where absent)
+    all_classes = sorted({c for pc in per_class_cycles if pc for c in pc.keys()})
+    series: Dict[str, List[Any]] = {}
+    for cls in all_classes:
+        series[cls] = [
+            (pc.get(cls, {}) or {}).get(metric_key) if pc else None
+            for pc in per_class_cycles
+        ]
+
+    # Rank by first->last delta to surface the interesting classes.
+    def _delta(values: List[Any]) -> float:
+        vals = [v for v in values if v is not None]
+        return (vals[-1] - vals[0]) if len(vals) >= 2 else 0.0
+
+    ranked = sorted(all_classes, key=lambda c: _delta(series[c]))
+    n = min(5, len(all_classes))
+    default_classes = list(dict.fromkeys(ranked[:n] + ranked[-n:]))  # worst + best, deduped
+
+    selected = st.multiselect(
+        "Classes to plot",
+        options=all_classes,
+        default=default_classes,
+        key=f"{widget_prefix}_per_class_select",
+    )
+    if not selected:
+        st.info("Select at least one class to plot.")
+        return
+
+    chart_df = pd.DataFrame({"Cycle": cycles})
+    for cls in selected:
+        chart_df[cls] = series[cls]
+    st.line_chart(chart_df.set_index("Cycle"), height=400)
+
+    # Companion table: first -> last delta for the selected classes.
+    delta_rows = []
+    for cls in selected:
+        vals = [v for v in series[cls] if v is not None]
+        if not vals:
+            continue
+        delta_rows.append(
+            {
+                "Class": cls,
+                "First": f"{vals[0]:.3f}",
+                "Last": f"{vals[-1]:.3f}",
+                "Δ": f"{vals[-1] - vals[0]:+.3f}",
+            }
+        )
+    if delta_rows:
+        st.dataframe(pd.DataFrame(delta_rows), width="stretch", hide_index=True)
+
+
 def render_ece_chart(metrics_history: List[Dict[str, Any]]) -> None:
     st.markdown("### Calibration (ECE) Across Cycles")
     ece_rows = []
@@ -595,20 +694,36 @@ def _build_umap_figure(
     height: int = 550,
     show_legend: bool = True,
     uncertainty=None,
+    group_by_body_type: bool = False,
 ):
-    """Build a Plotly Figure for a single UMAP embedding snapshot."""
+    """Build a Plotly Figure for a single UMAP embedding snapshot.
+
+    Styled for thesis screenshots: white background, equal-aspect axes with
+    hidden (meaningless) UMAP tick labels, and queried points drawn last so they
+    sit on top of the pool.
+    """
     import plotly.graph_objects as go
 
     fig = go.Figure()
 
     if color_mode == "Pool Membership":
+        # Draw Labeled/Unlabeled first, Queried last so it sits on top.
         pool_labels = {0: "Labeled", 1: "Unlabeled", 2: "Queried"}
         pool_colors = {0: "#2196F3", 1: "#BDBDBD", 2: "#FF5722"}
-        pool_sizes = {0: 4, 1: 4, 2: 6}
-        for pool_val, pool_name in pool_labels.items():
+        pool_sizes = {0: 5, 1: 4, 2: 10}
+        for pool_val in (1, 0, 2):
+            pool_name = pool_labels[pool_val]
             mask = pool == pool_val
             if not mask.any():
                 continue
+            marker = dict(
+                size=pool_sizes[pool_val],
+                opacity=0.55 if pool_val == 1 else 0.85,
+                color=pool_colors[pool_val],
+            )
+            if pool_val == 2:
+                marker["line"] = dict(width=1.0, color="#212121")
+                marker["symbol"] = "diamond"
             fig.add_trace(
                 go.Scattergl(
                     x=coords[mask, 0].tolist(),
@@ -616,11 +731,7 @@ def _build_umap_figure(
                     mode="markers",
                     name=pool_name,
                     legendgroup=pool_name,
-                    marker=dict(
-                        size=pool_sizes[pool_val],
-                        opacity=0.7,
-                        color=pool_colors[pool_val],
-                    ),
+                    marker=marker,
                 )
             )
     elif color_mode == "Uncertainty" and uncertainty is not None:
@@ -631,8 +742,8 @@ def _build_umap_figure(
                 mode="markers",
                 name="Uncertainty",
                 marker=dict(
-                    size=4,
-                    opacity=0.7,
+                    size=5,
+                    opacity=0.75,
                     color=uncertainty.tolist(),
                     colorscale="Plasma",
                     colorbar=dict(title="Entropy", thickness=14),
@@ -641,10 +752,23 @@ def _build_umap_figure(
             )
         )
     else:
-        unique_labels = sorted(set(int(l) for l in labels))
-        for label_idx in unique_labels:
-            mask = labels == label_idx
-            name = class_names[label_idx] if label_idx < len(class_names) else str(label_idx)
+        # Class-label coloring. With many classes the legend is unreadable, so
+        # optionally collapse to body-type buckets (~9) via _class_to_body_type.
+        import numpy as np
+
+        def _name_for(idx: int) -> str:
+            raw = class_names[idx] if idx < len(class_names) else str(idx)
+            return _class_to_body_type(raw) if group_by_body_type else raw
+
+        label_to_group = {idx: _name_for(idx) for idx in set(int(l) for l in labels)}
+        group_to_members: Dict[str, List[int]] = {}
+        for idx, name in label_to_group.items():
+            group_to_members.setdefault(name, []).append(idx)
+
+        for name in sorted(group_to_members.keys()):
+            mask = np.isin(labels, group_to_members[name])
+            if not mask.any():
+                continue
             fig.add_trace(
                 go.Scattergl(
                     x=coords[mask, 0].tolist(),
@@ -652,18 +776,25 @@ def _build_umap_figure(
                     mode="markers",
                     name=name,
                     legendgroup=name,
-                    marker=dict(size=4, opacity=0.7),
+                    marker=dict(size=5, opacity=0.75),
                 )
             )
 
     fig.update_layout(
-        title=title,
+        title=dict(text=title, font=dict(size=18)),
+        template="plotly_white",
         xaxis_title="UMAP 1",
         yaxis_title="UMAP 2",
-        legend=dict(itemsizing="constant"),
+        legend=dict(itemsizing="constant", x=1.02, y=1, xanchor="left"),
         showlegend=show_legend,
         height=height,
-        margin=dict(l=40, r=20, t=50, b=40),
+        margin=dict(l=40, r=20, t=55, b=40),
+    )
+    # UMAP units are arbitrary — hide ticks, keep equal aspect so shapes are honest.
+    fig.update_xaxes(showticklabels=False, ticks="", zeroline=False)
+    fig.update_yaxes(
+        showticklabels=False, ticks="", zeroline=False,
+        scaleanchor="x", scaleratio=1,
     )
     return fig
 
@@ -822,8 +953,8 @@ def render_umap_evolution(
         if (Path(run_dir) / "embeddings" / f"cycle_{c}.npz").exists()
     ]
 
-    if len(available_cycles) < 2:
-        st.info("At least 2 cycles with embeddings are needed for the evolution view.")
+    if len(available_cycles) < 1:
+        st.info("UMAP embeddings will appear here once the first cycle's projection is saved.")
         return
 
     class_names = list(snap.get("class_names", []))
@@ -848,6 +979,17 @@ def render_umap_evolution(
         horizontal=True,
         key=f"{widget_prefix}_umap_evo_color_mode",
     )
+
+    # With many classes the per-class legend is unreadable — offer a body-type
+    # grouping (~9 buckets). Default on for large class counts.
+    group_by_body_type = False
+    many_classes = len(class_names) > 20
+    if color_mode == "Class Label":
+        group_by_body_type = st.checkbox(
+            "Group classes by body type",
+            value=many_classes,
+            key=f"{widget_prefix}_umap_evo_group_body",
+        )
 
     # Display mode
     display_mode = st.radio(
@@ -874,6 +1016,7 @@ def render_umap_evolution(
             d["coords"], d["labels"], d["pool"],
             class_names, color_mode, title,
             uncertainty=d.get("uncertainty"),
+            group_by_body_type=group_by_body_type,
         )
         st.plotly_chart(fig, width='stretch')
 
@@ -903,12 +1046,13 @@ def render_umap_evolution(
                     continue
                 d = emb_data[cyc]
                 title = f"Cycle {cyc}"
-                show_legend = (i == 0) and color_mode == "Pool Membership"
+                show_legend = (i == 0) and color_mode in ("Pool Membership", "Class Label")
                 fig = _build_umap_figure(
                     d["coords"], d["labels"], d["pool"],
                     class_names, color_mode, title,
                     height=400, show_legend=show_legend,
                     uncertainty=d.get("uncertainty"),
+                    group_by_body_type=group_by_body_type,
                 )
                 st.plotly_chart(fig, width='stretch')
                 n_queried = int(np.sum(d["pool"] == 2))
@@ -1114,11 +1258,15 @@ def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:
 
     render_accuracy_progression_chart(metrics_history)
     st.markdown("---")
+    render_learning_curve_budget(metrics_history)
+    st.markdown("---")
     render_ece_chart(metrics_history)
     st.markdown("---")
     render_metrics_table(metrics_history)
     st.markdown("---")
     render_best_cycle_summary(metrics_history)
+    st.markdown("---")
+    render_per_class_evolution(metrics_history, widget_prefix=widget_prefix)
     st.markdown("---")
     render_probe_predictions(metrics_history, selected_snap, widget_prefix=widget_prefix)
     st.markdown("---")

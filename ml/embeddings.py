@@ -2,13 +2,16 @@
 embeddings.py — UMAP projection and persistence for cycle-level embeddings.
 
 Usage in active_loop.py:
-    coords_2d = compute_umap_projection(embeddings)
-    path = save_cycle_embeddings(exp_dir, cycle, coords_2d, labels, pool_membership)
+    path = build_cycle_embeddings(trainer, data_manager, exp_dir, cycle, rng, ...)
+
+build_cycle_embeddings() projects with a run-wide shared UMAP reducer
+(project_with_shared_reducer) so coordinates stay aligned across cycles, and
+saves synchronously so the .npz exists when it returns.
 """
 
 from pathlib import Path
 from typing import Callable, List, Optional
-import threading
+import pickle
 import numpy as np
 import logging
 
@@ -18,6 +21,10 @@ logger = logging.getLogger(__name__)
 # Keeps computation time reasonable for large pools (Stanford Cars ~16K).
 UMAP_UNLABELED_SAMPLE_LIMIT = 2000
 
+# Filename for the persisted UMAP reducer, shared across all cycles of a run so
+# that 2-D coordinates live in the same space and the evolution view is coherent.
+REDUCER_FILENAME = "umap_reducer.pkl"
+
 
 def compute_umap_projection(
     embeddings: np.ndarray,
@@ -26,7 +33,7 @@ def compute_umap_projection(
     metric: str = "cosine",
     random_state: int = 42,
 ) -> np.ndarray:
-    """Project high-D embeddings to 2D using UMAP.
+    """Project high-D embeddings to 2D using a freshly-fitted UMAP reducer.
 
     Args:
         embeddings:    [N, D] float array of backbone feature vectors
@@ -38,6 +45,24 @@ def compute_umap_projection(
     Returns:
         [N, 2] float array of 2-D coordinates
     """
+    coords, _ = _fit_reducer(
+        embeddings,
+        n_neighbors=n_neighbors,
+        min_dist=min_dist,
+        metric=metric,
+        random_state=random_state,
+    )
+    return coords
+
+
+def _fit_reducer(
+    embeddings: np.ndarray,
+    n_neighbors: int = 15,
+    min_dist: float = 0.1,
+    metric: str = "cosine",
+    random_state: int = 42,
+):
+    """Fit a UMAP reducer and return (coords_2d, fitted_reducer)."""
     try:
         import umap  # umap-learn
     except ImportError:
@@ -46,6 +71,8 @@ def compute_umap_projection(
             "Install it with: pip install umap-learn"
         )
 
+    # n_neighbors must be < n_samples; clamp for tiny initial pools.
+    n_neighbors = max(2, min(n_neighbors, len(embeddings) - 1))
     reducer = umap.UMAP(
         n_neighbors=n_neighbors,
         min_dist=min_dist,
@@ -53,7 +80,42 @@ def compute_umap_projection(
         n_components=2,
         random_state=random_state,
     )
-    return reducer.fit_transform(embeddings).astype(np.float32)
+    coords = reducer.fit_transform(embeddings).astype(np.float32)
+    return coords, reducer
+
+
+def project_with_shared_reducer(embeddings: np.ndarray, exp_dir: Path) -> np.ndarray:
+    """Project embeddings into a 2-D space that is consistent across cycles.
+
+    The first cycle fits a UMAP reducer and persists it to
+    ``{exp_dir}/embeddings/{REDUCER_FILENAME}``. Later cycles load that reducer
+    and only ``transform`` their points, so the axes stay fixed and the evolution
+    view is coherent rather than rotating/flipping each cycle.
+
+    Falls back to a fresh fit if the persisted reducer cannot be loaded or used.
+    """
+    reducer_path = Path(exp_dir) / "embeddings" / REDUCER_FILENAME
+
+    if reducer_path.exists():
+        try:
+            with open(reducer_path, "rb") as f:
+                reducer = pickle.load(f)
+            return reducer.transform(embeddings).astype(np.float32)
+        except Exception:
+            logger.warning(
+                "Failed to reuse persisted UMAP reducer at %s — refitting (cycles "
+                "may not be aligned).", reducer_path, exc_info=True,
+            )
+
+    # First cycle (or fallback): fit a new reducer and persist it.
+    coords, reducer = _fit_reducer(embeddings)
+    try:
+        reducer_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(reducer_path, "wb") as f:
+            pickle.dump(reducer, f)
+    except Exception:
+        logger.warning("Failed to persist UMAP reducer to %s.", reducer_path, exc_info=True)
+    return coords
 
 
 def save_cycle_embeddings(
@@ -93,22 +155,6 @@ def save_cycle_embeddings(
     return str(path)
 
 
-def _run_umap_background(
-    all_embeddings: np.ndarray,
-    all_labels: np.ndarray,
-    all_pool: np.ndarray,
-    exp_dir: Path,
-    cycle: int,
-    uncertainty_scores: Optional[np.ndarray] = None,
-) -> None:
-    """Run UMAP projection + save in a background thread."""
-    try:
-        coords_2d = compute_umap_projection(all_embeddings)
-        save_cycle_embeddings(exp_dir, cycle, coords_2d, all_labels, all_pool, uncertainty_scores)
-    except Exception:
-        logger.exception("Background UMAP failed for cycle %d", cycle)
-
-
 def build_cycle_embeddings(
     trainer,
     data_manager,
@@ -121,8 +167,14 @@ def build_cycle_embeddings(
     """High-level helper called from active_loop.finalize_cycle().
 
     Extracts embeddings for the labeled pool + a capped sample of the
-    unlabeled pool, runs UMAP in a background thread, and returns the
-    expected .npz path immediately.
+    unlabeled pool, projects them with a run-wide shared UMAP reducer, and
+    saves the .npz synchronously before returning.
+
+    The projection runs synchronously (not in a background thread) so the
+    .npz file is guaranteed to exist when this returns — a fire-and-forget
+    daemon thread was previously killed on process exit, leaving the results
+    dashboard with no embeddings to show. ``heartbeat_fn`` keeps the worker
+    heartbeat fresh during the now-blocking fit.
 
     Args:
         queried_abs_indices: Absolute dataset indices of samples queried in
@@ -132,7 +184,8 @@ def build_cycle_embeddings(
             during embedding extraction.
 
     Returns:
-        Path to the .npz file, or None if umap-learn is not installed.
+        Path to the saved .npz file, or None if umap-learn is unavailable or
+        the projection failed.
     """
     try:
         import umap  # noqa: F401 — check availability before heavy work
@@ -211,13 +264,17 @@ def build_cycle_embeddings(
     except Exception:
         logger.warning("Uncertainty score computation failed — UMAP will be saved without uncertainty.", exc_info=True)
 
-    # Deterministic path — return immediately, UMAP runs in background
-    expected_path = str(Path(exp_dir) / "embeddings" / f"cycle_{cycle}.npz")
-
-    threading.Thread(
-        target=_run_umap_background,
-        args=(all_embeddings, all_labels, all_pool, exp_dir, cycle, uncertainty_scores),
-        daemon=True,
-    ).start()
-
-    return expected_path
+    # Project + save synchronously so the .npz is guaranteed present on return.
+    # A run-wide shared reducer keeps coordinates aligned across cycles.
+    try:
+        if heartbeat_fn:
+            heartbeat_fn()
+        coords_2d = project_with_shared_reducer(all_embeddings, exp_dir)
+        if heartbeat_fn:
+            heartbeat_fn()
+        return save_cycle_embeddings(
+            exp_dir, cycle, coords_2d, all_labels, all_pool, uncertainty_scores
+        )
+    except Exception:
+        logger.exception("UMAP projection failed for cycle %d — no embeddings saved.", cycle)
+        return None
