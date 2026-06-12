@@ -4,12 +4,12 @@
 # This is the supervised ceiling the AL runs are compared against. Do NOT tune.
 experiment:
   name: NEU_Supervised_Baseline
-  seed: 42                                  # run 42/123/7 and average to match the AL grid
+  seed: 123                                 # run 42/123/7 and average to match the AL grid
   device: cuda
   exp_dir: experiments/
 data:
-  data_dir: Neu_Surface/train/images        # official train split (ImageFolder, 6 classes)
-  test_dir: Neu_Surface/validation/images    # official validation split — used as the test set
+  data_dir: data/raw/Neu_Surface/train/images        # official train split (ImageFolder, 6 classes)
+  test_dir: data/raw/Neu_Surface/validation/images    # official validation split — used as the test set
   val_split: 0.15                            # val carved from the 1440-image train pool
   test_split: 0.0                            # ignored when test_dir is set
   augmentation: true

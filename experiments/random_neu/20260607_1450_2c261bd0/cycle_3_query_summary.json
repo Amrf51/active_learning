@@ -1,0 +1,123 @@
+{
+  "cycle": 3,
+  "strategy_name": "random",
+  "strategy_description": "Selects images uniformly at random from the unlabeled pool (baseline \u2014 no model guidance).",
+  "pool_size_before_query": 1044,
+  "n_queried": 30,
+  "uncertainty_stats": {
+    "min": 0.6975744664669037,
+    "max": 0.8207407295703888,
+    "mean": 0.7747534687320391,
+    "std": 0.03398088698503095
+  },
+  "queried_class_distribution": {
+    "inclusion": 5,
+    "crazing": 8,
+    "scratches": 4,
+    "rolled-in_scale": 2,
+    "patches": 6,
+    "pitted_surface": 5
+  },
+  "labeled_class_distribution": {
+    "crazing": 36,
+    "rolled-in_scale": 25,
+    "pitted_surface": 28,
+    "inclusion": 31,
+    "scratches": 36,
+    "patches": 24
+  },
+  "top_uncertain": [
+    {
+      "image_id": 702,
+      "uncertainty_score": 0.8207407295703888,
+      "predicted_class": "rolled-in_scale",
+      "predicted_confidence": 0.1792592704296112
+    },
+    {
+      "image_id": 183,
+      "uncertainty_score": 0.8164228200912476,
+      "predicted_class": "rolled-in_scale",
+      "predicted_confidence": 0.18357717990875244
+    },
+    {
+      "image_id": 283,
+      "uncertainty_score": 0.8150452524423599,
+      "predicted_class": "scratches",
+      "predicted_confidence": 0.18495474755764008
+    },
+    {
+      "image_id": 937,
+      "uncertainty_score": 0.8126643598079681,
+      "predicted_class": "scratches",
+      "predicted_confidence": 0.18733564019203186
+    },
+    {
+      "image_id": 1132,
+      "uncertainty_score": 0.8120848685503006,
+      "predicted_class": "crazing",
+      "predicted_confidence": 0.1879151314496994
+    },
+    {
+      "image_id": 944,
+      "uncertainty_score": 0.8109334409236908,
+      "predicted_class": "pitted_surface",
+      "predicted_confidence": 0.1890665590763092
+    },
+    {
+      "image_id": 604,
+      "uncertainty_score": 0.8067605644464493,
+      "predicted_class": "scratches",
+      "predicted_confidence": 0.19323943555355072
+    },
+    {
+      "image_id": 1040,
+      "uncertainty_score": 0.8050874322652817,
+      "predicted_class": "crazing",
+      "predicted_confidence": 0.19491256773471832
+    },
+    {
+      "image_id": 39,
+      "uncertainty_score": 0.7995518893003464,
+      "predicted_class": "crazing",
+      "predicted_confidence": 0.20044811069965363
+    },
+    {
+      "image_id": 808,
+      "uncertainty_score": 0.7978231608867645,
+      "predicted_class": "crazing",
+      "predicted_confidence": 0.20217683911323547
+    }
+  ],
+  "queried_image_ids": [
+    618,
+    299,
+    737,
+    742,
+    513,
+    464,
+    1132,
+    573,
+    604,
+    1046,
+    1032,
+    283,
+    937,
+    944,
+    259,
+    445,
+    537,
+    475,
+    535,
+    846,
+    409,
+    1040,
+    808,
+    702,
+    508,
+    183,
+    881,
+    39,
+    755,
+    709
+  ]
+}

@@ -16,7 +16,10 @@ ENV/
 al_env/
 
 # Experiments and logs
-experiments/
+
+experiments/**/checkpoints/
+experiments/**/queries/
+
 *.log
 
 # IDE
@@ -32,3 +35,5 @@ experiments/
 # OS
 .DS_Store
 Thumbs.db
+.fuse_hidden000084ba00000035
+.fuse_hidden000084ba0000003b

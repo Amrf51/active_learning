@@ -1,0 +1,1418 @@
+{
+  "strategy": "random",
+  "num_cycles": 30,
+  "initial_pool_size": 120,
+  "batch_size_al": 30,
+  "cycles": [
+    {
+      "cycle": 1,
+      "labeled_pool_size": 120,
+      "unlabeled_pool_size": 1104,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.46296296296296297,
+      "best_epoch": 20,
+      "test_accuracy": 0.375,
+      "test_f1": 0.3480039771371745,
+      "test_precision": 0.40614320185347963,
+      "test_recall": 0.375,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.734375,
+          "recall": 0.7833333333333333,
+          "f1": 0.7580645161290323
+        },
+        "inclusion": {
+          "precision": 0.4166666666666667,
+          "recall": 0.08333333333333333,
+          "f1": 0.1388888888888889
+        },
+        "patches": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "pitted_surface": {
+          "precision": 0.18877551020408162,
+          "recall": 0.6166666666666667,
+          "f1": 0.2890625
+        },
+        "rolled-in_scale": {
+          "precision": 0.926829268292683,
+          "recall": 0.6333333333333333,
+          "f1": 0.7524752475247525
+        },
+        "scratches": {
+          "precision": 0.1702127659574468,
+          "recall": 0.13333333333333333,
+          "f1": 0.14953271028037382
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_1.npy",
+      "ece": 0.22316378114951982,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_1.npz"
+    },
+    {
+      "cycle": 2,
+      "labeled_pool_size": 150,
+      "unlabeled_pool_size": 1074,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.6805555555555556,
+      "best_epoch": 18,
+      "test_accuracy": 0.6166666666666667,
+      "test_f1": 0.5818042786222776,
+      "test_precision": 0.7237062616319583,
+      "test_recall": 0.6166666666666667,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.5769230769230769,
+          "recall": 1.0,
+          "f1": 0.7317073170731707
+        },
+        "inclusion": {
+          "precision": 0.8461538461538461,
+          "recall": 0.18333333333333332,
+          "f1": 0.3013698630136986
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 0.3,
+          "f1": 0.46153846153846156
+        },
+        "pitted_surface": {
+          "precision": 0.5098039215686274,
+          "recall": 0.43333333333333335,
+          "f1": 0.46846846846846846
+        },
+        "rolled-in_scale": {
+          "precision": 0.9649122807017544,
+          "recall": 0.9166666666666666,
+          "f1": 0.9401709401709402
+        },
+        "scratches": {
+          "precision": 0.4444444444444444,
+          "recall": 0.8666666666666667,
+          "f1": 0.5875706214689266
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_2.npy",
+      "ece": 0.4176259419570367,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_2.npz"
+    },
+    {
+      "cycle": 3,
+      "labeled_pool_size": 180,
+      "unlabeled_pool_size": 1044,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.7407407407407407,
+      "best_epoch": 14,
+      "test_accuracy": 0.6472222222222223,
+      "test_f1": 0.6291787848244577,
+      "test_precision": 0.7837978805713912,
+      "test_recall": 0.6472222222222223,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.5309734513274337,
+          "recall": 1.0,
+          "f1": 0.6936416184971098
+        },
+        "inclusion": {
+          "precision": 0.6842105263157895,
+          "recall": 0.43333333333333335,
+          "f1": 0.5306122448979592
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 0.45,
+          "f1": 0.6206896551724138
+        },
+        "pitted_surface": {
+          "precision": 1.0,
+          "recall": 0.26666666666666666,
+          "f1": 0.42105263157894735
+        },
+        "rolled-in_scale": {
+          "precision": 1.0,
+          "recall": 0.75,
+          "f1": 0.8571428571428571
+        },
+        "scratches": {
+          "precision": 0.48760330578512395,
+          "recall": 0.9833333333333333,
+          "f1": 0.6519337016574586
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_3.npy",
+      "ece": 0.4266399780081378,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_3.npz"
+    },
+    {
+      "cycle": 4,
+      "labeled_pool_size": 210,
+      "unlabeled_pool_size": 1014,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.8240740740740741,
+      "best_epoch": 16,
+      "test_accuracy": 0.7,
+      "test_f1": 0.6889406547171008,
+      "test_precision": 0.8208744996706693,
+      "test_recall": 0.7,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.46511627906976744,
+          "recall": 1.0,
+          "f1": 0.6349206349206349
+        },
+        "inclusion": {
+          "precision": 0.7777777777777778,
+          "recall": 0.7,
+          "f1": 0.7368421052631579
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 0.6,
+          "f1": 0.75
+        },
+        "pitted_surface": {
+          "precision": 1.0,
+          "recall": 0.25,
+          "f1": 0.4
+        },
+        "rolled-in_scale": {
+          "precision": 1.0,
+          "recall": 0.6833333333333333,
+          "f1": 0.8118811881188119
+        },
+        "scratches": {
+          "precision": 0.6823529411764706,
+          "recall": 0.9666666666666667,
+          "f1": 0.8
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_4.npy",
+      "ece": 0.46158222920364805,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_4.npz"
+    },
+    {
+      "cycle": 5,
+      "labeled_pool_size": 240,
+      "unlabeled_pool_size": 984,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.8518518518518519,
+      "best_epoch": 7,
+      "test_accuracy": 0.75,
+      "test_f1": 0.7405988568664259,
+      "test_precision": 0.8292197862564124,
+      "test_recall": 0.75,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.5454545454545454,
+          "recall": 1.0,
+          "f1": 0.7058823529411765
+        },
+        "inclusion": {
+          "precision": 0.8113207547169812,
+          "recall": 0.7166666666666667,
+          "f1": 0.7610619469026548
+        },
+        "patches": {
+          "precision": 0.9761904761904762,
+          "recall": 0.6833333333333333,
+          "f1": 0.803921568627451
+        },
+        "pitted_surface": {
+          "precision": 1.0,
+          "recall": 0.3333333333333333,
+          "f1": 0.5
+        },
+        "rolled-in_scale": {
+          "precision": 0.96,
+          "recall": 0.8,
+          "f1": 0.8727272727272727
+        },
+        "scratches": {
+          "precision": 0.6823529411764706,
+          "recall": 0.9666666666666667,
+          "f1": 0.8
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_5.npy",
+      "ece": 0.4956648880822791,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_5.npz"
+    },
+    {
+      "cycle": 6,
+      "labeled_pool_size": 270,
+      "unlabeled_pool_size": 954,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.8703703703703703,
+      "best_epoch": 18,
+      "test_accuracy": 0.7861111111111111,
+      "test_f1": 0.7784515583675037,
+      "test_precision": 0.8419477421803004,
+      "test_recall": 0.7861111111111111,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.6,
+          "recall": 1.0,
+          "f1": 0.75
+        },
+        "inclusion": {
+          "precision": 0.8604651162790697,
+          "recall": 0.6166666666666667,
+          "f1": 0.7184466019417476
+        },
+        "patches": {
+          "precision": 0.9636363636363636,
+          "recall": 0.8833333333333333,
+          "f1": 0.9217391304347826
+        },
+        "pitted_surface": {
+          "precision": 0.9615384615384616,
+          "recall": 0.4166666666666667,
+          "f1": 0.5813953488372093
+        },
+        "rolled-in_scale": {
+          "precision": 0.98,
+          "recall": 0.8166666666666667,
+          "f1": 0.8909090909090909
+        },
+        "scratches": {
+          "precision": 0.686046511627907,
+          "recall": 0.9833333333333333,
+          "f1": 0.8082191780821918
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_6.npy",
+      "ece": 0.5003947353197469,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_6.npz"
+    },
+    {
+      "cycle": 7,
+      "labeled_pool_size": 300,
+      "unlabeled_pool_size": 924,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.8888888888888888,
+      "best_epoch": 9,
+      "test_accuracy": 0.7944444444444444,
+      "test_f1": 0.7932171258200196,
+      "test_precision": 0.8402740894829501,
+      "test_recall": 0.7944444444444444,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.625,
+          "recall": 1.0,
+          "f1": 0.7692307692307693
+        },
+        "inclusion": {
+          "precision": 0.8666666666666667,
+          "recall": 0.65,
+          "f1": 0.7428571428571429
+        },
+        "patches": {
+          "precision": 0.9818181818181818,
+          "recall": 0.9,
+          "f1": 0.9391304347826087
+        },
+        "pitted_surface": {
+          "precision": 1.0,
+          "recall": 0.55,
+          "f1": 0.7096774193548387
+        },
+        "rolled-in_scale": {
+          "precision": 0.8846153846153846,
+          "recall": 0.7666666666666667,
+          "f1": 0.8214285714285714
+        },
+        "scratches": {
+          "precision": 0.6835443037974683,
+          "recall": 0.9,
+          "f1": 0.7769784172661871
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_7.npy",
+      "ece": 0.4743362500435776,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_7.npz"
+    },
+    {
+      "cycle": 8,
+      "labeled_pool_size": 330,
+      "unlabeled_pool_size": 894,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.8981481481481481,
+      "best_epoch": 11,
+      "test_accuracy": 0.8333333333333334,
+      "test_f1": 0.8282697713959635,
+      "test_precision": 0.8567265795206972,
+      "test_recall": 0.8333333333333334,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.7058823529411765,
+          "recall": 1.0,
+          "f1": 0.8275862068965517
+        },
+        "inclusion": {
+          "precision": 0.8846153846153846,
+          "recall": 0.7666666666666667,
+          "f1": 0.8214285714285714
+        },
+        "patches": {
+          "precision": 0.8923076923076924,
+          "recall": 0.9666666666666667,
+          "f1": 0.928
+        },
+        "pitted_surface": {
+          "precision": 0.9705882352941176,
+          "recall": 0.55,
+          "f1": 0.7021276595744681
+        },
+        "rolled-in_scale": {
+          "precision": 0.9230769230769231,
+          "recall": 0.8,
+          "f1": 0.8571428571428571
+        },
+        "scratches": {
+          "precision": 0.7638888888888888,
+          "recall": 0.9166666666666666,
+          "f1": 0.8333333333333334
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_8.npy",
+      "ece": 0.47029548125962417,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_8.npz"
+    },
+    {
+      "cycle": 9,
+      "labeled_pool_size": 360,
+      "unlabeled_pool_size": 864,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9120370370370371,
+      "best_epoch": 16,
+      "test_accuracy": 0.8472222222222222,
+      "test_f1": 0.8334177535139026,
+      "test_precision": 0.8708876714037644,
+      "test_recall": 0.8472222222222222,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.7058823529411765,
+          "recall": 1.0,
+          "f1": 0.8275862068965517
+        },
+        "inclusion": {
+          "precision": 0.8867924528301887,
+          "recall": 0.7833333333333333,
+          "f1": 0.831858407079646
+        },
+        "patches": {
+          "precision": 0.9523809523809523,
+          "recall": 1.0,
+          "f1": 0.975609756097561
+        },
+        "pitted_surface": {
+          "precision": 0.96,
+          "recall": 0.4,
+          "f1": 0.5647058823529412
+        },
+        "rolled-in_scale": {
+          "precision": 0.95,
+          "recall": 0.95,
+          "f1": 0.95
+        },
+        "scratches": {
+          "precision": 0.7702702702702703,
+          "recall": 0.95,
+          "f1": 0.8507462686567164
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_9.npy",
+      "ece": 0.39818981116016705,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_9.npz"
+    },
+    {
+      "cycle": 10,
+      "labeled_pool_size": 390,
+      "unlabeled_pool_size": 834,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9166666666666666,
+      "best_epoch": 5,
+      "test_accuracy": 0.8416666666666667,
+      "test_f1": 0.8275454464873434,
+      "test_precision": 0.8784378420539422,
+      "test_recall": 0.8416666666666667,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.6521739130434783,
+          "recall": 1.0,
+          "f1": 0.7894736842105263
+        },
+        "inclusion": {
+          "precision": 0.9074074074074074,
+          "recall": 0.8166666666666667,
+          "f1": 0.8596491228070176
+        },
+        "patches": {
+          "precision": 0.9516129032258065,
+          "recall": 0.9833333333333333,
+          "f1": 0.9672131147540983
+        },
+        "pitted_surface": {
+          "precision": 1.0,
+          "recall": 0.36666666666666664,
+          "f1": 0.5365853658536586
+        },
+        "rolled-in_scale": {
+          "precision": 0.9649122807017544,
+          "recall": 0.9166666666666666,
+          "f1": 0.9401709401709402
+        },
+        "scratches": {
+          "precision": 0.7945205479452054,
+          "recall": 0.9666666666666667,
+          "f1": 0.8721804511278195
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_10.npy",
+      "ece": 0.3616944489793645,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_10.npz"
+    },
+    {
+      "cycle": 11,
+      "labeled_pool_size": 420,
+      "unlabeled_pool_size": 804,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9259259259259259,
+      "best_epoch": 6,
+      "test_accuracy": 0.8972222222222223,
+      "test_f1": 0.8949927927569387,
+      "test_precision": 0.9002240838597528,
+      "test_recall": 0.8972222222222223,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.8571428571428571,
+          "recall": 1.0,
+          "f1": 0.9230769230769231
+        },
+        "inclusion": {
+          "precision": 0.8867924528301887,
+          "recall": 0.7833333333333333,
+          "f1": 0.831858407079646
+        },
+        "patches": {
+          "precision": 0.9672131147540983,
+          "recall": 0.9833333333333333,
+          "f1": 0.9752066115702479
+        },
+        "pitted_surface": {
+          "precision": 0.9166666666666666,
+          "recall": 0.7333333333333333,
+          "f1": 0.8148148148148148
+        },
+        "rolled-in_scale": {
+          "precision": 0.95,
+          "recall": 0.95,
+          "f1": 0.95
+        },
+        "scratches": {
+          "precision": 0.8235294117647058,
+          "recall": 0.9333333333333333,
+          "f1": 0.875
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_11.npy",
+      "ece": 0.3958541776157088,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_11.npz"
+    },
+    {
+      "cycle": 12,
+      "labeled_pool_size": 450,
+      "unlabeled_pool_size": 774,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9351851851851852,
+      "best_epoch": 9,
+      "test_accuracy": 0.9166666666666666,
+      "test_f1": 0.9149109720175431,
+      "test_precision": 0.9163761583414376,
+      "test_recall": 0.9166666666666666,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.8955223880597015,
+          "recall": 1.0,
+          "f1": 0.9448818897637795
+        },
+        "inclusion": {
+          "precision": 0.8909090909090909,
+          "recall": 0.8166666666666667,
+          "f1": 0.8521739130434782
+        },
+        "patches": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "pitted_surface": {
+          "precision": 0.9038461538461539,
+          "recall": 0.7833333333333333,
+          "f1": 0.8392857142857143
+        },
+        "rolled-in_scale": {
+          "precision": 0.9354838709677419,
+          "recall": 0.9666666666666667,
+          "f1": 0.9508196721311475
+        },
+        "scratches": {
+          "precision": 0.8888888888888888,
+          "recall": 0.9333333333333333,
+          "f1": 0.9105691056910569
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_12.npy",
+      "ece": 0.3652955701781644,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_12.npz"
+    },
+    {
+      "cycle": 13,
+      "labeled_pool_size": 480,
+      "unlabeled_pool_size": 744,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9444444444444444,
+      "best_epoch": 20,
+      "test_accuracy": 0.925,
+      "test_f1": 0.9236710840615499,
+      "test_precision": 0.9269225137048803,
+      "test_recall": 0.925,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.9230769230769231,
+          "recall": 1.0,
+          "f1": 0.96
+        },
+        "inclusion": {
+          "precision": 0.9230769230769231,
+          "recall": 0.8,
+          "f1": 0.8571428571428571
+        },
+        "patches": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "pitted_surface": {
+          "precision": 0.9245283018867925,
+          "recall": 0.8166666666666667,
+          "f1": 0.8672566371681416
+        },
+        "rolled-in_scale": {
+          "precision": 0.9666666666666667,
+          "recall": 0.9666666666666667,
+          "f1": 0.9666666666666667
+        },
+        "scratches": {
+          "precision": 0.8405797101449275,
+          "recall": 0.9666666666666667,
+          "f1": 0.8992248062015504
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_13.npy",
+      "ece": 0.26322661514083545,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_13.npz"
+    },
+    {
+      "cycle": 14,
+      "labeled_pool_size": 510,
+      "unlabeled_pool_size": 714,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9583333333333334,
+      "best_epoch": 11,
+      "test_accuracy": 0.9361111111111111,
+      "test_f1": 0.9349476787720028,
+      "test_precision": 0.9377120026127629,
+      "test_recall": 0.9361111111111111,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.9375,
+          "recall": 1.0,
+          "f1": 0.967741935483871
+        },
+        "inclusion": {
+          "precision": 0.96,
+          "recall": 0.8,
+          "f1": 0.8727272727272727
+        },
+        "patches": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "pitted_surface": {
+          "precision": 0.9122807017543859,
+          "recall": 0.8666666666666667,
+          "f1": 0.8888888888888888
+        },
+        "rolled-in_scale": {
+          "precision": 0.9672131147540983,
+          "recall": 0.9833333333333333,
+          "f1": 0.9752066115702479
+        },
+        "scratches": {
+          "precision": 0.8656716417910447,
+          "recall": 0.9666666666666667,
+          "f1": 0.9133858267716536
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_14.npy",
+      "ece": 0.2211480604277717,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_14.npz"
+    },
+    {
+      "cycle": 15,
+      "labeled_pool_size": 540,
+      "unlabeled_pool_size": 684,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9675925925925926,
+      "best_epoch": 11,
+      "test_accuracy": 0.9472222222222222,
+      "test_f1": 0.9464133059356606,
+      "test_precision": 0.9477061835866701,
+      "test_recall": 0.9472222222222222,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "inclusion": {
+          "precision": 0.9423076923076923,
+          "recall": 0.8166666666666667,
+          "f1": 0.875
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9166666666666666,
+          "recall": 0.9166666666666666,
+          "f1": 0.9166666666666666
+        },
+        "rolled-in_scale": {
+          "precision": 0.9672131147540983,
+          "recall": 0.9833333333333333,
+          "f1": 0.9752066115702479
+        },
+        "scratches": {
+          "precision": 0.8923076923076924,
+          "recall": 0.9666666666666667,
+          "f1": 0.928
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_15.npy",
+      "ece": 0.20097348499629233,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_15.npz"
+    },
+    {
+      "cycle": 16,
+      "labeled_pool_size": 570,
+      "unlabeled_pool_size": 654,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9675925925925926,
+      "best_epoch": 1,
+      "test_accuracy": 0.9444444444444444,
+      "test_f1": 0.9436059118153339,
+      "test_precision": 0.9449989481796076,
+      "test_recall": 0.9444444444444444,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "inclusion": {
+          "precision": 0.9245283018867925,
+          "recall": 0.8166666666666667,
+          "f1": 0.8672566371681416
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9137931034482759,
+          "recall": 0.8833333333333333,
+          "f1": 0.8983050847457628
+        },
+        "rolled-in_scale": {
+          "precision": 0.9833333333333333,
+          "recall": 0.9833333333333333,
+          "f1": 0.9833333333333333
+        },
+        "scratches": {
+          "precision": 0.8805970149253731,
+          "recall": 0.9833333333333333,
+          "f1": 0.9291338582677166
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_16.npy",
+      "ece": 0.1917047602434953,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_16.npz"
+    },
+    {
+      "cycle": 17,
+      "labeled_pool_size": 600,
+      "unlabeled_pool_size": 624,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9722222222222222,
+      "best_epoch": 3,
+      "test_accuracy": 0.9527777777777777,
+      "test_f1": 0.9520916855613122,
+      "test_precision": 0.9543790630557455,
+      "test_recall": 0.9527777777777777,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "inclusion": {
+          "precision": 0.9615384615384616,
+          "recall": 0.8333333333333334,
+          "f1": 0.8928571428571429
+        },
+        "patches": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "pitted_surface": {
+          "precision": 0.9310344827586207,
+          "recall": 0.9,
+          "f1": 0.9152542372881356
+        },
+        "rolled-in_scale": {
+          "precision": 1.0,
+          "recall": 0.9833333333333333,
+          "f1": 0.9915966386554622
+        },
+        "scratches": {
+          "precision": 0.8823529411764706,
+          "recall": 1.0,
+          "f1": 0.9375
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_17.npy",
+      "ece": 0.19363948537243736,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_17.npz"
+    },
+    {
+      "cycle": 18,
+      "labeled_pool_size": 630,
+      "unlabeled_pool_size": 594,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9768518518518519,
+      "best_epoch": 9,
+      "test_accuracy": 0.9611111111111111,
+      "test_f1": 0.9604523595943552,
+      "test_precision": 0.9615724242631238,
+      "test_recall": 0.9611111111111111,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "inclusion": {
+          "precision": 0.9433962264150944,
+          "recall": 0.8333333333333334,
+          "f1": 0.8849557522123894
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9193548387096774,
+          "recall": 0.95,
+          "f1": 0.9344262295081968
+        },
+        "rolled-in_scale": {
+          "precision": 1.0,
+          "recall": 0.9833333333333333,
+          "f1": 0.9915966386554622
+        },
+        "scratches": {
+          "precision": 0.9230769230769231,
+          "recall": 1.0,
+          "f1": 0.96
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_18.npy",
+      "ece": 0.17443067845371035,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_18.npz"
+    },
+    {
+      "cycle": 19,
+      "labeled_pool_size": 660,
+      "unlabeled_pool_size": 564,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9768518518518519,
+      "best_epoch": 16,
+      "test_accuracy": 0.9638888888888889,
+      "test_f1": 0.9637243637111453,
+      "test_precision": 0.9649581148593089,
+      "test_recall": 0.9638888888888889,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "inclusion": {
+          "precision": 0.9636363636363636,
+          "recall": 0.8833333333333333,
+          "f1": 0.9217391304347826
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9824561403508771,
+          "recall": 0.9333333333333333,
+          "f1": 0.9572649572649573
+        },
+        "rolled-in_scale": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "scratches": {
+          "precision": 0.8923076923076924,
+          "recall": 0.9666666666666667,
+          "f1": 0.928
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_19.npy",
+      "ece": 0.15872654641668002,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_19.npz"
+    },
+    {
+      "cycle": 20,
+      "labeled_pool_size": 690,
+      "unlabeled_pool_size": 534,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9814814814814815,
+      "best_epoch": 14,
+      "test_accuracy": 0.9694444444444444,
+      "test_f1": 0.9690438475543901,
+      "test_precision": 0.9701869724693828,
+      "test_recall": 0.9694444444444444,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 0.9811320754716981,
+          "recall": 0.8666666666666667,
+          "f1": 0.9203539823008849
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9516129032258065,
+          "recall": 0.9833333333333333,
+          "f1": 0.9672131147540983
+        },
+        "rolled-in_scale": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "scratches": {
+          "precision": 0.9206349206349206,
+          "recall": 0.9666666666666667,
+          "f1": 0.943089430894309
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_20.npy",
+      "ece": 0.15382350534200667,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_20.npz"
+    },
+    {
+      "cycle": 21,
+      "labeled_pool_size": 720,
+      "unlabeled_pool_size": 504,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9814814814814815,
+      "best_epoch": 14,
+      "test_accuracy": 0.9722222222222222,
+      "test_f1": 0.9719179090850185,
+      "test_precision": 0.9723899492011602,
+      "test_recall": 0.9722222222222222,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 0.9636363636363636,
+          "recall": 0.8833333333333333,
+          "f1": 0.9217391304347826
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9354838709677419,
+          "recall": 0.9666666666666667,
+          "f1": 0.9508196721311475
+        },
+        "rolled-in_scale": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "scratches": {
+          "precision": 0.9516129032258065,
+          "recall": 0.9833333333333333,
+          "f1": 0.9672131147540983
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_21.npy",
+      "ece": 0.1313823542661137,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_21.npz"
+    },
+    {
+      "cycle": 22,
+      "labeled_pool_size": 750,
+      "unlabeled_pool_size": 474,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9861111111111112,
+      "best_epoch": 5,
+      "test_accuracy": 0.9694444444444444,
+      "test_f1": 0.9690203399693619,
+      "test_precision": 0.9701813065329923,
+      "test_recall": 0.9694444444444444,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "inclusion": {
+          "precision": 0.9811320754716981,
+          "recall": 0.8666666666666667,
+          "f1": 0.9203539823008849
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9365079365079365,
+          "recall": 0.9833333333333333,
+          "f1": 0.959349593495935
+        },
+        "rolled-in_scale": {
+          "precision": 0.9833333333333333,
+          "recall": 0.9833333333333333,
+          "f1": 0.9833333333333333
+        },
+        "scratches": {
+          "precision": 0.9365079365079365,
+          "recall": 0.9833333333333333,
+          "f1": 0.959349593495935
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_22.npy",
+      "ece": 0.1384540313647853,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_22.npz"
+    },
+    {
+      "cycle": 23,
+      "labeled_pool_size": 780,
+      "unlabeled_pool_size": 444,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9861111111111112,
+      "best_epoch": 1,
+      "test_accuracy": 0.9694444444444444,
+      "test_f1": 0.9692600164322652,
+      "test_precision": 0.9704633910918063,
+      "test_recall": 0.9694444444444444,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "inclusion": {
+          "precision": 0.9814814814814815,
+          "recall": 0.8833333333333333,
+          "f1": 0.9298245614035088
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9666666666666667,
+          "recall": 0.9666666666666667,
+          "f1": 0.9666666666666667
+        },
+        "rolled-in_scale": {
+          "precision": 0.9833333333333333,
+          "recall": 0.9833333333333333,
+          "f1": 0.9833333333333333
+        },
+        "scratches": {
+          "precision": 0.9076923076923077,
+          "recall": 0.9833333333333333,
+          "f1": 0.944
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_23.npy",
+      "ece": 0.13320010585917366,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_23.npz"
+    },
+    {
+      "cycle": 24,
+      "labeled_pool_size": 810,
+      "unlabeled_pool_size": 414,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9907407407407407,
+      "best_epoch": 11,
+      "test_accuracy": 0.9833333333333333,
+      "test_f1": 0.9832241016636822,
+      "test_precision": 0.9839989759344598,
+      "test_recall": 0.9833333333333333,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.9166666666666666,
+          "f1": 0.9565217391304348
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9516129032258065,
+          "recall": 0.9833333333333333,
+          "f1": 0.9672131147540983
+        },
+        "rolled-in_scale": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "scratches": {
+          "precision": 0.9523809523809523,
+          "recall": 1.0,
+          "f1": 0.975609756097561
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_24.npy",
+      "ece": 0.12529072297943963,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_24.npz"
+    },
+    {
+      "cycle": 25,
+      "labeled_pool_size": 840,
+      "unlabeled_pool_size": 384,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9953703703703703,
+      "best_epoch": 10,
+      "test_accuracy": 0.9833333333333333,
+      "test_f1": 0.9831789406647211,
+      "test_precision": 0.9838667707520167,
+      "test_recall": 0.9833333333333333,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.9166666666666666,
+          "f1": 0.9565217391304348
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9523809523809523,
+          "recall": 1.0,
+          "f1": 0.975609756097561
+        },
+        "rolled-in_scale": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "scratches": {
+          "precision": 0.9672131147540983,
+          "recall": 0.9833333333333333,
+          "f1": 0.9752066115702479
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_25.npy",
+      "ece": 0.13489477609594663,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_25.npz"
+    },
+    {
+      "cycle": 26,
+      "labeled_pool_size": 870,
+      "unlabeled_pool_size": 354,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9907407407407407,
+      "best_epoch": 2,
+      "test_accuracy": 0.9833333333333333,
+      "test_f1": 0.9832787508156233,
+      "test_precision": 0.9837387625594923,
+      "test_recall": 0.9833333333333333,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.9333333333333333,
+          "f1": 0.9655172413793104
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9672131147540983,
+          "recall": 0.9833333333333333,
+          "f1": 0.9752066115702479
+        },
+        "rolled-in_scale": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "scratches": {
+          "precision": 0.9516129032258065,
+          "recall": 0.9833333333333333,
+          "f1": 0.9672131147540983
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_26.npy",
+      "ece": 0.13237988907429907,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_26.npz"
+    },
+    {
+      "cycle": 27,
+      "labeled_pool_size": 900,
+      "unlabeled_pool_size": 324,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9953703703703703,
+      "best_epoch": 8,
+      "test_accuracy": 0.9777777777777777,
+      "test_f1": 0.9775013491896786,
+      "test_precision": 0.9788705821434867,
+      "test_recall": 0.9777777777777777,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.8833333333333333,
+          "f1": 0.9380530973451328
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "rolled-in_scale": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "scratches": {
+          "precision": 0.921875,
+          "recall": 0.9833333333333333,
+          "f1": 0.9516129032258065
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_27.npy",
+      "ece": 0.1242713574733999,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_27.npz"
+    },
+    {
+      "cycle": 28,
+      "labeled_pool_size": 930,
+      "unlabeled_pool_size": 294,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9907407407407407,
+      "best_epoch": 2,
+      "test_accuracy": 0.9833333333333333,
+      "test_f1": 0.9831789406647211,
+      "test_precision": 0.9838667707520167,
+      "test_recall": 0.9833333333333333,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.9166666666666666,
+          "f1": 0.9565217391304348
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9523809523809523,
+          "recall": 1.0,
+          "f1": 0.975609756097561
+        },
+        "rolled-in_scale": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "scratches": {
+          "precision": 0.9672131147540983,
+          "recall": 0.9833333333333333,
+          "f1": 0.9752066115702479
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_28.npy",
+      "ece": 0.1309857933057679,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_28.npz"
+    },
+    {
+      "cycle": 29,
+      "labeled_pool_size": 960,
+      "unlabeled_pool_size": 264,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9907407407407407,
+      "best_epoch": 1,
+      "test_accuracy": 0.9916666666666667,
+      "test_f1": 0.9916654993696596,
+      "test_precision": 0.9918032786885246,
+      "test_recall": 0.9916666666666667,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.9666666666666667,
+          "f1": 0.9830508474576272
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "rolled-in_scale": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "scratches": {
+          "precision": 0.9672131147540983,
+          "recall": 0.9833333333333333,
+          "f1": 0.9752066115702479
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_29.npy",
+      "ece": 0.12769883374373117,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_29.npz"
+    },
+    {
+      "cycle": 30,
+      "labeled_pool_size": 990,
+      "unlabeled_pool_size": 234,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9953703703703703,
+      "best_epoch": 5,
+      "test_accuracy": 0.9833333333333333,
+      "test_f1": 0.9831794914086109,
+      "test_precision": 0.9838268993477878,
+      "test_recall": 0.9833333333333333,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.9166666666666666,
+          "f1": 0.9565217391304348
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "rolled-in_scale": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "scratches": {
+          "precision": 0.9516129032258065,
+          "recall": 0.9833333333333333,
+          "f1": 0.9672131147540983
+        }
+      },
+      "confusion_matrix_path": "experiments/random_neu/20260607_1450_2c261bd0/confusion_matrices/cycle_30.npy",
+      "ece": 0.11077283993363381,
+      "embeddings_path": "experiments/random_neu/20260607_1450_2c261bd0/embeddings/cycle_30.npz"
+    }
+  ]
+}

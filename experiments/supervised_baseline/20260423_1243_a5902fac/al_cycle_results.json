@@ -1,0 +1,1005 @@
+{
+  "strategy": "entropy",
+  "num_cycles": 1,
+  "initial_pool_size": 99999,
+  "batch_size_al": 50,
+  "cycles": [
+    {
+      "cycle": 1,
+      "labeled_pool_size": 6923,
+      "unlabeled_pool_size": 0,
+      "epochs_trained": 70,
+      "best_val_accuracy": 0.5454545454545454,
+      "best_epoch": 70,
+      "test_accuracy": 0.5597562492227335,
+      "test_f1": 0.552160455367437,
+      "test_precision": 0.5836165279179181,
+      "test_recall": 0.5597562492227335,
+      "per_class_metrics": {
+        "AM General Hummer SUV 2000": {
+          "precision": 0.782608695652174,
+          "recall": 0.8181818181818182,
+          "f1": 0.8
+        },
+        "Acura Integra Type R 2001": {
+          "precision": 0.5789473684210527,
+          "recall": 0.5,
+          "f1": 0.5365853658536586
+        },
+        "Acura RL Sedan 2012": {
+          "precision": 0.3076923076923077,
+          "recall": 0.125,
+          "f1": 0.17777777777777778
+        },
+        "Acura TL Sedan 2012": {
+          "precision": 0.4393939393939394,
+          "recall": 0.6744186046511628,
+          "f1": 0.5321100917431193
+        },
+        "Acura TL Type-S 2008": {
+          "precision": 0.7857142857142857,
+          "recall": 0.5238095238095238,
+          "f1": 0.6285714285714286
+        },
+        "Acura TSX Sedan 2012": {
+          "precision": 0.4146341463414634,
+          "recall": 0.425,
+          "f1": 0.41975308641975306
+        },
+        "Acura ZDX Hatchback 2012": {
+          "precision": 0.4791666666666667,
+          "recall": 0.5897435897435898,
+          "f1": 0.5287356321839081
+        },
+        "Aston Martin V8 Vantage Convertible 2012": {
+          "precision": 0.2962962962962963,
+          "recall": 0.17777777777777778,
+          "f1": 0.2222222222222222
+        },
+        "Aston Martin V8 Vantage Coupe 2012": {
+          "precision": 0.42424242424242425,
+          "recall": 0.34146341463414637,
+          "f1": 0.3783783783783784
+        },
+        "Aston Martin Virage Convertible 2012": {
+          "precision": 0.3469387755102041,
+          "recall": 0.5151515151515151,
+          "f1": 0.4146341463414634
+        },
+        "Aston Martin Virage Coupe 2012": {
+          "precision": 0.5409836065573771,
+          "recall": 0.868421052631579,
+          "f1": 0.6666666666666666
+        },
+        "Audi 100 Sedan 1994": {
+          "precision": 0.4897959183673469,
+          "recall": 0.6,
+          "f1": 0.5393258426966292
+        },
+        "Audi 100 Wagon 1994": {
+          "precision": 0.38095238095238093,
+          "recall": 0.19047619047619047,
+          "f1": 0.25396825396825395
+        },
+        "Audi A5 Coupe 2012": {
+          "precision": 0.34146341463414637,
+          "recall": 0.34146341463414637,
+          "f1": 0.34146341463414637
+        },
+        "Audi R8 Coupe 2012": {
+          "precision": 0.4090909090909091,
+          "recall": 0.20930232558139536,
+          "f1": 0.27692307692307694
+        },
+        "Audi RS 4 Convertible 2008": {
+          "precision": 0.5714285714285714,
+          "recall": 0.4444444444444444,
+          "f1": 0.5
+        },
+        "Audi S4 Sedan 2007": {
+          "precision": 0.4166666666666667,
+          "recall": 0.2222222222222222,
+          "f1": 0.2898550724637681
+        },
+        "Audi S4 Sedan 2012": {
+          "precision": 0.29411764705882354,
+          "recall": 0.1282051282051282,
+          "f1": 0.17857142857142858
+        },
+        "Audi S5 Convertible 2012": {
+          "precision": 0.3380281690140845,
+          "recall": 0.5714285714285714,
+          "f1": 0.4247787610619469
+        },
+        "Audi S5 Coupe 2012": {
+          "precision": 0.22388059701492538,
+          "recall": 0.35714285714285715,
+          "f1": 0.27522935779816515
+        },
+        "Audi S6 Sedan 2011": {
+          "precision": 0.34615384615384615,
+          "recall": 0.5869565217391305,
+          "f1": 0.43548387096774194
+        },
+        "Audi TT Hatchback 2011": {
+          "precision": 0.3333333333333333,
+          "recall": 0.45,
+          "f1": 0.3829787234042553
+        },
+        "Audi TT RS Coupe 2012": {
+          "precision": 0.5348837209302325,
+          "recall": 0.5897435897435898,
+          "f1": 0.5609756097560976
+        },
+        "Audi TTS Coupe 2012": {
+          "precision": 0.3333333333333333,
+          "recall": 0.2619047619047619,
+          "f1": 0.29333333333333333
+        },
+        "Audi V8 Sedan 1994": {
+          "precision": 0.3953488372093023,
+          "recall": 0.3953488372093023,
+          "f1": 0.3953488372093023
+        },
+        "BMW 1 Series Convertible 2012": {
+          "precision": 0.6666666666666666,
+          "recall": 0.4,
+          "f1": 0.5
+        },
+        "BMW 1 Series Coupe 2012": {
+          "precision": 0.4153846153846154,
+          "recall": 0.6585365853658537,
+          "f1": 0.5094339622641509
+        },
+        "BMW 3 Series Sedan 2012": {
+          "precision": 0.37037037037037035,
+          "recall": 0.47619047619047616,
+          "f1": 0.4166666666666667
+        },
+        "BMW 3 Series Wagon 2012": {
+          "precision": 0.3181818181818182,
+          "recall": 0.5121951219512195,
+          "f1": 0.3925233644859813
+        },
+        "BMW 6 Series Convertible 2007": {
+          "precision": 0.52,
+          "recall": 0.29545454545454547,
+          "f1": 0.37681159420289856
+        },
+        "BMW ActiveHybrid 5 Sedan 2012": {
+          "precision": 0.5263157894736842,
+          "recall": 0.8823529411764706,
+          "f1": 0.6593406593406593
+        },
+        "BMW M3 Coupe 2012": {
+          "precision": 0.38596491228070173,
+          "recall": 0.5,
+          "f1": 0.43564356435643564
+        },
+        "BMW M5 Sedan 2010": {
+          "precision": 0.4642857142857143,
+          "recall": 0.3170731707317073,
+          "f1": 0.37681159420289856
+        },
+        "BMW M6 Convertible 2010": {
+          "precision": 0.3617021276595745,
+          "recall": 0.4146341463414634,
+          "f1": 0.38636363636363635
+        },
+        "BMW X3 SUV 2012": {
+          "precision": 0.8095238095238095,
+          "recall": 0.4473684210526316,
+          "f1": 0.576271186440678
+        },
+        "BMW X5 SUV 2007": {
+          "precision": 0.4444444444444444,
+          "recall": 0.5853658536585366,
+          "f1": 0.5052631578947369
+        },
+        "BMW X6 SUV 2012": {
+          "precision": 0.64,
+          "recall": 0.38095238095238093,
+          "f1": 0.47761194029850745
+        },
+        "BMW Z4 Convertible 2012": {
+          "precision": 0.8888888888888888,
+          "recall": 0.4,
+          "f1": 0.5517241379310345
+        },
+        "Bentley Arnage Sedan 2009": {
+          "precision": 0.45098039215686275,
+          "recall": 0.5897435897435898,
+          "f1": 0.5111111111111111
+        },
+        "Bentley Continental Flying Spur Sedan 2007": {
+          "precision": 0.38461538461538464,
+          "recall": 0.3409090909090909,
+          "f1": 0.3614457831325301
+        },
+        "Bentley Continental GT Coupe 2007": {
+          "precision": 0.4666666666666667,
+          "recall": 0.30434782608695654,
+          "f1": 0.3684210526315789
+        },
+        "Bentley Continental GT Coupe 2012": {
+          "precision": 0.4857142857142857,
+          "recall": 0.5,
+          "f1": 0.4927536231884058
+        },
+        "Bentley Continental Supersports Conv. Convertible 2012": {
+          "precision": 0.6071428571428571,
+          "recall": 0.4722222222222222,
+          "f1": 0.53125
+        },
+        "Bentley Mulsanne Sedan 2011": {
+          "precision": 0.5,
+          "recall": 0.5714285714285714,
+          "f1": 0.5333333333333333
+        },
+        "Bugatti Veyron 16.4 Convertible 2009": {
+          "precision": 0.7058823529411765,
+          "recall": 0.75,
+          "f1": 0.7272727272727273
+        },
+        "Bugatti Veyron 16.4 Coupe 2009": {
+          "precision": 0.6444444444444445,
+          "recall": 0.6744186046511628,
+          "f1": 0.6590909090909091
+        },
+        "Buick Enclave SUV 2012": {
+          "precision": 0.5666666666666667,
+          "recall": 0.8095238095238095,
+          "f1": 0.6666666666666666
+        },
+        "Buick Rainier SUV 2007": {
+          "precision": 0.6382978723404256,
+          "recall": 0.7142857142857143,
+          "f1": 0.6741573033707865
+        },
+        "Buick Regal GS 2012": {
+          "precision": 0.5769230769230769,
+          "recall": 0.42857142857142855,
+          "f1": 0.4918032786885246
+        },
+        "Buick Verano Sedan 2012": {
+          "precision": 0.484375,
+          "recall": 0.8378378378378378,
+          "f1": 0.6138613861386139
+        },
+        "Cadillac CTS-V Sedan 2012": {
+          "precision": 0.7,
+          "recall": 0.813953488372093,
+          "f1": 0.7526881720430108
+        },
+        "Cadillac Escalade EXT Crew Cab 2007": {
+          "precision": 0.6216216216216216,
+          "recall": 0.5227272727272727,
+          "f1": 0.5679012345679012
+        },
+        "Cadillac SRX SUV 2012": {
+          "precision": 0.6444444444444445,
+          "recall": 0.7073170731707317,
+          "f1": 0.6744186046511628
+        },
+        "Chevrolet Avalanche Crew Cab 2012": {
+          "precision": 0.631578947368421,
+          "recall": 0.26666666666666666,
+          "f1": 0.375
+        },
+        "Chevrolet Camaro Convertible 2012": {
+          "precision": 0.6190476190476191,
+          "recall": 0.29545454545454547,
+          "f1": 0.4
+        },
+        "Chevrolet Cobalt SS 2010": {
+          "precision": 0.5,
+          "recall": 0.5609756097560976,
+          "f1": 0.5287356321839081
+        },
+        "Chevrolet Corvette Convertible 2012": {
+          "precision": 0.6052631578947368,
+          "recall": 0.5897435897435898,
+          "f1": 0.5974025974025974
+        },
+        "Chevrolet Corvette Ron Fellows Edition Z06 2007": {
+          "precision": 0.6274509803921569,
+          "recall": 0.8648648648648649,
+          "f1": 0.7272727272727273
+        },
+        "Chevrolet Corvette ZR1 2012": {
+          "precision": 0.6363636363636364,
+          "recall": 0.6086956521739131,
+          "f1": 0.6222222222222222
+        },
+        "Chevrolet Express Cargo Van 2007": {
+          "precision": 0.5151515151515151,
+          "recall": 0.5862068965517241,
+          "f1": 0.5483870967741935
+        },
+        "Chevrolet Express Van 2007": {
+          "precision": 0.5,
+          "recall": 0.05714285714285714,
+          "f1": 0.10256410256410256
+        },
+        "Chevrolet HHR SS 2010": {
+          "precision": 0.9117647058823529,
+          "recall": 0.8611111111111112,
+          "f1": 0.8857142857142857
+        },
+        "Chevrolet Impala Sedan 2007": {
+          "precision": 0.4090909090909091,
+          "recall": 0.627906976744186,
+          "f1": 0.4954128440366973
+        },
+        "Chevrolet Malibu Hybrid Sedan 2010": {
+          "precision": 0.5789473684210527,
+          "recall": 0.2894736842105263,
+          "f1": 0.38596491228070173
+        },
+        "Chevrolet Malibu Sedan 2007": {
+          "precision": 0.5833333333333334,
+          "recall": 0.1590909090909091,
+          "f1": 0.25
+        },
+        "Chevrolet Monte Carlo Coupe 2007": {
+          "precision": 0.5294117647058824,
+          "recall": 0.2,
+          "f1": 0.2903225806451613
+        },
+        "Chevrolet Silverado 1500 Classic Extended Cab 2007": {
+          "precision": 0.5833333333333334,
+          "recall": 0.6666666666666666,
+          "f1": 0.6222222222222222
+        },
+        "Chevrolet Silverado 1500 Extended Cab 2012": {
+          "precision": 0.26666666666666666,
+          "recall": 0.6511627906976745,
+          "f1": 0.3783783783783784
+        },
+        "Chevrolet Silverado 1500 Hybrid Crew Cab 2012": {
+          "precision": 0.6153846153846154,
+          "recall": 0.4,
+          "f1": 0.48484848484848486
+        },
+        "Chevrolet Silverado 1500 Regular Cab 2012": {
+          "precision": 0.52,
+          "recall": 0.5909090909090909,
+          "f1": 0.5531914893617021
+        },
+        "Chevrolet Silverado 2500HD Regular Cab 2012": {
+          "precision": 0.625,
+          "recall": 0.39473684210526316,
+          "f1": 0.4838709677419355
+        },
+        "Chevrolet Sonic Sedan 2012": {
+          "precision": 0.4807692307692308,
+          "recall": 0.5681818181818182,
+          "f1": 0.5208333333333334
+        },
+        "Chevrolet Tahoe Hybrid SUV 2012": {
+          "precision": 0.47058823529411764,
+          "recall": 0.43243243243243246,
+          "f1": 0.4507042253521127
+        },
+        "Chevrolet TrailBlazer SS 2009": {
+          "precision": 0.6744186046511628,
+          "recall": 0.725,
+          "f1": 0.6987951807228916
+        },
+        "Chevrolet Traverse SUV 2012": {
+          "precision": 0.5625,
+          "recall": 0.4090909090909091,
+          "f1": 0.47368421052631576
+        },
+        "Chrysler 300 SRT-8 2010": {
+          "precision": 0.5849056603773585,
+          "recall": 0.6458333333333334,
+          "f1": 0.6138613861386139
+        },
+        "Chrysler Aspen SUV 2009": {
+          "precision": 0.6444444444444445,
+          "recall": 0.6744186046511628,
+          "f1": 0.6590909090909091
+        },
+        "Chrysler Crossfire Convertible 2008": {
+          "precision": 0.625,
+          "recall": 0.813953488372093,
+          "f1": 0.7070707070707071
+        },
+        "Chrysler PT Cruiser Convertible 2008": {
+          "precision": 0.8571428571428571,
+          "recall": 0.6666666666666666,
+          "f1": 0.75
+        },
+        "Chrysler Sebring Convertible 2010": {
+          "precision": 0.696969696969697,
+          "recall": 0.575,
+          "f1": 0.6301369863013698
+        },
+        "Chrysler Town and Country Minivan 2012": {
+          "precision": 0.6571428571428571,
+          "recall": 0.6216216216216216,
+          "f1": 0.6388888888888888
+        },
+        "Daewoo Nubira Wagon 2002": {
+          "precision": 0.475,
+          "recall": 0.4222222222222222,
+          "f1": 0.4470588235294118
+        },
+        "Dodge Caliber Wagon 2007": {
+          "precision": 0.4578313253012048,
+          "recall": 0.9047619047619048,
+          "f1": 0.608
+        },
+        "Dodge Caliber Wagon 2012": {
+          "precision": 0.7058823529411765,
+          "recall": 0.3,
+          "f1": 0.42105263157894735
+        },
+        "Dodge Caravan Minivan 1997": {
+          "precision": 0.8222222222222222,
+          "recall": 0.8604651162790697,
+          "f1": 0.8409090909090909
+        },
+        "Dodge Challenger SRT8 2011": {
+          "precision": 0.49019607843137253,
+          "recall": 0.6410256410256411,
+          "f1": 0.5555555555555556
+        },
+        "Dodge Charger SRT-8 2009": {
+          "precision": 0.6451612903225806,
+          "recall": 0.47619047619047616,
+          "f1": 0.547945205479452
+        },
+        "Dodge Charger Sedan 2012": {
+          "precision": 0.52,
+          "recall": 0.3170731707317073,
+          "f1": 0.3939393939393939
+        },
+        "Dodge Dakota Club Cab 2007": {
+          "precision": 0.5348837209302325,
+          "recall": 0.6052631578947368,
+          "f1": 0.5679012345679012
+        },
+        "Dodge Dakota Crew Cab 2010": {
+          "precision": 0.7142857142857143,
+          "recall": 0.36585365853658536,
+          "f1": 0.4838709677419355
+        },
+        "Dodge Durango SUV 2007": {
+          "precision": 0.6666666666666666,
+          "recall": 0.4444444444444444,
+          "f1": 0.5333333333333333
+        },
+        "Dodge Durango SUV 2012": {
+          "precision": 0.6904761904761905,
+          "recall": 0.6744186046511628,
+          "f1": 0.6823529411764706
+        },
+        "Dodge Journey SUV 2012": {
+          "precision": 0.54,
+          "recall": 0.6136363636363636,
+          "f1": 0.574468085106383
+        },
+        "Dodge Magnum Wagon 2008": {
+          "precision": 0.6590909090909091,
+          "recall": 0.725,
+          "f1": 0.6904761904761905
+        },
+        "Dodge Ram Pickup 3500 Crew Cab 2010": {
+          "precision": 0.9545454545454546,
+          "recall": 0.5,
+          "f1": 0.65625
+        },
+        "Dodge Ram Pickup 3500 Quad Cab 2009": {
+          "precision": 0.5,
+          "recall": 0.6136363636363636,
+          "f1": 0.5510204081632653
+        },
+        "Dodge Sprinter Cargo Van 2009": {
+          "precision": 0.6388888888888888,
+          "recall": 0.5897435897435898,
+          "f1": 0.6133333333333333
+        },
+        "Eagle Talon Hatchback 1998": {
+          "precision": 0.7,
+          "recall": 0.30434782608695654,
+          "f1": 0.42424242424242425
+        },
+        "FIAT 500 Abarth 2012": {
+          "precision": 0.625,
+          "recall": 0.9259259259259259,
+          "f1": 0.746268656716418
+        },
+        "FIAT 500 Convertible 2012": {
+          "precision": 0.875,
+          "recall": 0.8484848484848485,
+          "f1": 0.8615384615384616
+        },
+        "Ferrari 458 Italia Convertible 2012": {
+          "precision": 0.5217391304347826,
+          "recall": 0.6153846153846154,
+          "f1": 0.5647058823529412
+        },
+        "Ferrari 458 Italia Coupe 2012": {
+          "precision": 0.5666666666666667,
+          "recall": 0.40476190476190477,
+          "f1": 0.4722222222222222
+        },
+        "Ferrari California Convertible 2012": {
+          "precision": 0.7631578947368421,
+          "recall": 0.7435897435897436,
+          "f1": 0.7532467532467533
+        },
+        "Ferrari FF Coupe 2012": {
+          "precision": 0.85,
+          "recall": 0.40476190476190477,
+          "f1": 0.5483870967741935
+        },
+        "Fisker Karma Sedan 2012": {
+          "precision": 0.6521739130434783,
+          "recall": 0.6976744186046512,
+          "f1": 0.6741573033707865
+        },
+        "Ford E-Series Wagon Van 2012": {
+          "precision": 0.8048780487804879,
+          "recall": 0.8918918918918919,
+          "f1": 0.8461538461538461
+        },
+        "Ford Edge SUV 2012": {
+          "precision": 0.75,
+          "recall": 0.3488372093023256,
+          "f1": 0.47619047619047616
+        },
+        "Ford Expedition EL SUV 2009": {
+          "precision": 0.84,
+          "recall": 0.4772727272727273,
+          "f1": 0.6086956521739131
+        },
+        "Ford F-150 Regular Cab 2007": {
+          "precision": 0.6176470588235294,
+          "recall": 0.4666666666666667,
+          "f1": 0.5316455696202531
+        },
+        "Ford F-150 Regular Cab 2012": {
+          "precision": 0.75,
+          "recall": 0.5,
+          "f1": 0.6
+        },
+        "Ford F-450 Super Duty Crew Cab 2012": {
+          "precision": 0.7659574468085106,
+          "recall": 0.8780487804878049,
+          "f1": 0.8181818181818182
+        },
+        "Ford Fiesta Sedan 2012": {
+          "precision": 0.5897435897435898,
+          "recall": 0.5476190476190477,
+          "f1": 0.5679012345679012
+        },
+        "Ford Focus Sedan 2007": {
+          "precision": 0.6086956521739131,
+          "recall": 0.3111111111111111,
+          "f1": 0.4117647058823529
+        },
+        "Ford Freestar Minivan 2007": {
+          "precision": 0.576271186440678,
+          "recall": 0.7727272727272727,
+          "f1": 0.6601941747572816
+        },
+        "Ford GT Coupe 2006": {
+          "precision": 0.7083333333333334,
+          "recall": 0.37777777777777777,
+          "f1": 0.4927536231884058
+        },
+        "Ford Mustang Convertible 2007": {
+          "precision": 0.59375,
+          "recall": 0.4318181818181818,
+          "f1": 0.5
+        },
+        "Ford Ranger SuperCab 2011": {
+          "precision": 0.717948717948718,
+          "recall": 0.6666666666666666,
+          "f1": 0.691358024691358
+        },
+        "GMC Acadia SUV 2012": {
+          "precision": 0.7567567567567568,
+          "recall": 0.6363636363636364,
+          "f1": 0.691358024691358
+        },
+        "GMC Canyon Extended Cab 2012": {
+          "precision": 0.72,
+          "recall": 0.45,
+          "f1": 0.5538461538461539
+        },
+        "GMC Savana Van 2012": {
+          "precision": 0.512396694214876,
+          "recall": 0.9117647058823529,
+          "f1": 0.656084656084656
+        },
+        "GMC Terrain SUV 2012": {
+          "precision": 0.68,
+          "recall": 0.8292682926829268,
+          "f1": 0.7472527472527473
+        },
+        "GMC Yukon Hybrid SUV 2012": {
+          "precision": 0.5348837209302325,
+          "recall": 0.5476190476190477,
+          "f1": 0.5411764705882353
+        },
+        "Geo Metro Convertible 1993": {
+          "precision": 0.76,
+          "recall": 0.8636363636363636,
+          "f1": 0.8085106382978723
+        },
+        "HUMMER H2 SUT Crew Cab 2009": {
+          "precision": 0.6122448979591837,
+          "recall": 0.6976744186046512,
+          "f1": 0.6521739130434783
+        },
+        "HUMMER H3T Crew Cab 2010": {
+          "precision": 0.75,
+          "recall": 0.6153846153846154,
+          "f1": 0.676056338028169
+        },
+        "Honda Accord Coupe 2012": {
+          "precision": 0.4,
+          "recall": 0.46153846153846156,
+          "f1": 0.42857142857142855
+        },
+        "Honda Accord Sedan 2012": {
+          "precision": 0.2702702702702703,
+          "recall": 0.2631578947368421,
+          "f1": 0.26666666666666666
+        },
+        "Honda Odyssey Minivan 2007": {
+          "precision": 0.3333333333333333,
+          "recall": 0.7317073170731707,
+          "f1": 0.4580152671755725
+        },
+        "Honda Odyssey Minivan 2012": {
+          "precision": 0.3116883116883117,
+          "recall": 0.5714285714285714,
+          "f1": 0.40336134453781514
+        },
+        "Hyundai Accent Sedan 2012": {
+          "precision": 0.4,
+          "recall": 0.3333333333333333,
+          "f1": 0.36363636363636365
+        },
+        "Hyundai Azera Sedan 2012": {
+          "precision": 0.4318181818181818,
+          "recall": 0.4523809523809524,
+          "f1": 0.4418604651162791
+        },
+        "Hyundai Elantra Sedan 2007": {
+          "precision": 0.5348837209302325,
+          "recall": 0.5476190476190477,
+          "f1": 0.5411764705882353
+        },
+        "Hyundai Elantra Touring Hatchback 2012": {
+          "precision": 0.5714285714285714,
+          "recall": 0.47619047619047616,
+          "f1": 0.5194805194805194
+        },
+        "Hyundai Genesis Sedan 2012": {
+          "precision": 0.4909090909090909,
+          "recall": 0.627906976744186,
+          "f1": 0.5510204081632653
+        },
+        "Hyundai Santa Fe SUV 2012": {
+          "precision": 0.7142857142857143,
+          "recall": 0.7142857142857143,
+          "f1": 0.7142857142857143
+        },
+        "Hyundai Sonata Hybrid Sedan 2012": {
+          "precision": 0.5531914893617021,
+          "recall": 0.7878787878787878,
+          "f1": 0.65
+        },
+        "Hyundai Sonata Sedan 2012": {
+          "precision": 0.5192307692307693,
+          "recall": 0.6923076923076923,
+          "f1": 0.5934065934065934
+        },
+        "Hyundai Tucson SUV 2012": {
+          "precision": 0.6170212765957447,
+          "recall": 0.6744186046511628,
+          "f1": 0.6444444444444445
+        },
+        "Hyundai Veloster Hatchback 2012": {
+          "precision": 0.5,
+          "recall": 0.3170731707317073,
+          "f1": 0.3880597014925373
+        },
+        "Hyundai Veracruz SUV 2012": {
+          "precision": 0.40625,
+          "recall": 0.30952380952380953,
+          "f1": 0.35135135135135137
+        },
+        "Infiniti G Coupe IPL 2012": {
+          "precision": 0.5263157894736842,
+          "recall": 0.29411764705882354,
+          "f1": 0.37735849056603776
+        },
+        "Infiniti QX56 SUV 2011": {
+          "precision": 0.9444444444444444,
+          "recall": 0.53125,
+          "f1": 0.68
+        },
+        "Isuzu Ascender SUV 2008": {
+          "precision": 0.5862068965517241,
+          "recall": 0.85,
+          "f1": 0.6938775510204082
+        },
+        "Jaguar XK XKR 2012": {
+          "precision": 0.475,
+          "recall": 0.41304347826086957,
+          "f1": 0.4418604651162791
+        },
+        "Jeep Compass SUV 2012": {
+          "precision": 0.8888888888888888,
+          "recall": 0.5714285714285714,
+          "f1": 0.6956521739130435
+        },
+        "Jeep Grand Cherokee SUV 2012": {
+          "precision": 0.8,
+          "recall": 0.4444444444444444,
+          "f1": 0.5714285714285714
+        },
+        "Jeep Liberty SUV 2012": {
+          "precision": 0.9,
+          "recall": 0.6136363636363636,
+          "f1": 0.7297297297297297
+        },
+        "Jeep Patriot SUV 2012": {
+          "precision": 0.6842105263157895,
+          "recall": 0.8863636363636364,
+          "f1": 0.7722772277227723
+        },
+        "Jeep Wrangler SUV 2012": {
+          "precision": 0.8478260869565217,
+          "recall": 0.9069767441860465,
+          "f1": 0.8764044943820225
+        },
+        "Lamborghini Aventador Coupe 2012": {
+          "precision": 0.7058823529411765,
+          "recall": 0.5581395348837209,
+          "f1": 0.6233766233766234
+        },
+        "Lamborghini Diablo Coupe 2001": {
+          "precision": 0.7307692307692307,
+          "recall": 0.8636363636363636,
+          "f1": 0.7916666666666666
+        },
+        "Lamborghini Gallardo LP 570-4 Superleggera 2012": {
+          "precision": 0.9,
+          "recall": 0.7714285714285715,
+          "f1": 0.8307692307692308
+        },
+        "Lamborghini Reventon Coupe 2008": {
+          "precision": 0.6153846153846154,
+          "recall": 0.8888888888888888,
+          "f1": 0.7272727272727273
+        },
+        "Land Rover LR2 SUV 2012": {
+          "precision": 0.5384615384615384,
+          "recall": 0.5,
+          "f1": 0.5185185185185185
+        },
+        "Land Rover Range Rover SUV 2012": {
+          "precision": 0.6,
+          "recall": 0.7857142857142857,
+          "f1": 0.6804123711340206
+        },
+        "Lincoln Town Car Sedan 2011": {
+          "precision": 0.5263157894736842,
+          "recall": 0.7692307692307693,
+          "f1": 0.625
+        },
+        "MINI Cooper Roadster Convertible 2012": {
+          "precision": 0.7619047619047619,
+          "recall": 0.8888888888888888,
+          "f1": 0.8205128205128205
+        },
+        "Maybach Landaulet Convertible 2012": {
+          "precision": 0.5789473684210527,
+          "recall": 0.7586206896551724,
+          "f1": 0.6567164179104478
+        },
+        "Mazda Tribute SUV 2011": {
+          "precision": 0.631578947368421,
+          "recall": 0.6666666666666666,
+          "f1": 0.6486486486486487
+        },
+        "McLaren MP4-12C Coupe 2012": {
+          "precision": 0.7272727272727273,
+          "recall": 0.9090909090909091,
+          "f1": 0.8080808080808081
+        },
+        "Mercedes-Benz 300-Class Convertible 1993": {
+          "precision": 0.5454545454545454,
+          "recall": 0.625,
+          "f1": 0.5825242718446602
+        },
+        "Mercedes-Benz C-Class Sedan 2012": {
+          "precision": 0.78125,
+          "recall": 0.5555555555555556,
+          "f1": 0.6493506493506493
+        },
+        "Mercedes-Benz E-Class Sedan 2012": {
+          "precision": 0.4339622641509434,
+          "recall": 0.5348837209302325,
+          "f1": 0.4791666666666667
+        },
+        "Mercedes-Benz S-Class Sedan 2012": {
+          "precision": 0.48148148148148145,
+          "recall": 0.5909090909090909,
+          "f1": 0.5306122448979592
+        },
+        "Mercedes-Benz SL-Class Coupe 2009": {
+          "precision": 0.5531914893617021,
+          "recall": 0.7222222222222222,
+          "f1": 0.6265060240963856
+        },
+        "Mercedes-Benz Sprinter Van 2012": {
+          "precision": 0.6730769230769231,
+          "recall": 0.8536585365853658,
+          "f1": 0.7526881720430108
+        },
+        "Mitsubishi Lancer Sedan 2012": {
+          "precision": 0.55,
+          "recall": 0.23404255319148937,
+          "f1": 0.3283582089552239
+        },
+        "Nissan 240SX Coupe 1998": {
+          "precision": 0.6944444444444444,
+          "recall": 0.5434782608695652,
+          "f1": 0.6097560975609756
+        },
+        "Nissan Juke Hatchback 2012": {
+          "precision": 0.8181818181818182,
+          "recall": 0.4090909090909091,
+          "f1": 0.5454545454545454
+        },
+        "Nissan Leaf Hatchback 2012": {
+          "precision": 0.7619047619047619,
+          "recall": 0.7619047619047619,
+          "f1": 0.7619047619047619
+        },
+        "Nissan NV Passenger Van 2012": {
+          "precision": 0.9090909090909091,
+          "recall": 0.7894736842105263,
+          "f1": 0.8450704225352113
+        },
+        "Plymouth Neon Coupe 1999": {
+          "precision": 0.6379310344827587,
+          "recall": 0.8409090909090909,
+          "f1": 0.7254901960784313
+        },
+        "Porsche Panamera Sedan 2012": {
+          "precision": 0.375,
+          "recall": 0.5581395348837209,
+          "f1": 0.4485981308411215
+        },
+        "Ram C-V Cargo Van Minivan 2012": {
+          "precision": 0.6521739130434783,
+          "recall": 0.7317073170731707,
+          "f1": 0.6896551724137931
+        },
+        "Rolls-Royce Ghost Sedan 2012": {
+          "precision": 0.6666666666666666,
+          "recall": 0.6842105263157895,
+          "f1": 0.6753246753246753
+        },
+        "Rolls-Royce Phantom Drophead Coupe Convertible 2012": {
+          "precision": 0.6538461538461539,
+          "recall": 0.5666666666666667,
+          "f1": 0.6071428571428571
+        },
+        "Rolls-Royce Phantom Sedan 2012": {
+          "precision": 0.5869565217391305,
+          "recall": 0.6136363636363636,
+          "f1": 0.6
+        },
+        "Scion xD Hatchback 2012": {
+          "precision": 0.8,
+          "recall": 0.3902439024390244,
+          "f1": 0.5245901639344263
+        },
+        "Spyker C8 Convertible 2009": {
+          "precision": 0.5409836065573771,
+          "recall": 0.7333333333333333,
+          "f1": 0.6226415094339622
+        },
+        "Spyker C8 Coupe 2009": {
+          "precision": 0.5121951219512195,
+          "recall": 0.5,
+          "f1": 0.5060240963855421
+        },
+        "Suzuki Aerio Sedan 2007": {
+          "precision": 0.23943661971830985,
+          "recall": 0.4473684210526316,
+          "f1": 0.3119266055045872
+        },
+        "Suzuki Kizashi Sedan 2012": {
+          "precision": 0.35185185185185186,
+          "recall": 0.41304347826086957,
+          "f1": 0.38
+        },
+        "Suzuki SX4 Hatchback 2012": {
+          "precision": 0.5789473684210527,
+          "recall": 0.2619047619047619,
+          "f1": 0.36065573770491804
+        },
+        "Suzuki SX4 Sedan 2012": {
+          "precision": 0.47619047619047616,
+          "recall": 0.25,
+          "f1": 0.32786885245901637
+        },
+        "Tesla Model S Sedan 2012": {
+          "precision": 0.27906976744186046,
+          "recall": 0.3157894736842105,
+          "f1": 0.2962962962962963
+        },
+        "Toyota 4Runner SUV 2012": {
+          "precision": 0.625,
+          "recall": 0.5,
+          "f1": 0.5555555555555556
+        },
+        "Toyota Camry Sedan 2012": {
+          "precision": 0.3728813559322034,
+          "recall": 0.5116279069767442,
+          "f1": 0.43137254901960786
+        },
+        "Toyota Corolla Sedan 2012": {
+          "precision": 0.36363636363636365,
+          "recall": 0.37209302325581395,
+          "f1": 0.367816091954023
+        },
+        "Toyota Sequoia SUV 2012": {
+          "precision": 0.78125,
+          "recall": 0.6578947368421053,
+          "f1": 0.7142857142857143
+        },
+        "Volkswagen Beetle Hatchback 2012": {
+          "precision": 0.6538461538461539,
+          "recall": 0.8095238095238095,
+          "f1": 0.723404255319149
+        },
+        "Volkswagen Golf Hatchback 1991": {
+          "precision": 0.5735294117647058,
+          "recall": 0.8478260869565217,
+          "f1": 0.6842105263157895
+        },
+        "Volkswagen Golf Hatchback 2012": {
+          "precision": 0.6774193548387096,
+          "recall": 0.4883720930232558,
+          "f1": 0.5675675675675675
+        },
+        "Volvo 240 Sedan 1993": {
+          "precision": 0.7358490566037735,
+          "recall": 0.8666666666666667,
+          "f1": 0.7959183673469388
+        },
+        "Volvo C30 Hatchback 2012": {
+          "precision": 0.631578947368421,
+          "recall": 0.5853658536585366,
+          "f1": 0.6075949367088608
+        },
+        "Volvo XC90 SUV 2007": {
+          "precision": 0.8461538461538461,
+          "recall": 0.5116279069767442,
+          "f1": 0.6376811594202898
+        },
+        "smart fortwo Convertible 2012": {
+          "precision": 0.7631578947368421,
+          "recall": 0.725,
+          "f1": 0.7435897435897436
+        }
+      },
+      "confusion_matrix_path": "experiments/supervised_baseline/20260423_1243_a5902fac/confusion_matrices/cycle_1.npy",
+      "ece": 0.23643882568851957,
+      "embeddings_path": "experiments/supervised_baseline/20260423_1243_a5902fac/embeddings/cycle_1.npz"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "strategy": "entropy",
+  "num_cycles": 1,
+  "initial_pool_size": 99999,
+  "batch_size_al": 50,
+  "cycles": []
+}
