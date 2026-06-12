@@ -1,0 +1,63 @@
+# NEU Surface Defect — locked Active Learning config (easy-dataset SANITY CHECK).
+#
+# NEU saturates near 98% very early (the June runs hit it by ~cycle 15), so it is NOT the
+# headline result — it is a sanity check that the pipeline behaves and a low-label-regime
+# probe where strategies still have room to differ BEFORE the ceiling is reached.
+#
+# Training recipe is IDENTICAL to configs/cars_al.yaml (matched to the April pipeline +
+# the same early-stopping undertraining fix). The only differences are the dataset paths
+# and the deliberately small AL pool sizes so the interesting low-label region is sampled
+# densely.
+#
+# Per-run knobs (sampling_strategy, uncertainty_method, experiment.seed, experiment.name)
+# are injected as runtime overrides by scripts/run_experiment.py.
+experiment:
+  name: neu_al                 # overridden per run -> "{strategy}_seed{N}"
+  seed: 42                      # overridden per run from the seed grid (42/43/44)
+  device: cuda
+  exp_dir: experiments/
+data:
+  data_dir: data/raw/Neu_Surface/train/images        # official train split (ImageFolder, 6 classes)
+  test_dir: data/raw/Neu_Surface/validation/images    # official validation split, used as test set
+  val_split: 0.15
+  test_split: 0.0
+  augmentation: true
+  num_workers: 6
+  image_size: 224
+model:
+  name: resnet50
+  pretrained: true
+  num_classes: null            # auto-detected (6)
+training:
+  epochs: 100                  # CAP only — early stopping ends most cycles well before this
+  batch_size: 32
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  optimizer: adamw
+  early_stopping_patience: 12  # FIX: was 0 (disabled)
+  scheduler: cosine
+  warmup_epochs: 2
+  grad_clip_norm: 1.0
+  label_smoothing: 0.1
+  backbone_lr_factor: 0.1
+  freeze_backbone_epochs: 2
+  loss_fn: combined
+  supcon_temperature: 0.07
+  supcon_weight: 0.5
+active_learning:
+  num_cycles: 30
+  initial_pool_size: 60        # ~10/class (smaller than the June init=120 to expose the low-label regime)
+  batch_size_al: 12            # fine-grained queries -> dense sampling of the 60..408-label range
+  sampling_strategy: random    # overridden per run
+  uncertainty_method: entropy  # overridden to least_confidence for the LeastConfidence run
+  reset_mode: continue
+  step_mode: false
+  auto_annotate: true
+  stratified_init: true
+checkpoint:
+  save_best_model: true
+  save_best_per_cycle: true
+  save_every_n_epochs: 5
+logging:
+  level: INFO
+  log_to_file: true

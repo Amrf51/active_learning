@@ -1,0 +1,64 @@
+# Stanford Cars — locked Active Learning comparison config (headline experiment).
+#
+# Recipe is MATCHED to the April 2026 runs (Random/Entropy/Margin/LeastConfidence) for
+# comparability: loss_fn=combined (SupCon), reset_mode=continue, lr=1e-4, resnet50.
+#
+# The ONLY deliberate deviation from April is the undertraining fix:
+#   early_stopping_patience: 12  +  epochs: 100 (cap)
+# The April runs trained a fixed 20 epochs/cycle and were undertrained, which made every
+# strategy converge to the same ~0.52 plateau. Early stopping lets each cycle train to
+# validation convergence and adapts the epoch count to the (growing) pool size.
+#
+# Per-run knobs (sampling_strategy, uncertainty_method, experiment.seed, experiment.name)
+# are injected as runtime overrides by scripts/run_experiment.py — do NOT hand-edit them
+# here. Keeping this config fixed across all 24 runs is the experiment.
+experiment:
+  name: cars_al               # overridden per run -> "{strategy}_seed{N}"
+  seed: 42                     # overridden per run from the seed grid (42/43/44)
+  device: cuda                 # set to "auto" or "cpu" for a local smoke run
+  exp_dir: experiments/
+data:
+  data_dir: data/raw/Stanford_Cars/car_data/train   # official train split (ImageFolder, 196 classes)
+  test_dir: data/raw/Stanford_Cars/car_data/test     # official test split
+  val_split: 0.15
+  test_split: 0.0              # ignored when test_dir is set
+  augmentation: true
+  num_workers: 6               # cluster value (Linux); set 0 for local macOS/Windows runs
+  image_size: 224
+model:
+  name: resnet50
+  pretrained: true
+  num_classes: null            # auto-detected (196)
+training:
+  epochs: 100                  # CAP only — early stopping ends most cycles well before this
+  batch_size: 32
+  learning_rate: 0.0001        # matched to April runs (do not tune — preserves comparability)
+  weight_decay: 0.0001
+  optimizer: adamw
+  early_stopping_patience: 12  # FIX: was 0 (disabled) in April -> undertrained every cycle
+  scheduler: cosine
+  warmup_epochs: 2
+  grad_clip_norm: 1.0
+  label_smoothing: 0.1
+  backbone_lr_factor: 0.1
+  freeze_backbone_epochs: 2
+  loss_fn: combined            # matched to April runs
+  supcon_temperature: 0.07
+  supcon_weight: 0.5
+active_learning:
+  num_cycles: 30
+  initial_pool_size: 1000      # ~5/class
+  batch_size_al: 100           # 10% pool increments
+  sampling_strategy: random    # overridden per run (random/entropy/margin/least_confidence)
+  uncertainty_method: entropy  # overridden to least_confidence for the LeastConfidence run
+  reset_mode: continue         # matched to April runs
+  step_mode: false
+  auto_annotate: true
+  stratified_init: true        # shared seed => identical init pool across strategies (paired comparison)
+checkpoint:
+  save_best_model: true
+  save_best_per_cycle: true
+  save_every_n_epochs: 5
+logging:
+  level: INFO
+  log_to_file: true

@@ -14,6 +14,10 @@ venv/
 env/
 ENV/
 al_env/
+.venv_analysis/
+
+# Analysis tooling output (regenerated from experiments/ via `python -m analysis.run`)
+analysis_out/
 
 # Experiments and logs
 
