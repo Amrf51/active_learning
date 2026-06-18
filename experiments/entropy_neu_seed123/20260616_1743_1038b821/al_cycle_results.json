@@ -1,0 +1,1418 @@
+{
+  "strategy": "entropy",
+  "num_cycles": 30,
+  "initial_pool_size": 120,
+  "batch_size_al": 30,
+  "cycles": [
+    {
+      "cycle": 1,
+      "labeled_pool_size": 120,
+      "unlabeled_pool_size": 1104,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.27314814814814814,
+      "best_epoch": 6,
+      "test_accuracy": 0.2777777777777778,
+      "test_f1": 0.2225839026149323,
+      "test_precision": 0.32114986764958303,
+      "test_recall": 0.2777777777777778,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "inclusion": {
+          "precision": 0.6666666666666666,
+          "recall": 0.2,
+          "f1": 0.3076923076923077
+        },
+        "patches": {
+          "precision": 0.25,
+          "recall": 0.016666666666666666,
+          "f1": 0.03125
+        },
+        "pitted_surface": {
+          "precision": 0.20717131474103587,
+          "recall": 0.8666666666666667,
+          "f1": 0.33440514469453375
+        },
+        "rolled-in_scale": {
+          "precision": 0.6530612244897959,
+          "recall": 0.5333333333333333,
+          "f1": 0.5871559633027523
+        },
+        "scratches": {
+          "precision": 0.15,
+          "recall": 0.05,
+          "f1": 0.075
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_1.npy",
+      "ece": 0.0997065773026811,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_1.npz"
+    },
+    {
+      "cycle": 2,
+      "labeled_pool_size": 150,
+      "unlabeled_pool_size": 1074,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.5972222222222222,
+      "best_epoch": 19,
+      "test_accuracy": 0.5,
+      "test_f1": 0.4405065379813549,
+      "test_precision": 0.5763362859728307,
+      "test_recall": 0.5,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.875,
+          "recall": 0.8166666666666667,
+          "f1": 0.8448275862068966
+        },
+        "inclusion": {
+          "precision": 0.47619047619047616,
+          "recall": 0.3333333333333333,
+          "f1": 0.39215686274509803
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 0.08333333333333333,
+          "f1": 0.15384615384615385
+        },
+        "pitted_surface": {
+          "precision": 0.2964824120603015,
+          "recall": 0.9833333333333333,
+          "f1": 0.4555984555984556
+        },
+        "rolled-in_scale": {
+          "precision": 0.8103448275862069,
+          "recall": 0.7833333333333333,
+          "f1": 0.7966101694915254
+        },
+        "scratches": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_2.npy",
+      "ece": 0.3050467828495635,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_2.npz"
+    },
+    {
+      "cycle": 3,
+      "labeled_pool_size": 180,
+      "unlabeled_pool_size": 1044,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.7592592592592593,
+      "best_epoch": 16,
+      "test_accuracy": 0.6861111111111111,
+      "test_f1": 0.626854444637169,
+      "test_precision": 0.584163584011848,
+      "test_recall": 0.6861111111111111,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.7894736842105263,
+          "recall": 1.0,
+          "f1": 0.8823529411764706
+        },
+        "inclusion": {
+          "precision": 0.6557377049180327,
+          "recall": 0.6666666666666666,
+          "f1": 0.6611570247933884
+        },
+        "patches": {
+          "precision": 0.725,
+          "recall": 0.9666666666666667,
+          "f1": 0.8285714285714286
+        },
+        "pitted_surface": {
+          "precision": 0.45977011494252873,
+          "recall": 0.6666666666666666,
+          "f1": 0.54421768707483
+        },
+        "rolled-in_scale": {
+          "precision": 0.875,
+          "recall": 0.8166666666666667,
+          "f1": 0.8448275862068966
+        },
+        "scratches": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_3.npy",
+      "ece": 0.47953354708022544,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_3.npz"
+    },
+    {
+      "cycle": 4,
+      "labeled_pool_size": 210,
+      "unlabeled_pool_size": 1014,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.8287037037037037,
+      "best_epoch": 9,
+      "test_accuracy": 0.6944444444444444,
+      "test_f1": 0.6816583292862173,
+      "test_precision": 0.7712918830246196,
+      "test_recall": 0.6944444444444444,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.8695652173913043,
+          "recall": 1.0,
+          "f1": 0.9302325581395349
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.31666666666666665,
+          "f1": 0.4810126582278481
+        },
+        "patches": {
+          "precision": 0.625,
+          "recall": 1.0,
+          "f1": 0.7692307692307693
+        },
+        "pitted_surface": {
+          "precision": 0.41304347826086957,
+          "recall": 0.6333333333333333,
+          "f1": 0.5
+        },
+        "rolled-in_scale": {
+          "precision": 0.9019607843137255,
+          "recall": 0.7666666666666667,
+          "f1": 0.8288288288288288
+        },
+        "scratches": {
+          "precision": 0.8181818181818182,
+          "recall": 0.45,
+          "f1": 0.5806451612903226
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_4.npy",
+      "ece": 0.47526969789630835,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_4.npz"
+    },
+    {
+      "cycle": 5,
+      "labeled_pool_size": 240,
+      "unlabeled_pool_size": 984,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.7870370370370371,
+      "best_epoch": 16,
+      "test_accuracy": 0.7111111111111111,
+      "test_f1": 0.6470458935190074,
+      "test_precision": 0.6250112868329923,
+      "test_recall": 0.7111111111111111,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.8108108108108109,
+          "recall": 1.0,
+          "f1": 0.8955223880597015
+        },
+        "inclusion": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "patches": {
+          "precision": 0.6976744186046512,
+          "recall": 1.0,
+          "f1": 0.821917808219178
+        },
+        "pitted_surface": {
+          "precision": 0.75,
+          "recall": 0.6,
+          "f1": 0.6666666666666666
+        },
+        "rolled-in_scale": {
+          "precision": 0.9545454545454546,
+          "recall": 0.7,
+          "f1": 0.8076923076923077
+        },
+        "scratches": {
+          "precision": 0.5370370370370371,
+          "recall": 0.9666666666666667,
+          "f1": 0.6904761904761905
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_5.npy",
+      "ece": 0.4571019450823466,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_5.npz"
+    },
+    {
+      "cycle": 6,
+      "labeled_pool_size": 270,
+      "unlabeled_pool_size": 954,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.8055555555555556,
+      "best_epoch": 4,
+      "test_accuracy": 0.7527777777777778,
+      "test_f1": 0.693409592724519,
+      "test_precision": 0.8199925686745887,
+      "test_recall": 0.7527777777777778,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.8333333333333334,
+          "recall": 1.0,
+          "f1": 0.9090909090909091
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.016666666666666666,
+          "f1": 0.03278688524590164
+        },
+        "patches": {
+          "precision": 0.8108108108108109,
+          "recall": 1.0,
+          "f1": 0.8955223880597015
+        },
+        "pitted_surface": {
+          "precision": 0.7678571428571429,
+          "recall": 0.7166666666666667,
+          "f1": 0.7413793103448276
+        },
+        "rolled-in_scale": {
+          "precision": 0.9607843137254902,
+          "recall": 0.8166666666666667,
+          "f1": 0.8828828828828829
+        },
+        "scratches": {
+          "precision": 0.5471698113207547,
+          "recall": 0.9666666666666667,
+          "f1": 0.6987951807228916
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_6.npy",
+      "ece": 0.4919182014134195,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_6.npz"
+    },
+    {
+      "cycle": 7,
+      "labeled_pool_size": 300,
+      "unlabeled_pool_size": 924,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.8148148148148148,
+      "best_epoch": 14,
+      "test_accuracy": 0.775,
+      "test_f1": 0.7091572781240782,
+      "test_precision": 0.659126862304243,
+      "test_recall": 0.775,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.8,
+          "recall": 1.0,
+          "f1": 0.8888888888888888
+        },
+        "inclusion": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "patches": {
+          "precision": 0.9523809523809523,
+          "recall": 1.0,
+          "f1": 0.975609756097561
+        },
+        "pitted_surface": {
+          "precision": 0.6111111111111112,
+          "recall": 0.7333333333333333,
+          "f1": 0.6666666666666666
+        },
+        "rolled-in_scale": {
+          "precision": 0.9508196721311475,
+          "recall": 0.9666666666666667,
+          "f1": 0.9586776859504132
+        },
+        "scratches": {
+          "precision": 0.6404494382022472,
+          "recall": 0.95,
+          "f1": 0.7651006711409396
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_7.npy",
+      "ece": 0.47275602664384575,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_7.npz"
+    },
+    {
+      "cycle": 8,
+      "labeled_pool_size": 330,
+      "unlabeled_pool_size": 894,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.8518518518518519,
+      "best_epoch": 17,
+      "test_accuracy": 0.775,
+      "test_f1": 0.7258105058221231,
+      "test_precision": 0.8181962690388305,
+      "test_recall": 0.775,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.8,
+          "recall": 1.0,
+          "f1": 0.8888888888888888
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.08333333333333333,
+          "f1": 0.15384615384615385
+        },
+        "patches": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "pitted_surface": {
+          "precision": 0.6417910447761194,
+          "recall": 0.7166666666666667,
+          "f1": 0.6771653543307087
+        },
+        "rolled-in_scale": {
+          "precision": 0.8805970149253731,
+          "recall": 0.9833333333333333,
+          "f1": 0.9291338582677166
+        },
+        "scratches": {
+          "precision": 0.6190476190476191,
+          "recall": 0.8666666666666667,
+          "f1": 0.7222222222222222
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_8.npy",
+      "ece": 0.41211918538643255,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_8.npz"
+    },
+    {
+      "cycle": 9,
+      "labeled_pool_size": 360,
+      "unlabeled_pool_size": 864,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.8888888888888888,
+      "best_epoch": 16,
+      "test_accuracy": 0.825,
+      "test_f1": 0.8035269517132572,
+      "test_precision": 0.8525250760703459,
+      "test_recall": 0.825,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.7692307692307693,
+          "recall": 1.0,
+          "f1": 0.8695652173913043
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.31666666666666665,
+          "f1": 0.4810126582278481
+        },
+        "patches": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "pitted_surface": {
+          "precision": 0.6949152542372882,
+          "recall": 0.6833333333333333,
+          "f1": 0.6890756302521008
+        },
+        "rolled-in_scale": {
+          "precision": 0.9672131147540983,
+          "recall": 0.9833333333333333,
+          "f1": 0.9752066115702479
+        },
+        "scratches": {
+          "precision": 0.7160493827160493,
+          "recall": 0.9666666666666667,
+          "f1": 0.8226950354609929
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_9.npy",
+      "ece": 0.3999158100949393,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_9.npz"
+    },
+    {
+      "cycle": 10,
+      "labeled_pool_size": 390,
+      "unlabeled_pool_size": 834,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9537037037037037,
+      "best_epoch": 18,
+      "test_accuracy": 0.8833333333333333,
+      "test_f1": 0.87855066634803,
+      "test_precision": 0.8999722514852002,
+      "test_recall": 0.8833333333333333,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.8450704225352113,
+          "recall": 1.0,
+          "f1": 0.916030534351145
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.6,
+          "f1": 0.75
+        },
+        "patches": {
+          "precision": 0.9523809523809523,
+          "recall": 1.0,
+          "f1": 0.975609756097561
+        },
+        "pitted_surface": {
+          "precision": 0.92,
+          "recall": 0.7666666666666667,
+          "f1": 0.8363636363636363
+        },
+        "rolled-in_scale": {
+          "precision": 0.9516129032258065,
+          "recall": 0.9833333333333333,
+          "f1": 0.9672131147540983
+        },
+        "scratches": {
+          "precision": 0.7307692307692307,
+          "recall": 0.95,
+          "f1": 0.8260869565217391
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_10.npy",
+      "ece": 0.3687125480837292,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_10.npz"
+    },
+    {
+      "cycle": 11,
+      "labeled_pool_size": 420,
+      "unlabeled_pool_size": 804,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9675925925925926,
+      "best_epoch": 19,
+      "test_accuracy": 0.9,
+      "test_f1": 0.895714333445741,
+      "test_precision": 0.9101698684395265,
+      "test_recall": 0.9,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.9090909090909091,
+          "recall": 1.0,
+          "f1": 0.9523809523809523
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.6166666666666667,
+          "f1": 0.7628865979381443
+        },
+        "patches": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "pitted_surface": {
+          "precision": 0.8813559322033898,
+          "recall": 0.8666666666666667,
+          "f1": 0.8739495798319328
+        },
+        "rolled-in_scale": {
+          "precision": 0.9230769230769231,
+          "recall": 1.0,
+          "f1": 0.96
+        },
+        "scratches": {
+          "precision": 0.7638888888888888,
+          "recall": 0.9166666666666666,
+          "f1": 0.8333333333333334
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_11.npy",
+      "ece": 0.3287817382978068,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_11.npz"
+    },
+    {
+      "cycle": 12,
+      "labeled_pool_size": 450,
+      "unlabeled_pool_size": 774,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9722222222222222,
+      "best_epoch": 12,
+      "test_accuracy": 0.9416666666666667,
+      "test_f1": 0.9400971103299262,
+      "test_precision": 0.94651964610981,
+      "test_recall": 0.9416666666666667,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.9523809523809523,
+          "recall": 1.0,
+          "f1": 0.975609756097561
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.75,
+          "f1": 0.8571428571428571
+        },
+        "patches": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "pitted_surface": {
+          "precision": 0.9166666666666666,
+          "recall": 0.9166666666666666,
+          "f1": 0.9166666666666666
+        },
+        "rolled-in_scale": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "scratches": {
+          "precision": 0.8428571428571429,
+          "recall": 0.9833333333333333,
+          "f1": 0.9076923076923077
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_12.npy",
+      "ece": 0.30426601999335817,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_12.npz"
+    },
+    {
+      "cycle": 13,
+      "labeled_pool_size": 480,
+      "unlabeled_pool_size": 744,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9814814814814815,
+      "best_epoch": 12,
+      "test_accuracy": 0.9361111111111111,
+      "test_f1": 0.9337659392141512,
+      "test_precision": 0.9423970264312389,
+      "test_recall": 0.9361111111111111,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.7,
+          "f1": 0.8235294117647058
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.8923076923076924,
+          "recall": 0.9666666666666667,
+          "f1": 0.928
+        },
+        "rolled-in_scale": {
+          "precision": 0.9523809523809523,
+          "recall": 1.0,
+          "f1": 0.975609756097561
+        },
+        "scratches": {
+          "precision": 0.8260869565217391,
+          "recall": 0.95,
+          "f1": 0.8837209302325582
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_13.npy",
+      "ece": 0.23142713184158006,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_13.npz"
+    },
+    {
+      "cycle": 14,
+      "labeled_pool_size": 510,
+      "unlabeled_pool_size": 714,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9768518518518519,
+      "best_epoch": 1,
+      "test_accuracy": 0.9472222222222222,
+      "test_f1": 0.9457031371129551,
+      "test_precision": 0.9517566115552514,
+      "test_recall": 0.9472222222222222,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.75,
+          "f1": 0.8571428571428571
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.90625,
+          "recall": 0.9666666666666667,
+          "f1": 0.9354838709677419
+        },
+        "rolled-in_scale": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "scratches": {
+          "precision": 0.8529411764705882,
+          "recall": 0.9666666666666667,
+          "f1": 0.90625
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_14.npy",
+      "ece": 0.2337474278277821,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_14.npz"
+    },
+    {
+      "cycle": 15,
+      "labeled_pool_size": 540,
+      "unlabeled_pool_size": 684,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9814814814814815,
+      "best_epoch": 6,
+      "test_accuracy": 0.9444444444444444,
+      "test_f1": 0.9431046345712422,
+      "test_precision": 0.9480690416141238,
+      "test_recall": 0.9444444444444444,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.7666666666666667,
+          "f1": 0.8679245283018868
+        },
+        "patches": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "pitted_surface": {
+          "precision": 0.8923076923076924,
+          "recall": 0.9666666666666667,
+          "f1": 0.928
+        },
+        "rolled-in_scale": {
+          "precision": 0.9375,
+          "recall": 1.0,
+          "f1": 0.967741935483871
+        },
+        "scratches": {
+          "precision": 0.875,
+          "recall": 0.9333333333333333,
+          "f1": 0.9032258064516129
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_15.npy",
+      "ece": 0.2129241587387191,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_15.npz"
+    },
+    {
+      "cycle": 16,
+      "labeled_pool_size": 570,
+      "unlabeled_pool_size": 654,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9814814814814815,
+      "best_epoch": 1,
+      "test_accuracy": 0.9361111111111111,
+      "test_f1": 0.9340772804427437,
+      "test_precision": 0.9401285949639995,
+      "test_recall": 0.9361111111111111,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.7333333333333333,
+          "f1": 0.8461538461538461
+        },
+        "patches": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "pitted_surface": {
+          "precision": 0.8769230769230769,
+          "recall": 0.95,
+          "f1": 0.912
+        },
+        "rolled-in_scale": {
+          "precision": 0.9375,
+          "recall": 1.0,
+          "f1": 0.967741935483871
+        },
+        "scratches": {
+          "precision": 0.875,
+          "recall": 0.9333333333333333,
+          "f1": 0.9032258064516129
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_16.npy",
+      "ece": 0.20824801615542834,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_16.npz"
+    },
+    {
+      "cycle": 17,
+      "labeled_pool_size": 600,
+      "unlabeled_pool_size": 624,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9814814814814815,
+      "best_epoch": 1,
+      "test_accuracy": 0.9277777777777778,
+      "test_f1": 0.9259022901214119,
+      "test_precision": 0.9321797151401198,
+      "test_recall": 0.9277777777777778,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.7333333333333333,
+          "f1": 0.8461538461538461
+        },
+        "patches": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "pitted_surface": {
+          "precision": 0.8888888888888888,
+          "recall": 0.9333333333333333,
+          "f1": 0.9105691056910569
+        },
+        "rolled-in_scale": {
+          "precision": 0.9090909090909091,
+          "recall": 1.0,
+          "f1": 0.9523809523809523
+        },
+        "scratches": {
+          "precision": 0.84375,
+          "recall": 0.9,
+          "f1": 0.8709677419354839
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_17.npy",
+      "ece": 0.20497689801785682,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_17.npz"
+    },
+    {
+      "cycle": 18,
+      "labeled_pool_size": 630,
+      "unlabeled_pool_size": 594,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9814814814814815,
+      "best_epoch": 1,
+      "test_accuracy": 0.925,
+      "test_f1": 0.9232294326509028,
+      "test_precision": 0.9284997932175352,
+      "test_recall": 0.925,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.9375,
+          "recall": 1.0,
+          "f1": 0.967741935483871
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.75,
+          "f1": 0.8571428571428571
+        },
+        "patches": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "pitted_surface": {
+          "precision": 0.8870967741935484,
+          "recall": 0.9166666666666666,
+          "f1": 0.9016393442622951
+        },
+        "rolled-in_scale": {
+          "precision": 0.9076923076923077,
+          "recall": 0.9833333333333333,
+          "f1": 0.944
+        },
+        "scratches": {
+          "precision": 0.8709677419354839,
+          "recall": 0.9,
+          "f1": 0.8852459016393442
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_18.npy",
+      "ece": 0.21241892203688623,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_18.npz"
+    },
+    {
+      "cycle": 19,
+      "labeled_pool_size": 660,
+      "unlabeled_pool_size": 564,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9814814814814815,
+      "best_epoch": 17,
+      "test_accuracy": 0.9611111111111111,
+      "test_f1": 0.9606522966570948,
+      "test_precision": 0.9634861554216394,
+      "test_recall": 0.9611111111111111,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.8333333333333334,
+          "f1": 0.9090909090909091
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9516129032258065,
+          "recall": 0.9833333333333333,
+          "f1": 0.9672131147540983
+        },
+        "rolled-in_scale": {
+          "precision": 0.9523809523809523,
+          "recall": 1.0,
+          "f1": 0.975609756097561
+        },
+        "scratches": {
+          "precision": 0.8769230769230769,
+          "recall": 0.95,
+          "f1": 0.912
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_19.npy",
+      "ece": 0.18301595821976663,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_19.npz"
+    },
+    {
+      "cycle": 20,
+      "labeled_pool_size": 690,
+      "unlabeled_pool_size": 534,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9814814814814815,
+      "best_epoch": 11,
+      "test_accuracy": 0.9527777777777777,
+      "test_f1": 0.9518816528788187,
+      "test_precision": 0.9546410314522424,
+      "test_recall": 0.9527777777777777,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.8166666666666667,
+          "f1": 0.8990825688073395
+        },
+        "patches": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "pitted_surface": {
+          "precision": 0.9193548387096774,
+          "recall": 0.95,
+          "f1": 0.9344262295081968
+        },
+        "rolled-in_scale": {
+          "precision": 0.9523809523809523,
+          "recall": 1.0,
+          "f1": 0.975609756097561
+        },
+        "scratches": {
+          "precision": 0.9047619047619048,
+          "recall": 0.95,
+          "f1": 0.926829268292683
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_20.npy",
+      "ece": 0.1595216539171007,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_20.npz"
+    },
+    {
+      "cycle": 21,
+      "labeled_pool_size": 720,
+      "unlabeled_pool_size": 504,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9861111111111112,
+      "best_epoch": 13,
+      "test_accuracy": 0.9611111111111111,
+      "test_f1": 0.9601453837307882,
+      "test_precision": 0.9640049690452916,
+      "test_recall": 0.9611111111111111,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.8,
+          "f1": 0.8888888888888888
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9375,
+          "recall": 1.0,
+          "f1": 0.967741935483871
+        },
+        "rolled-in_scale": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "scratches": {
+          "precision": 0.8787878787878788,
+          "recall": 0.9666666666666667,
+          "f1": 0.9206349206349206
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_21.npy",
+      "ece": 0.1283925121029218,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_21.npz"
+    },
+    {
+      "cycle": 22,
+      "labeled_pool_size": 750,
+      "unlabeled_pool_size": 474,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9907407407407407,
+      "best_epoch": 13,
+      "test_accuracy": 0.975,
+      "test_f1": 0.9748131771466677,
+      "test_precision": 0.9762664154768199,
+      "test_recall": 0.975,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.8833333333333333,
+          "f1": 0.9380530973451328
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "rolled-in_scale": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "scratches": {
+          "precision": 0.90625,
+          "recall": 0.9666666666666667,
+          "f1": 0.9354838709677419
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_22.npy",
+      "ece": 0.12746496498584747,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_22.npz"
+    },
+    {
+      "cycle": 23,
+      "labeled_pool_size": 780,
+      "unlabeled_pool_size": 444,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9907407407407407,
+      "best_epoch": 1,
+      "test_accuracy": 0.9805555555555555,
+      "test_f1": 0.9804472509714522,
+      "test_precision": 0.9811387273047769,
+      "test_recall": 0.9805555555555555,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.9166666666666666,
+          "f1": 0.9565217391304348
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "rolled-in_scale": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "scratches": {
+          "precision": 0.9354838709677419,
+          "recall": 0.9666666666666667,
+          "f1": 0.9508196721311475
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_23.npy",
+      "ece": 0.1210091253121694,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_23.npz"
+    },
+    {
+      "cycle": 24,
+      "labeled_pool_size": 810,
+      "unlabeled_pool_size": 414,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9907407407407407,
+      "best_epoch": 1,
+      "test_accuracy": 0.975,
+      "test_f1": 0.9748131771466677,
+      "test_precision": 0.9762664154768199,
+      "test_recall": 0.975,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.8833333333333333,
+          "f1": 0.9380530973451328
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "rolled-in_scale": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "scratches": {
+          "precision": 0.90625,
+          "recall": 0.9666666666666667,
+          "f1": 0.9354838709677419
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_24.npy",
+      "ece": 0.13050097475449243,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_24.npz"
+    },
+    {
+      "cycle": 25,
+      "labeled_pool_size": 840,
+      "unlabeled_pool_size": 384,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9907407407407407,
+      "best_epoch": 9,
+      "test_accuracy": 0.975,
+      "test_f1": 0.9747259404989234,
+      "test_precision": 0.9760197986004437,
+      "test_recall": 0.975,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.8833333333333333,
+          "f1": 0.9380530973451328
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "rolled-in_scale": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "scratches": {
+          "precision": 0.9206349206349206,
+          "recall": 0.9666666666666667,
+          "f1": 0.943089430894309
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_25.npy",
+      "ece": 0.13606336745950912,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_25.npz"
+    },
+    {
+      "cycle": 26,
+      "labeled_pool_size": 870,
+      "unlabeled_pool_size": 354,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9907407407407407,
+      "best_epoch": 1,
+      "test_accuracy": 0.9777777777777777,
+      "test_f1": 0.9776333244190119,
+      "test_precision": 0.9786639022493068,
+      "test_recall": 0.9777777777777777,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.9,
+          "f1": 0.9473684210526315
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "rolled-in_scale": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "scratches": {
+          "precision": 0.9206349206349206,
+          "recall": 0.9666666666666667,
+          "f1": 0.943089430894309
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_26.npy",
+      "ece": 0.1177751620610555,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_26.npz"
+    },
+    {
+      "cycle": 27,
+      "labeled_pool_size": 900,
+      "unlabeled_pool_size": 324,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9953703703703703,
+      "best_epoch": 9,
+      "test_accuracy": 0.9861111111111112,
+      "test_f1": 0.9861003953442213,
+      "test_precision": 0.986685748980831,
+      "test_recall": 0.9861111111111112,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.9333333333333333,
+          "f1": 0.9655172413793104
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "rolled-in_scale": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "scratches": {
+          "precision": 0.9365079365079365,
+          "recall": 0.9833333333333333,
+          "f1": 0.959349593495935
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_27.npy",
+      "ece": 0.12806683157881102,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_27.npz"
+    },
+    {
+      "cycle": 28,
+      "labeled_pool_size": 930,
+      "unlabeled_pool_size": 294,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9953703703703703,
+      "best_epoch": 5,
+      "test_accuracy": 0.9694444444444444,
+      "test_f1": 0.9690220056121694,
+      "test_precision": 0.971298593879239,
+      "test_recall": 0.9694444444444444,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.85,
+          "f1": 0.918918918918919
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "rolled-in_scale": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "scratches": {
+          "precision": 0.8923076923076924,
+          "recall": 0.9666666666666667,
+          "f1": 0.928
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_28.npy",
+      "ece": 0.14435841730899282,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_28.npz"
+    },
+    {
+      "cycle": 29,
+      "labeled_pool_size": 960,
+      "unlabeled_pool_size": 264,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9953703703703703,
+      "best_epoch": 16,
+      "test_accuracy": 0.9833333333333333,
+      "test_f1": 0.9832561703161425,
+      "test_precision": 0.9836946941653445,
+      "test_recall": 0.9833333333333333,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.9333333333333333,
+          "f1": 0.9655172413793104
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "rolled-in_scale": {
+          "precision": 0.967741935483871,
+          "recall": 1.0,
+          "f1": 0.9836065573770492
+        },
+        "scratches": {
+          "precision": 0.9508196721311475,
+          "recall": 0.9666666666666667,
+          "f1": 0.9586776859504132
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_29.npy",
+      "ece": 0.11248992731173833,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_29.npz"
+    },
+    {
+      "cycle": 30,
+      "labeled_pool_size": 990,
+      "unlabeled_pool_size": 234,
+      "epochs_trained": 20,
+      "best_val_accuracy": 0.9953703703703703,
+      "best_epoch": 3,
+      "test_accuracy": 0.9888888888888889,
+      "test_f1": 0.9888846043838593,
+      "test_precision": 0.9892032434338093,
+      "test_recall": 0.9888888888888889,
+      "per_class_metrics": {
+        "crazing": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "inclusion": {
+          "precision": 1.0,
+          "recall": 0.95,
+          "f1": 0.9743589743589743
+        },
+        "patches": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "pitted_surface": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "rolled-in_scale": {
+          "precision": 0.9836065573770492,
+          "recall": 1.0,
+          "f1": 0.9917355371900827
+        },
+        "scratches": {
+          "precision": 0.9516129032258065,
+          "recall": 0.9833333333333333,
+          "f1": 0.9672131147540983
+        }
+      },
+      "confusion_matrix_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/confusion_matrices/cycle_30.npy",
+      "ece": 0.10770720367630322,
+      "embeddings_path": "experiments/entropy_neu_seed123/20260616_1743_1038b821/embeddings/cycle_30.npz"
+    }
+  ]
+}

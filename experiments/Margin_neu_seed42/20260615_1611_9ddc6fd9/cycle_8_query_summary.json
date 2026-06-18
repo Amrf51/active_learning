@@ -1,0 +1,123 @@
+{
+  "cycle": 8,
+  "strategy_name": "margin",
+  "strategy_description": "Selects images where the gap between the top-two predicted class probabilities is smallest \u2014 the model cannot decide between two classes.",
+  "pool_size_before_query": 894,
+  "n_queried": 30,
+  "uncertainty_stats": {
+    "min": 0.0022361725568771362,
+    "max": 0.3513154685497284,
+    "mean": 0.11439122209946315,
+    "std": 0.0953413379064615
+  },
+  "queried_class_distribution": {
+    "crazing": 3,
+    "inclusion": 9,
+    "scratches": 6,
+    "rolled-in_scale": 3,
+    "pitted_surface": 6,
+    "patches": 3
+  },
+  "labeled_class_distribution": {
+    "crazing": 59,
+    "rolled-in_scale": 49,
+    "pitted_surface": 61,
+    "inclusion": 53,
+    "scratches": 55,
+    "patches": 53
+  },
+  "top_uncertain": [
+    {
+      "image_id": 265,
+      "uncertainty_score": 0.3513154685497284,
+      "predicted_class": "rolled-in_scale",
+      "predicted_confidence": 0.49130159616470337
+    },
+    {
+      "image_id": 333,
+      "uncertainty_score": 0.28359267115592957,
+      "predicted_class": "rolled-in_scale",
+      "predicted_confidence": 0.4401160180568695
+    },
+    {
+      "image_id": 238,
+      "uncertainty_score": 0.27823232114315033,
+      "predicted_class": "patches",
+      "predicted_confidence": 0.4498883783817291
+    },
+    {
+      "image_id": 101,
+      "uncertainty_score": 0.26372218132019043,
+      "predicted_class": "crazing",
+      "predicted_confidence": 0.40699318051338196
+    },
+    {
+      "image_id": 945,
+      "uncertainty_score": 0.22911323606967926,
+      "predicted_class": "crazing",
+      "predicted_confidence": 0.3929288387298584
+    },
+    {
+      "image_id": 272,
+      "uncertainty_score": 0.19165508449077606,
+      "predicted_class": "scratches",
+      "predicted_confidence": 0.40118077397346497
+    },
+    {
+      "image_id": 259,
+      "uncertainty_score": 0.17613749206066132,
+      "predicted_class": "crazing",
+      "predicted_confidence": 0.3379521071910858
+    },
+    {
+      "image_id": 192,
+      "uncertainty_score": 0.1663793921470642,
+      "predicted_class": "rolled-in_scale",
+      "predicted_confidence": 0.34854570031166077
+    },
+    {
+      "image_id": 112,
+      "uncertainty_score": 0.16522541642189026,
+      "predicted_class": "inclusion",
+      "predicted_confidence": 0.4018019735813141
+    },
+    {
+      "image_id": 229,
+      "uncertainty_score": 0.15958043932914734,
+      "predicted_class": "patches",
+      "predicted_confidence": 0.3527595102787018
+    }
+  ],
+  "queried_image_ids": [
+    945,
+    259,
+    351,
+    464,
+    539,
+    272,
+    333,
+    479,
+    174,
+    129,
+    101,
+    1178,
+    1135,
+    781,
+    1110,
+    428,
+    192,
+    384,
+    936,
+    112,
+    909,
+    13,
+    873,
+    229,
+    238,
+    942,
+    34,
+    265,
+    825,
+    885
+  ]
+}
