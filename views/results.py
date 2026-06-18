@@ -687,15 +687,19 @@ def render_confusion_matrix(
 
     with st.expander("Per-class recall", expanded=True):
         max_k = min(num_classes, 100)
-        default_k = min(30, num_classes)
-        recall_k = st.slider(
-            "Show worst N classes",
-            min_value=min(10, num_classes),
-            max_value=max_k,
-            value=default_k,
-            step=5,
-            key=f"{widget_prefix}_cm_recall_k",
-        )
+        if max_k <= 10:
+            recall_k = max_k
+        else:
+            default_k = min(30, max_k)
+            step = 5 if (max_k - 10) >= 5 else 1
+            recall_k = st.slider(
+                "Show worst N classes",
+                min_value=10,
+                max_value=max_k,
+                value=default_k,
+                step=step,
+                key=f"{widget_prefix}_cm_recall_k",
+            )
         _render_per_class_recall(cm, class_names, selected_cycle, recall_k)
 
     with st.expander("Confusion by name prefix", expanded=False):
