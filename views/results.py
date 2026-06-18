@@ -5,6 +5,7 @@ Results dashboard for completed/ongoing active learning runs.
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -499,47 +500,107 @@ def _resolve_confusion_matrix_path(metric: Dict[str, Any], run_dir: str) -> Path
     return None
 
 
-_BODY_TYPE_KEYWORDS = [
-    ("Convertible", ["convertible"]),
-    ("Coupe", ["coupe"]),
-    ("Wagon", ["wagon", "estate"]),
-    ("Van", ["cargo van", "minivan", " van"]),
-    ("Cab", [
-        "regular cab", "extended cab", "supercrew cab", "crew cab",
-        "club cab", "quad cab", "access cab", "king cab", "double cab",
-    ]),
-    ("Truck", ["truck", "pickup"]),
-    ("Hatchback", ["hatchback"]),
-    ("SUV", ["suv", "4wd", "awd"]),
-    ("Sedan", ["sedan"]),
-]
-_BODY_TYPE_FALLBACK = "Other"
+def _extract_first_token(class_name: str) -> str:
+    """Return the first whitespace/underscore/hyphen-delimited token of a class name."""
+    tokens = re.split(r"[\s_\-]+", class_name.strip())
+    return tokens[0] if tokens else class_name
 
 
-def _class_to_body_type(class_name: str) -> str:
-    lower = class_name.lower()
-    for body_type, keywords in _BODY_TYPE_KEYWORDS:
-        if any(kw in lower for kw in keywords):
-            return body_type
-    return _BODY_TYPE_FALLBACK
-
-
-def _build_body_type_matrix(cm, class_names: List[str]):
+def _build_prefix_group_matrix(cm, class_names: List[str]):
     import numpy as np
 
-    labels = [_class_to_body_type(n) for n in class_names]
-    # Preserve encounter order so the matrix rows/cols match natural grouping
-    seen: dict = {}
-    for lbl in labels:
-        if lbl not in seen:
-            seen[lbl] = len(seen)
-    body_types = list(seen.keys())
-    n = len(body_types)
+    groups = [_extract_first_token(n) for n in class_names]
+    unique_groups: dict = {}
+    for g in groups:
+        if g not in unique_groups:
+            unique_groups[g] = len(unique_groups)
+    group_labels = list(unique_groups.keys())
+    n = len(group_labels)
     agg = np.zeros((n, n), dtype=np.int64)
-    for r, lbl_r in enumerate(labels):
-        for c, lbl_c in enumerate(labels):
-            agg[seen[lbl_r], seen[lbl_c]] += cm[r, c]
-    return agg, body_types
+    for r, gr in enumerate(groups):
+        for c, gc in enumerate(groups):
+            agg[unique_groups[gr], unique_groups[gc]] += cm[r, c]
+    return agg, group_labels
+
+
+def _render_per_class_recall(cm, class_names: List[str], cycle: int, top_k: int) -> None:
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    row_sums = cm.sum(axis=1).clip(1)
+    recall = cm.diagonal() / row_sums
+
+    order = np.argsort(recall)[:top_k]
+    sorted_names = [class_names[i] for i in order]
+    sorted_recall = recall[order]
+    mean_recall = recall.mean()
+
+    colors = [
+        "#d62728" if r < 0.5 else "#ff7f0e" if r < 0.75 else "#2ca02c"
+        for r in sorted_recall
+    ]
+
+    fig, ax = plt.subplots(figsize=(7, max(4, top_k * 0.28)))
+    ax.barh(range(top_k), sorted_recall, color=colors)
+    ax.set_yticks(range(top_k))
+    ax.set_yticklabels(sorted_names, fontsize=max(6, 9 - top_k // 25))
+    ax.set_xlim(0, 1)
+    ax.set_xlabel("Recall (true positive rate)")
+    ax.set_title(f"Cycle {cycle} — per-class recall, worst {top_k} (of {len(class_names)})")
+    ax.axvline(mean_recall, color="steelblue", linestyle="--", linewidth=1,
+               label=f"Mean: {mean_recall:.2f}")
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
+
+
+def _render_prefix_group_matrix(cm, class_names: List[str], cycle: int) -> None:
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    agg, group_labels = _build_prefix_group_matrix(cm, class_names)
+    n = len(group_labels)
+
+    if n == len(class_names):
+        st.info(
+            "Every class starts with a unique token — no grouping was possible. "
+            "Consider renaming classes with a shared prefix (e.g. brand, category) "
+            "to enable this view."
+        )
+        return
+    if n == 1:
+        st.info("All classes share the same prefix token — grouping is trivial.")
+        return
+
+    row_sums = agg.sum(axis=1, keepdims=True).clip(1)
+    norm = agg / row_sums
+
+    fig, ax = plt.subplots(figsize=(max(5, n * 0.65), max(4, n * 0.55)))
+    im = ax.imshow(norm, cmap="Blues", vmin=0, vmax=1)
+    threshold = 0.5
+    for i in range(n):
+        for j in range(n):
+            color = "white" if norm[i, j] > threshold else "black"
+            ax.text(j, i, str(int(agg[i, j])), ha="center", va="center",
+                    fontsize=9, color=color)
+    ax.set_xticks(range(n))
+    ax.set_xticklabels(group_labels, rotation=45, ha="right")
+    ax.set_yticks(range(n))
+    ax.set_yticklabels(group_labels)
+    ax.set_xlabel("Predicted group")
+    ax.set_ylabel("True group")
+    ax.set_title(f"Cycle {cycle} — confusion by name prefix (row-normalised)")
+    fig.colorbar(im, ax=ax, label="Recall within true group", fraction=0.046, pad=0.04)
+    fig.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
+
+    group_counts = Counter(_extract_first_token(c) for c in class_names)
+    st.caption(
+        "Classes per group: "
+        + "  |  ".join(f"{g}: {group_counts[g]}" for g in group_labels)
+    )
 
 
 def _render_top_confused_pairs(cm, class_names: List[str], top_k: int) -> None:
@@ -567,44 +628,6 @@ def _render_top_confused_pairs(cm, class_names: List[str], top_k: int) -> None:
         return
 
     st.dataframe(pd.DataFrame(records), width='stretch', hide_index=True)
-
-
-def _render_body_type_matrix(cm, class_names: List[str], cycle: int) -> None:
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    agg, body_types = _build_body_type_matrix(cm, class_names)
-    row_sums = agg.sum(axis=1, keepdims=True).clip(1)
-    norm = agg / row_sums
-
-    n = len(body_types)
-    fig, ax = plt.subplots(figsize=(max(5, n), max(4, n - 1)))
-    im = ax.imshow(norm, cmap="Blues", vmin=0, vmax=1)
-    threshold = 0.5
-    for i in range(n):
-        for j in range(n):
-            color = "white" if norm[i, j] > threshold else "black"
-            ax.text(j, i, str(int(agg[i, j])), ha="center", va="center",
-                    fontsize=9, color=color)
-    ax.set_xticks(range(n))
-    ax.set_xticklabels(body_types, rotation=45, ha="right")
-    ax.set_yticks(range(n))
-    ax.set_yticklabels(body_types)
-    ax.set_xlabel("Predicted body type")
-    ax.set_ylabel("True body type")
-    ax.set_title(f"Cycle {cycle} — confusion by body type (row-normalised)")
-    fig.colorbar(im, ax=ax, label="Recall within true body type", fraction=0.046, pad=0.04)
-    fig.tight_layout()
-    st.pyplot(fig)
-    plt.close(fig)
-
-    # Show how many classes landed in each bucket
-    from collections import Counter as _Counter
-    bucket_counts = _Counter(_class_to_body_type(cls) for cls in class_names)
-    st.caption(
-        "Classes per bucket: "
-        + "  |  ".join(f"{bt}: {bucket_counts[bt]}" for bt in body_types)
-    )
 
 
 def render_confusion_matrix(
@@ -662,8 +685,21 @@ def render_confusion_matrix(
         )
         _render_top_confused_pairs(cm, class_names, top_k)
 
-    with st.expander("Confusion by body type", expanded=True):
-        _render_body_type_matrix(cm, class_names, selected_cycle)
+    with st.expander("Per-class recall", expanded=True):
+        max_k = min(num_classes, 100)
+        default_k = min(30, num_classes)
+        recall_k = st.slider(
+            "Show worst N classes",
+            min_value=min(10, num_classes),
+            max_value=max_k,
+            value=default_k,
+            step=5,
+            key=f"{widget_prefix}_cm_recall_k",
+        )
+        _render_per_class_recall(cm, class_names, selected_cycle, recall_k)
+
+    with st.expander("Confusion by name prefix", expanded=False):
+        _render_prefix_group_matrix(cm, class_names, selected_cycle)
 
     st.caption(f"Source: {cm_path}")
 
@@ -694,7 +730,7 @@ def _build_umap_figure(
     height: int = 550,
     show_legend: bool = True,
     uncertainty=None,
-    group_by_body_type: bool = False,
+    group_by_prefix: bool = False,
 ):
     """Build a Plotly Figure for a single UMAP embedding snapshot.
 
@@ -752,13 +788,13 @@ def _build_umap_figure(
             )
         )
     else:
-        # Class-label coloring. With many classes the legend is unreadable, so
-        # optionally collapse to body-type buckets (~9) via _class_to_body_type.
+        # Class-label coloring. With many classes the per-class legend is
+        # unreadable — optionally collapse to first-token prefix groups.
         import numpy as np
 
         def _name_for(idx: int) -> str:
             raw = class_names[idx] if idx < len(class_names) else str(idx)
-            return _class_to_body_type(raw) if group_by_body_type else raw
+            return _extract_first_token(raw) if group_by_prefix else raw
 
         label_to_group = {idx: _name_for(idx) for idx in set(int(l) for l in labels)}
         group_to_members: Dict[str, List[int]] = {}
@@ -980,15 +1016,14 @@ def render_umap_evolution(
         key=f"{widget_prefix}_umap_evo_color_mode",
     )
 
-    # With many classes the per-class legend is unreadable — offer a body-type
-    # grouping (~9 buckets). Default on for large class counts.
-    group_by_body_type = False
+    # With many classes the per-class legend is unreadable — offer prefix grouping.
+    group_by_prefix = False
     many_classes = len(class_names) > 20
     if color_mode == "Class Label":
-        group_by_body_type = st.checkbox(
-            "Group classes by body type",
+        group_by_prefix = st.checkbox(
+            "Group classes by name prefix",
             value=many_classes,
-            key=f"{widget_prefix}_umap_evo_group_body",
+            key=f"{widget_prefix}_umap_evo_group_prefix",
         )
 
     # Display mode
@@ -1016,7 +1051,7 @@ def render_umap_evolution(
             d["coords"], d["labels"], d["pool"],
             class_names, color_mode, title,
             uncertainty=d.get("uncertainty"),
-            group_by_body_type=group_by_body_type,
+            group_by_prefix=group_by_prefix,
         )
         st.plotly_chart(fig, width='stretch')
 
@@ -1052,7 +1087,7 @@ def render_umap_evolution(
                     class_names, color_mode, title,
                     height=400, show_legend=show_legend,
                     uncertainty=d.get("uncertainty"),
-                    group_by_body_type=group_by_body_type,
+                    group_by_prefix=group_by_prefix,
                 )
                 st.plotly_chart(fig, width='stretch')
                 n_queried = int(np.sum(d["pool"] == 2))
