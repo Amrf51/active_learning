@@ -1,0 +1,313 @@
+{
+  "cycle": 1,
+  "annotations": [
+    {
+      "image_id": 671,
+      "user_label": 2
+    },
+    {
+      "image_id": 911,
+      "user_label": 2
+    },
+    {
+      "image_id": 1177,
+      "user_label": 0
+    },
+    {
+      "image_id": 914,
+      "user_label": 0
+    },
+    {
+      "image_id": 430,
+      "user_label": 3
+    },
+    {
+      "image_id": 772,
+      "user_label": 2
+    },
+    {
+      "image_id": 1031,
+      "user_label": 0
+    },
+    {
+      "image_id": 924,
+      "user_label": 0
+    },
+    {
+      "image_id": 820,
+      "user_label": 2
+    },
+    {
+      "image_id": 832,
+      "user_label": 0
+    },
+    {
+      "image_id": 1179,
+      "user_label": 0
+    },
+    {
+      "image_id": 247,
+      "user_label": 0
+    },
+    {
+      "image_id": 1172,
+      "user_label": 0
+    },
+    {
+      "image_id": 158,
+      "user_label": 2
+    },
+    {
+      "image_id": 556,
+      "user_label": 2
+    },
+    {
+      "image_id": 89,
+      "user_label": 3
+    },
+    {
+      "image_id": 1069,
+      "user_label": 2
+    },
+    {
+      "image_id": 322,
+      "user_label": 2
+    },
+    {
+      "image_id": 907,
+      "user_label": 0
+    },
+    {
+      "image_id": 751,
+      "user_label": 1
+    },
+    {
+      "image_id": 883,
+      "user_label": 0
+    },
+    {
+      "image_id": 458,
+      "user_label": 2
+    },
+    {
+      "image_id": 233,
+      "user_label": 2
+    },
+    {
+      "image_id": 996,
+      "user_label": 2
+    },
+    {
+      "image_id": 303,
+      "user_label": 0
+    },
+    {
+      "image_id": 453,
+      "user_label": 0
+    },
+    {
+      "image_id": 766,
+      "user_label": 2
+    },
+    {
+      "image_id": 688,
+      "user_label": 2
+    },
+    {
+      "image_id": 29,
+      "user_label": 0
+    },
+    {
+      "image_id": 1154,
+      "user_label": 2
+    }
+  ],
+  "summary": {
+    "moved_count": 30,
+    "annotation_accuracy": 1.0,
+    "correct_count": 30,
+    "total_count": 30,
+    "details": [
+      {
+        "image_id": 671,
+        "user_label": 2,
+        "ground_truth": 2,
+        "correct": true
+      },
+      {
+        "image_id": 911,
+        "user_label": 2,
+        "ground_truth": 2,
+        "correct": true
+      },
+      {
+        "image_id": 1177,
+        "user_label": 0,
+        "ground_truth": 0,
+        "correct": true
+      },
+      {
+        "image_id": 914,
+        "user_label": 0,
+        "ground_truth": 0,
+        "correct": true
+      },
+      {
+        "image_id": 430,
+        "user_label": 3,
+        "ground_truth": 3,
+        "correct": true
+      },
+      {
+        "image_id": 772,
+        "user_label": 2,
+        "ground_truth": 2,
+        "correct": true
+      },
+      {
+        "image_id": 1031,
+        "user_label": 0,
+        "ground_truth": 0,
+        "correct": true
+      },
+      {
+        "image_id": 924,
+        "user_label": 0,
+        "ground_truth": 0,
+        "correct": true
+      },
+      {
+        "image_id": 820,
+        "user_label": 2,
+        "ground_truth": 2,
+        "correct": true
+      },
+      {
+        "image_id": 832,
+        "user_label": 0,
+        "ground_truth": 0,
+        "correct": true
+      },
+      {
+        "image_id": 1179,
+        "user_label": 0,
+        "ground_truth": 0,
+        "correct": true
+      },
+      {
+        "image_id": 247,
+        "user_label": 0,
+        "ground_truth": 0,
+        "correct": true
+      },
+      {
+        "image_id": 1172,
+        "user_label": 0,
+        "ground_truth": 0,
+        "correct": true
+      },
+      {
+        "image_id": 158,
+        "user_label": 2,
+        "ground_truth": 2,
+        "correct": true
+      },
+      {
+        "image_id": 556,
+        "user_label": 2,
+        "ground_truth": 2,
+        "correct": true
+      },
+      {
+        "image_id": 89,
+        "user_label": 3,
+        "ground_truth": 3,
+        "correct": true
+      },
+      {
+        "image_id": 1069,
+        "user_label": 2,
+        "ground_truth": 2,
+        "correct": true
+      },
+      {
+        "image_id": 322,
+        "user_label": 2,
+        "ground_truth": 2,
+        "correct": true
+      },
+      {
+        "image_id": 907,
+        "user_label": 0,
+        "ground_truth": 0,
+        "correct": true
+      },
+      {
+        "image_id": 751,
+        "user_label": 1,
+        "ground_truth": 1,
+        "correct": true
+      },
+      {
+        "image_id": 883,
+        "user_label": 0,
+        "ground_truth": 0,
+        "correct": true
+      },
+      {
+        "image_id": 458,
+        "user_label": 2,
+        "ground_truth": 2,
+        "correct": true
+      },
+      {
+        "image_id": 233,
+        "user_label": 2,
+        "ground_truth": 2,
+        "correct": true
+      },
+      {
+        "image_id": 996,
+        "user_label": 2,
+        "ground_truth": 2,
+        "correct": true
+      },
+      {
+        "image_id": 303,
+        "user_label": 0,
+        "ground_truth": 0,
+        "correct": true
+      },
+      {
+        "image_id": 453,
+        "user_label": 0,
+        "ground_truth": 0,
+        "correct": true
+      },
+      {
+        "image_id": 766,
+        "user_label": 2,
+        "ground_truth": 2,
+        "correct": true
+      },
+      {
+        "image_id": 688,
+        "user_label": 2,
+        "ground_truth": 2,
+        "correct": true
+      },
+      {
+        "image_id": 29,
+        "user_label": 0,
+        "ground_truth": 0,
+        "correct": true
+      },
+      {
+        "image_id": 1154,
+        "user_label": 2,
+        "ground_truth": 2,
+        "correct": true
+      }
+    ]
+  }
+}

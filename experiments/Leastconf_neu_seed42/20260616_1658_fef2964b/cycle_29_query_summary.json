@@ -1,0 +1,123 @@
+{
+  "cycle": 29,
+  "strategy_name": "least_confidence",
+  "strategy_description": "Selects images where the model's highest class probability is lowest \u2014 the model is least confident in its top prediction.",
+  "pool_size_before_query": 264,
+  "n_queried": 30,
+  "uncertainty_stats": {
+    "min": 0.11768698404161487,
+    "max": 0.8559792279671624,
+    "mean": 0.3955473636700162,
+    "std": 0.19485711277213058
+  },
+  "queried_class_distribution": {
+    "inclusion": 3,
+    "crazing": 10,
+    "scratches": 4,
+    "rolled-in_scale": 3,
+    "patches": 6,
+    "pitted_surface": 4
+  },
+  "labeled_class_distribution": {
+    "crazing": 152,
+    "rolled-in_scale": 156,
+    "pitted_surface": 150,
+    "inclusion": 175,
+    "scratches": 176,
+    "patches": 151
+  },
+  "top_uncertain": [
+    {
+      "image_id": 1048,
+      "uncertainty_score": 0.8559792279671624,
+      "predicted_class": "scratches",
+      "predicted_confidence": 0.5118423104286194
+    },
+    {
+      "image_id": 1011,
+      "uncertainty_score": 0.7617919928792187,
+      "predicted_class": "inclusion",
+      "predicted_confidence": 0.7534821033477783
+    },
+    {
+      "image_id": 779,
+      "uncertainty_score": 0.7556622460424565,
+      "predicted_class": "patches",
+      "predicted_confidence": 0.8101869821548462
+    },
+    {
+      "image_id": 686,
+      "uncertainty_score": 0.7049794824642981,
+      "predicted_class": "crazing",
+      "predicted_confidence": 0.8221492767333984
+    },
+    {
+      "image_id": 99,
+      "uncertainty_score": 0.6352925486542543,
+      "predicted_class": "crazing",
+      "predicted_confidence": 0.8570883274078369
+    },
+    {
+      "image_id": 343,
+      "uncertainty_score": 0.5891078864020043,
+      "predicted_class": "rolled-in_scale",
+      "predicted_confidence": 0.8703632354736328
+    },
+    {
+      "image_id": 560,
+      "uncertainty_score": 0.5137629387160288,
+      "predicted_class": "pitted_surface",
+      "predicted_confidence": 0.876753032207489
+    },
+    {
+      "image_id": 242,
+      "uncertainty_score": 0.5017591043910058,
+      "predicted_class": "pitted_surface",
+      "predicted_confidence": 0.8890120983123779
+    },
+    {
+      "image_id": 200,
+      "uncertainty_score": 0.49886209574045076,
+      "predicted_class": "patches",
+      "predicted_confidence": 0.8933482766151428
+    },
+    {
+      "image_id": 986,
+      "uncertainty_score": 0.43162869738884174,
+      "predicted_class": "crazing",
+      "predicted_confidence": 0.913280189037323
+    }
+  ],
+  "queried_image_ids": [
+    890,
+    318,
+    597,
+    239,
+    1011,
+    1040,
+    952,
+    1138,
+    472,
+    986,
+    608,
+    432,
+    846,
+    779,
+    31,
+    200,
+    686,
+    343,
+    99,
+    477,
+    242,
+    1048,
+    1023,
+    178,
+    1102,
+    923,
+    501,
+    553,
+    560,
+    519
+  ]
+}

@@ -1,0 +1,123 @@
+{
+  "cycle": 20,
+  "strategy_name": "entropy",
+  "strategy_description": "Selects images whose predicted probability distributions have the highest Shannon entropy \u2014 i.e. the model is most uncertain across all classes.",
+  "pool_size_before_query": 534,
+  "n_queried": 30,
+  "uncertainty_stats": {
+    "min": 0.3553492363277979,
+    "max": 1.4423176198466416,
+    "mean": 0.9112554725824207,
+    "std": 0.32737771494405576
+  },
+  "queried_class_distribution": {
+    "inclusion": 8,
+    "crazing": 4,
+    "pitted_surface": 6,
+    "scratches": 8,
+    "rolled-in_scale": 2,
+    "patches": 2
+  },
+  "labeled_class_distribution": {
+    "inclusion": 100,
+    "pitted_surface": 125,
+    "crazing": 106,
+    "rolled-in_scale": 132,
+    "scratches": 109,
+    "patches": 118
+  },
+  "top_uncertain": [
+    {
+      "image_id": 429,
+      "uncertainty_score": 1.4423176198466416,
+      "predicted_class": "inclusion",
+      "predicted_confidence": 0.3585091531276703
+    },
+    {
+      "image_id": 281,
+      "uncertainty_score": 1.3769729464694807,
+      "predicted_class": "inclusion",
+      "predicted_confidence": 0.5332412719726562
+    },
+    {
+      "image_id": 727,
+      "uncertainty_score": 1.3445836976537568,
+      "predicted_class": "pitted_surface",
+      "predicted_confidence": 0.414775550365448
+    },
+    {
+      "image_id": 870,
+      "uncertainty_score": 1.2968915933859613,
+      "predicted_class": "scratches",
+      "predicted_confidence": 0.43388301134109497
+    },
+    {
+      "image_id": 375,
+      "uncertainty_score": 1.259893223253136,
+      "predicted_class": "inclusion",
+      "predicted_confidence": 0.5151382088661194
+    },
+    {
+      "image_id": 996,
+      "uncertainty_score": 1.2568770792452675,
+      "predicted_class": "inclusion",
+      "predicted_confidence": 0.38321781158447266
+    },
+    {
+      "image_id": 233,
+      "uncertainty_score": 1.191429616083481,
+      "predicted_class": "inclusion",
+      "predicted_confidence": 0.5290384292602539
+    },
+    {
+      "image_id": 926,
+      "uncertainty_score": 1.1699757320691617,
+      "predicted_class": "patches",
+      "predicted_confidence": 0.5524113774299622
+    },
+    {
+      "image_id": 1168,
+      "uncertainty_score": 1.1570374679378976,
+      "predicted_class": "pitted_surface",
+      "predicted_confidence": 0.6099971532821655
+    },
+    {
+      "image_id": 239,
+      "uncertainty_score": 1.1517946594874797,
+      "predicted_class": "inclusion",
+      "predicted_confidence": 0.6028738021850586
+    }
+  ],
+  "queried_image_ids": [
+    281,
+    424,
+    475,
+    445,
+    766,
+    375,
+    884,
+    429,
+    870,
+    754,
+    731,
+    160,
+    70,
+    938,
+    683,
+    182,
+    365,
+    396,
+    1168,
+    233,
+    572,
+    996,
+    886,
+    426,
+    170,
+    727,
+    926,
+    695,
+    421,
+    239
+  ]
+}
