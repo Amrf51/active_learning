@@ -112,12 +112,11 @@ def _discover_persisted_runs(exp_dir: str) -> List[Dict[str, Any]]:
 
         run_key = str(run_dir.resolve())
         cycle_part = f"{completed_cycles}/{configured_cycles}" if configured_cycles > 0 else str(completed_cycles)
+        acc_part = f"  acc {float(last_test_acc) * 100:.1f}%" if isinstance(last_test_acc, (int, float)) else ""
         label = (
-            f"{timestamp} | {experiment_name}/{run_dir.name} | "
-            f"{model_name} | {strategy} | cycles {cycle_part} | {status}"
+            f"{experiment_name}  |  {strategy}  |  {model_name}{acc_part}"
+            f"  |  {cycle_part} cycles  |  {timestamp}  |  {run_dir.name}"
         )
-        if isinstance(last_test_acc, (int, float)):
-            label = f"{label} | last acc {(float(last_test_acc) * 100):.1f}%"
 
         runs.append(
             {
@@ -1127,11 +1126,12 @@ def render_comparison_view(controller: Controller, snap: Dict[str, Any]) -> None
 
     selected_runs = [run_options[k] for k in selected_keys]
 
-    # Build short labels for the legend, disambiguating when model/strategy collide
+    # Build legend labels: experiment + strategy + model, disambiguate dupes with timestamp
     def _base_label(run: Dict[str, Any]) -> str:
-        model = run.get("model_name", "?")
+        exp = run.get("experiment_name", "?")
         strategy = run.get("strategy", "?")
-        return f"{model} / {strategy}"
+        model = run.get("model_name", "?")
+        return f"{exp} | {strategy} | {model}"
 
     raw_labels = [_base_label(r) for r in selected_runs]
     dupes = {lbl for lbl, cnt in Counter(raw_labels).items() if cnt > 1}
@@ -1212,6 +1212,19 @@ def render_comparison_view(controller: Controller, snap: Dict[str, Any]) -> None
         })
     if summary_rows:
         st.dataframe(pd.DataFrame(summary_rows), hide_index=True, width='stretch')
+
+    # Run directory reference — so legend labels can always be traced back to a folder
+    with st.expander("Run folder reference", expanded=False):
+        ref_rows = [
+            {
+                "Legend label": run_labels[run["key"]],
+                "Run folder": run.get("run_name", "?"),
+                "Experiment": run.get("experiment_name", "?"),
+                "Modified": run.get("modified_at", "?"),
+            }
+            for run in selected_runs
+        ]
+        st.dataframe(pd.DataFrame(ref_rows), hide_index=True, use_container_width=True)
 
 
 def render_results_view(controller: Controller, snap: Dict[str, Any]) -> None:
